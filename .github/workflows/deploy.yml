@@ -52,9 +52,7 @@ jobs:
 
       - name: Build for Cloudflare
         run: |
-          # 生成 AUTH_SECRET（如果没有）
-          if [ -z "$AUTH_SECRET" ]; then export AUTH_SECRET=$(openssl rand -base64 32); fi
-          echo "AUTH_SECRET set"
+          if [ -z "$AUTH_SECRET" ]; then echo "ERROR: AUTH_SECRET secret not set"; exit 1; fi
           NITRO_PRESET=cloudflare_module pnpm build
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -62,6 +60,7 @@ jobs:
           VITE_APP_URL: https://cuotiben-pro.lng-yn.workers.dev
           VITE_APP_NAME: 错题本 Pro
           DATABASE_PROVIDER: d1
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
 
       - name: Deploy to Workers
         run: npx wrangler deploy
