@@ -1,0 +1,70 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Setup wrangler config
+        run: |
+          # 从模板生成 wrangler.jsonc（gitignored）
+          cp wrangler.example.jsonc wrangler.jsonc
+          # 创建 D1 数据库（如果不存在）
+          DB_INFO=$(npx wrangler d1 create cuotiben-pro-db 2>&1 || true)
+          echo "$DB_INFO"
+          # 尝试从输出提取 database_id，失败则用 list 查找
+          DB_ID=$(echo "$DB_INFO" | grep -oP 'database_id\s*=\s*"\K[^"]+' | head -1)
+          if [ -z "$DB_ID" ]; then
+            DB_ID=$(npx wrangler d1 list --json 2>/dev/null | python3 -c "import json,sys; dbs=json.load(sys.stdin); print(next((d['uuid'] for d in dbs if d['name']=='cuotiben-pro-db'), ''))")
+          fi
+          if [ -z "$DB_ID" ]; then echo "D1 database_id not found"; exit 1; fi
+          echo "D1 database_id: $DB_ID"
+          # 替换模板中的占位符
+          sed -i "s/REPLACE_WITH_OUTPUT_OF_WRANGLER_D1_CREATE/$DB_ID/" wrangler.jsonc
+          # 设置生产 URL（先用 workers.dev 占位，部署后更新）
+          sed -i "s|https://<worker>.<your-subdomain>.workers.dev|https://cuotiben-pro.lng-yn.workers.dev|" wrangler.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Run D1 migrations
+        run: npx wrangler d1 migrations apply cuotiben-pro-db --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Build for Cloudflare
+        run: |
+          # 生成 AUTH_SECRET（如果没有）
+          if [ -z "$AUTH_SECRET" ]; then export AUTH_SECRET=$(openssl rand -base64 32); fi
+          echo "AUTH_SECRET set"
+          NITRO_PRESET=cloudflare_module pnpm build
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VITE_APP_URL: https://cuotiben-pro.lng-yn.workers.dev
+          VITE_APP_NAME: 错题本 Pro
+          DATABASE_PROVIDER: d1
+
+      - name: Deploy to Workers
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
