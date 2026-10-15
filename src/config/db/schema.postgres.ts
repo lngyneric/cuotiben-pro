@@ -695,3 +695,72 @@ export const userEvent = table(
 
 export type UserEvent = typeof userEvent.$inferSelect;
 export type NewUserEvent = typeof userEvent.$inferInsert;
+
+// ─── Cuotiben (错题本) ───────────────────────────────────────────────────────
+
+export const cuotibenCard = table(
+  'cuotiben_card',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    src: text('src').notNull().default(''),
+    subject: text('subject').notNull().default(''),
+    tag: text('tag').notNull().default(''),
+    kind: text('kind').notNull().default(''),
+    question: text('question').notNull(),
+    myAnswer: text('my_answer').notNull().default(''),
+    answer: text('answer').notNull().default(''),
+    principle: text('principle').notNull().default(''),
+    note: text('note').notNull().default(''),
+    diagram: text('diagram'),
+    mastered: boolean('mastered').default(false).notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('idx_cuotiben_card_user').on(t.userId),
+    index('idx_cuotiben_card_user_subject').on(t.userId, t.subject),
+  ]
+);
+
+export const cuotibenQaLog = table(
+  'cuotiben_qa_log',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    cardId: text('card_id').notNull(),
+    kind: text('kind').notNull(),
+    ok: boolean('ok').default(false).notNull(),
+    skip: boolean('skip').default(false).notNull(),
+    ts: timestamp('ts').notNull(),
+  },
+  (t) => [
+    index('idx_cuotiben_qa_user_ts').on(t.userId, t.ts),
+    index('idx_cuotiben_qa_card').on(t.cardId),
+  ]
+);
+
+export const cuotibenSrs = table(
+  'cuotiben_srs',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    cardId: text('card_id').notNull(),
+    ivl: integer('ivl').notNull().default(1),
+    ease: integer('ease').notNull().default(250),
+    due: timestamp('due').notNull(),
+    reps: integer('reps').notNull().default(0),
+  },
+  (t) => [
+    index('idx_cuotiben_srs_user_due').on(t.userId, t.due),
+  ]
+);
+
+export type CuotibenCard = typeof cuotibenCard.$inferSelect;
+export type NewCuotibenCard = typeof cuotibenCard.$inferInsert;
+export type CuotibenQaLog = typeof cuotibenQaLog.$inferSelect;
+export type CuotibenSrs = typeof cuotibenSrs.$inferSelect;
