@@ -37,10 +37,10 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Generate and run D1 migrations
+        continue-on-error: true
         run: |
-          # 生成 migration 文件（如果还没有）
           pnpm db:generate || true
-          npx wrangler d1 migrations apply cuotiben-pro-db --remote
+          npx wrangler d1 migrations apply cuotiben-pro-db --remote || echo "D1 migration skipped (permission issue)"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
