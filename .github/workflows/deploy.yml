@@ -31,6 +31,7 @@ jobs:
           echo "D1 database_id: $DB_ID"
           sed -i "s/REPLACE_WITH_OUTPUT_OF_WRANGLER_D1_CREATE/$DB_ID/" wrangler.jsonc
           sed -i 's/"database_name": "shipany-db"/"database_name": "cuotiben-pro-db"/' wrangler.jsonc
+          sed -i 's/"name": "shipany-tanstack"/"name": "cuotiben-pro"/' wrangler.jsonc
           sed -i "s|https://<worker>.<your-subdomain>.workers.dev|https://cuotiben-pro.lng-yn.workers.dev|" wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
