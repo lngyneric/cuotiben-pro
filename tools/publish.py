@@ -27,48 +27,53 @@ POSTS_DIR = ROOT / "src" / "content" / "posts"
 DIST_DIR = ROOT / "dist" / "published"
 
 # ─── 主题 ──────────────────────────────────────────────────────────────
+# 对齐 blog MDX 渲染风格（shadcn/ui Base Nova，暖色系 oklch）
 THEMES = {
     "light": {
-        "bg": "#ffffff", "fg": "#1a1a1a", "muted": "#666",
-        "accent": "#2563eb", "border": "#e5e7eb", "code_bg": "#f3f4f6",
-        "quote_border": "#2563eb", "h_bg": "transparent",
+        "bg": "#f9f8f6", "fg": "#3a3632", "muted": "#6b6560",
+        "accent": "#1f1b17", "border": "#e8e4df", "code_bg": "#f0ede9",
+        "quote_border": "#1f1b17",
     },
     "dark": {
-        "bg": "#0f172a", "fg": "#e2e8f0", "muted": "#94a3b8",
-        "accent": "#60a5fa", "border": "#1e293b", "code_bg": "#1e293b",
-        "quote_border": "#60a5fa", "h_bg": "transparent",
+        "bg": "#0a0a0a", "fg": "#fafafa", "muted": "#a1a1aa",
+        "accent": "#fafafa", "border": "#27272a", "code_bg": "#18181b",
+        "quote_border": "#fafafa",
     },
     "paper": {  # 打印/阅读友好
         "bg": "#faf9f7", "fg": "#2d2a26", "muted": "#78716c",
-        "accent": "#b45309", "border": "#e7e5e4", "code_bg": "#f5f4f2",
-        "quote_border": "#b45309", "h_bg": "transparent",
+        "accent": "#44403c", "border": "#e7e5e4", "code_bg": "#f5f4f2",
+        "quote_border": "#44403c",
     },
 }
 
+# 对齐 src/components/mdx-components.tsx 的排版：
+# h1:text-xl/2xl semibold tracking-tight / h2:text-lg/xl / h3:text-base
+# p:leading-7 mt-2 / a:text-primary font-medium
 CSS_TEMPLATE = """*{{box-sizing:border-box;margin:0;padding:0}}
-body{{background:{bg};color:{fg};font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.8;padding:0}}
+body{{background:{bg};color:{fg};font-family:'Inter Variable','Inter',-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.75;padding:0;-webkit-font-smoothing:antialiased}}
 .article{{max-width:720px;margin:0 auto;padding:32px 20px 80px}}
 .meta{{border-bottom:1px solid {border};padding-bottom:20px;margin-bottom:28px}}
-.meta h1{{font-size:1.6rem;line-height:1.4;margin-bottom:12px}}
-.meta .desc{{color:{muted};font-size:.95rem;margin-bottom:10px}}
+.meta h1{{font-size:1.5rem;line-height:1.3;margin-bottom:12px;font-weight:600;letter-spacing:-0.02em}}
+.meta .desc{{color:{muted};font-size:.95rem;margin-bottom:10px;line-height:1.7}}
 .meta .info{{color:{muted};font-size:.8rem}}
-h2{{font-size:1.3rem;margin:1.8em 0 .8em;padding-bottom:.3em;border-bottom:1px solid {border};color:{fg}}}
-h3{{font-size:1.1rem;margin:1.5em 0 .6em;color:{fg}}}
-p{{margin:.8em 0}}
-ul,ol{{margin:.8em 0;padding-left:1.6em}}
-li{{margin:.4em 0}}
-a{{color:{accent};text-decoration:none}}
+h2{{font-size:1.25rem;margin:1.5em 0 .5em;font-weight:600;letter-spacing:-0.02em;color:{fg}}}
+h3{{font-size:1rem;margin:1em 0 .375em;font-weight:600;letter-spacing:-0.02em;color:{fg}}}
+p{{margin:.5em 0;line-height:1.75;color:{fg};opacity:.9}}
+ul,ol{{margin:.5em 0;padding-left:1.6em}}
+li{{margin:.25em 0;line-height:1.75}}
+li::marker{{color:{muted}}}
+a{{color:{accent};font-weight:500;text-underline-offset:4px}}
 a:hover{{text-decoration:underline}}
-code{{background:{code_bg};padding:.15em .4em;border-radius:4px;font-size:.9em;font-family:ui-monospace,monospace}}
-pre{{background:{code_bg};padding:16px;border-radius:8px;overflow-x:auto;margin:1em 0}}
-pre code{{background:none;padding:0}}
-blockquote{{border-left:3px solid {quote_border};padding:.5em 1em;margin:1em 0;color:{muted};background:{code_bg};border-radius:0 8px 8px 0}}
+code{{background:{code_bg};padding:.15em .4em;border-radius:4px;font-size:.875em;font-family:ui-monospace,SFMono-Regular,monospace}}
+pre{{background:{code_bg};padding:16px;border-radius:8px;overflow-x:auto;margin:1em 0;border:1px solid {border}}}
+pre code{{background:none;padding:0;border:none}}
+blockquote{{border-left:2px solid {quote_border};padding:.25em 1em;margin:1em 0;color:{muted}}}
 table{{border-collapse:collapse;width:100%;margin:1em 0;font-size:.9rem}}
 th,td{{border:1px solid {border};padding:8px 12px;text-align:left}}
 th{{background:{code_bg};font-weight:600}}
 img{{max-width:100%;border-radius:8px}}
 hr{{border:none;border-top:1px solid {border};margin:2em 0}}
-strong{{color:{fg}}}
+strong{{color:{fg};font-weight:600}}
 .footer{{margin-top:3em;padding-top:1em;border-top:1px solid {border};color:{muted};font-size:.8rem;text-align:center}}
 """
 
