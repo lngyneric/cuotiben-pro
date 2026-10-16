@@ -189,7 +189,7 @@ export async function getDueCards(userId: string, subject?: string) {
 
 // ─── 种子卡导入 ──────────────────────────────────────────────────────────────
 
-import seedData from './seed.json';
+import { seedData } from './seed-data';
 
 export async function seedCards(userId: string) {
   // 检查是否已导入
