@@ -9,6 +9,8 @@ import { BlogCard } from '@/components/blog-card';
 import { formatPostDate } from '@/content/posts';
 import { getBlogPostsFn } from '@/content/posts/server';
 
+import { HtmlUpload } from './-html-upload';
+
 export const Route = createFileRoute('/blog/')({
   loader: async () => {
     const locale = getLocale();
@@ -78,6 +80,7 @@ function BlogPage() {
               ))}
             </div>
           )}
+          <HtmlUpload />
         </div>
       </main>
       <Footer />
