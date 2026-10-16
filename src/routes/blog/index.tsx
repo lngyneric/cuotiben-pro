@@ -5,17 +5,13 @@ import { m } from '@/paraglide/messages.js';
 import { getLocale, locales, localizeUrl } from '@/paraglide/runtime.js';
 import { Footer } from '@/blocks/footer';
 import { Header } from '@/blocks/header';
-import { BlogCard } from '@/components/blog-card';
-import { formatPostDate } from '@/content/posts';
-import { getBlogPostsFn } from '@/content/posts/server';
 
-import { HtmlUpload } from './-html-upload';
+import { HtmlList, HtmlUpload } from './-html-upload';
 
 export const Route = createFileRoute('/blog/')({
   loader: async () => {
     const locale = getLocale();
-    const posts = await getBlogPostsFn({ data: { locale } });
-    return { locale, posts };
+    return { locale };
   },
   head: ({ loaderData }) => {
     const locale = loaderData?.locale;
@@ -45,7 +41,7 @@ export const Route = createFileRoute('/blog/')({
 });
 
 function BlogPage() {
-  const { locale, posts } = Route.useLoaderData();
+  const { locale } = Route.useLoaderData();
 
   return (
     <div className="bg-background text-foreground flex min-h-screen flex-col">
@@ -60,26 +56,7 @@ function BlogPage() {
               {m['blog.description']()}
             </p>
           </div>
-          {posts.length === 0 ? (
-            <p className="text-muted-foreground text-center">
-              {m['blog.no_posts']()}
-            </p>
-          ) : (
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {posts.map((post) => (
-                <BlogCard
-                  key={post.slug}
-                  href={`/blog/${post.slug}`}
-                  title={post.title}
-                  description={post.description}
-                  image={post.image}
-                  date={formatPostDate(post.createdAt, locale)}
-                  authorName={post.authorName}
-                  authorImage={post.authorImage}
-                />
-              ))}
-            </div>
-          )}
+          <HtmlList locale={locale} />
           <HtmlUpload />
         </div>
       </main>
