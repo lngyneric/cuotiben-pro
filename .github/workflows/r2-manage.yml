@@ -16,7 +16,7 @@ jobs:
       - run: npm install -g wrangler
       - name: R2 list
         if: inputs.action == 'list'
-        run: npx wrangler r2 object list cuotiben-html 2>&1 | head -30
+        run: npx wrangler r2 object list --bucket cuotiben-html 2>&1 | head -30
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
