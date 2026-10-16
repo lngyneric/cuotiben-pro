@@ -65,11 +65,20 @@ export function loadLocalPost(slug: string, locale: string): PostModule | null {
   if (!BLOG_POST_SLUGS.includes(slug as (typeof BLOG_POST_SLUGS)[number])) {
     return null;
   }
-  return (
+  // 请求语言 → base 语言 → 该 slug 任意已有的语言版本
+  // （如仅有中文版的家庭文章，在英文版页面也要能显示，而不是直接消失）
+  const direct =
     postModules[`/src/content/posts/${slug}.${locale}.mdx`] ??
     postModules[`/src/content/posts/${slug}.${baseLocale}.mdx`] ??
-    null
-  );
+    null;
+  if (direct) return direct;
+  const prefix = `/src/content/posts/${slug}.`;
+  for (const key of Object.keys(postModules)) {
+    if (key.startsWith(prefix) && key.endsWith('.mdx')) {
+      return postModules[key];
+    }
+  }
+  return null;
 }
 
 function localPostToItem(slug: string, meta: BlogPostMeta): BlogPost {
