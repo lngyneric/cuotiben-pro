@@ -1,8 +1,14 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Calendar, ChevronRight, ExternalLink, Upload } from 'lucide-react';
+import {
+  Calendar,
+  ChevronRight,
+  ExternalLink,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 
-import { apiGet } from '@/lib/api-client';
+import { apiDelete, apiGet } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 
 interface HtmlItem {
@@ -29,6 +35,7 @@ export function HtmlList({
 }) {
   const [viewMode, setViewMode] = useState<ViewMode>('category');
   const [activeCategory, setActiveCategory] = useState<string>('全部');
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ['blog-html-list'],
@@ -77,32 +84,53 @@ export function HtmlList({
     });
 
   const renderItem = (item: HtmlItem) => (
-    <button
+    <div
       key={item.key}
-      onClick={() => onSelect(item)}
       className={cn(
-        'w-full rounded-lg border p-3 text-left transition-colors',
+        'w-full rounded-lg border p-3 transition-colors',
         selected?.key === item.key
           ? 'border-primary bg-primary/5'
           : 'border-border hover:border-primary/50'
       )}
     >
-      <div className="text-foreground text-sm leading-6 font-medium">
-        {item.title}
-      </div>
-      {item.description && (
-        <div className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-5">
-          {item.description}
+      <button onClick={() => onSelect(item)} className="w-full text-left">
+        <div className="text-foreground text-sm leading-6 font-medium">
+          {item.title}
         </div>
-      )}
-      <div className="text-muted-foreground mt-2 flex items-center gap-2 text-xs">
-        <Calendar className="size-3" />
-        {fmtDate(item.uploaded)}
-        <span className="bg-muted rounded px-1.5 py-0.5">
-          {item.category || '未分类'}
-        </span>
+        {item.description && (
+          <div className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-5">
+            {item.description}
+          </div>
+        )}
+      </button>
+      <div className="text-muted-foreground mt-2 flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2">
+          <Calendar className="size-3" />
+          {fmtDate(item.uploaded)}
+          <span className="bg-muted rounded px-1.5 py-0.5">
+            {item.category || '未分类'}
+          </span>
+        </div>
+        <button
+          onClick={async (e) => {
+            e.stopPropagation();
+            if (!confirm(`删除「${item.title}」？`)) return;
+            try {
+              await apiDelete(
+                `/api/blog/html?key=${encodeURIComponent(item.key)}`
+              );
+              queryClient.invalidateQueries({ queryKey: ['blog-html-list'] });
+            } catch (err: any) {
+              alert('删除失败: ' + err.message);
+            }
+          }}
+          className="text-muted-foreground hover:text-red-500"
+          title="删除"
+        >
+          <Trash2 className="size-3.5" />
+        </button>
       </div>
-    </button>
+    </div>
   );
 
   if (isLoading) {
