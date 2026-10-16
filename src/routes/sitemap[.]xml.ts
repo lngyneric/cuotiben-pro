@@ -69,6 +69,8 @@ export const Route = createFileRoute('/sitemap.xml')({
           }));
           const posts = mergePosts(dbPosts, getLocalPosts(baseLocale));
           for (const post of posts) {
+            // 成员专属文章不进公开 sitemap
+            if (post.membersOnly) continue;
             entries.push({
               path: `/blog/${post.slug}`,
               lastModified: post.createdAt,
@@ -79,6 +81,7 @@ export const Route = createFileRoute('/sitemap.xml')({
         } catch {
           // Database unreachable — static paths + local posts still listed.
           for (const post of getLocalPosts(baseLocale)) {
+            if (post.membersOnly) continue;
             entries.push({
               path: `/blog/${post.slug}`,
               lastModified: post.createdAt,
