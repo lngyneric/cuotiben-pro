@@ -1,20 +1,35 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Upload } from 'lucide-react';
+import { Calendar, ChevronRight, ExternalLink, Upload } from 'lucide-react';
 
 import { apiGet } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 
 interface HtmlItem {
   key: string;
   title: string;
   description: string;
+  category: string;
   size: number;
   uploaded: string;
   url: string;
 }
 
-// MDX 风格的卡片列表（替代原来的 MDX posts）
-export function HtmlList({ locale }: { locale: string }) {
+type ViewMode = 'category' | 'timeline';
+
+// 左边：分类+时间轴列表
+export function HtmlList({
+  locale,
+  selected,
+  onSelect,
+}: {
+  locale: string;
+  selected: HtmlItem | null;
+  onSelect: (item: HtmlItem) => void;
+}) {
+  const [viewMode, setViewMode] = useState<ViewMode>('category');
+  const [activeCategory, setActiveCategory] = useState<string>('全部');
+
   const { data, isLoading } = useQuery({
     queryKey: ['blog-html-list'],
     queryFn: () => apiGet<{ items: HtmlItem[] }>('/api/blog/html'),
@@ -22,60 +37,160 @@ export function HtmlList({ locale }: { locale: string }) {
 
   const items = data?.items || [];
 
-  if (isLoading) {
-    return <p className="text-muted-foreground text-center">加载中...</p>;
-  }
+  const categories = useMemo(() => {
+    const cats = new Set(items.map((i) => i.category || '未分类'));
+    return ['全部', ...Array.from(cats)];
+  }, [items]);
 
-  if (items.length === 0) {
-    return (
-      <p className="text-muted-foreground text-center">
-        暂无文章，请在下方上传 HTML
-      </p>
-    );
+  const filtered = useMemo(() => {
+    if (activeCategory === '全部') return items;
+    return items.filter((i) => (i.category || '未分类') === activeCategory);
+  }, [items, activeCategory]);
+
+  // 按分类分组
+  const byCategory = useMemo(() => {
+    const map = new Map<string, HtmlItem[]>();
+    for (const item of filtered) {
+      const cat = item.category || '未分类';
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(item);
+    }
+    return Array.from(map.entries());
+  }, [filtered]);
+
+  // 按时间轴分组（年月）
+  const byTimeline = useMemo(() => {
+    const map = new Map<string, HtmlItem[]>();
+    for (const item of filtered) {
+      const d = new Date(item.uploaded);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(item);
+    }
+    return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [filtered]);
+
+  const fmtDate = (s: string) =>
+    new Date(s).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+
+  const renderItem = (item: HtmlItem) => (
+    <button
+      key={item.key}
+      onClick={() => onSelect(item)}
+      className={cn(
+        'w-full rounded-lg border p-3 text-left transition-colors',
+        selected?.key === item.key
+          ? 'border-primary bg-primary/5'
+          : 'border-border hover:border-primary/50'
+      )}
+    >
+      <div className="text-foreground text-sm leading-6 font-medium">
+        {item.title}
+      </div>
+      {item.description && (
+        <div className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-5">
+          {item.description}
+        </div>
+      )}
+      <div className="text-muted-foreground mt-2 flex items-center gap-2 text-xs">
+        <Calendar className="size-3" />
+        {fmtDate(item.uploaded)}
+        <span className="bg-muted rounded px-1.5 py-0.5">
+          {item.category || '未分类'}
+        </span>
+      </div>
+    </button>
+  );
+
+  if (isLoading) {
+    return <p className="text-muted-foreground p-4 text-center">加载中...</p>;
   }
 
   return (
-    <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-      {items.map((item) => (
-        <a
-          key={item.key}
-          href={item.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="bg-card border-border group rounded-lg border p-6 transition-shadow hover:shadow-lg"
-        >
-          <h3 className="text-foreground mb-2 text-lg font-semibold tracking-tight group-hover:underline">
-            {item.title}
-          </h3>
-          {item.description && (
-            <p className="text-muted-foreground mb-4 line-clamp-2 text-sm leading-7">
-              {item.description}
-            </p>
+    <div className="flex h-full flex-col">
+      {/* 视图切换 */}
+      <div className="mb-3 flex gap-2">
+        <button
+          onClick={() => setViewMode('category')}
+          className={cn(
+            'rounded-full px-3 py-1 text-xs font-medium',
+            viewMode === 'category'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-muted text-muted-foreground'
           )}
-          <div className="text-muted-foreground flex items-center justify-between text-xs">
-            <span>
-              {new Date(item.uploaded).toLocaleDateString(
-                locale === 'zh' ? 'zh-CN' : 'en-US'
-              )}
-            </span>
-            <span className="text-primary inline-flex items-center gap-1 font-medium">
-              阅读 <ExternalLink className="size-3" />
-            </span>
-          </div>
-        </a>
-      ))}
+        >
+          按分类
+        </button>
+        <button
+          onClick={() => setViewMode('timeline')}
+          className={cn(
+            'rounded-full px-3 py-1 text-xs font-medium',
+            viewMode === 'timeline'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-muted text-muted-foreground'
+          )}
+        >
+          时间轴
+        </button>
+      </div>
+
+      {/* 分类筛选 */}
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            onClick={() => setActiveCategory(cat)}
+            className={cn(
+              'rounded-full border px-2.5 py-1 text-xs',
+              activeCategory === cat
+                ? 'border-primary text-primary font-medium'
+                : 'border-border text-muted-foreground'
+            )}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* 列表 */}
+      <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+        {filtered.length === 0 ? (
+          <p className="text-muted-foreground py-8 text-center text-sm">
+            暂无文章，请在下方上传
+          </p>
+        ) : viewMode === 'category' ? (
+          byCategory.map(([cat, list]) => (
+            <div key={cat}>
+              <div className="text-muted-foreground mb-2 flex items-center gap-1 text-xs font-medium">
+                <ChevronRight className="size-3" />
+                {cat} ({list.length})
+              </div>
+              <div className="space-y-2">{list.map(renderItem)}</div>
+            </div>
+          ))
+        ) : (
+          byTimeline.map(([month, list]) => (
+            <div key={month}>
+              <div className="text-muted-foreground mb-2 text-xs font-medium">
+                {month} ({list.length})
+              </div>
+              <div className="space-y-2">{list.map(renderItem)}</div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
 
+// 上传组件
 export function HtmlUpload() {
   const [uploading, setUploading] = useState(false);
+  const [category, setCategory] = useState('');
   const queryClient = useQueryClient();
-
-  const { data } = useQuery({
-    queryKey: ['blog-html-list'],
-    queryFn: () => apiGet<{ items: HtmlItem[] }>('/api/blog/html'),
-  });
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -85,8 +200,8 @@ export function HtmlUpload() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('category', category.trim() || '未分类');
 
-      // FormData 需要用原生 fetch（api-client 是 JSON）
       const res = await fetch('/api/blog/html', {
         method: 'POST',
         body: formData,
@@ -96,6 +211,7 @@ export function HtmlUpload() {
       if (json.code !== 0) throw new Error(json.message);
 
       queryClient.invalidateQueries({ queryKey: ['blog-html-list'] });
+      setCategory('');
       alert('上传成功！');
     } catch (err: any) {
       alert('上传失败: ' + err.message);
@@ -105,26 +221,30 @@ export function HtmlUpload() {
   };
 
   return (
-    <div className="bg-card mt-16 rounded-lg border p-6">
-      <h2 className="text-foreground mb-2 text-lg font-semibold tracking-tight">
-        HTML 发布
-      </h2>
-      <p className="text-muted-foreground mb-4 text-sm leading-7">
-        上传已包含 CSS 的单文件 HTML（如 tools/publish.py 生成的），保存到
-        R2，通过链接分享。渲染风格与博客文章统一。
-      </p>
-
-      <label className="bg-primary text-primary-foreground inline-flex cursor-pointer items-center gap-2 rounded-full px-6 py-2.5 text-sm font-medium hover:opacity-90">
-        <Upload className="size-4" />
-        {uploading ? '上传中...' : '上传 HTML'}
+    <div className="bg-card rounded-lg border p-4">
+      <div className="flex flex-wrap items-center gap-2">
         <input
-          type="file"
-          accept=".html,text/html"
-          onChange={handleUpload}
-          disabled={uploading}
-          className="hidden"
+          type="text"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          placeholder="分类（如 G8学习）"
+          className="border-border bg-background rounded-full border px-3 py-1.5 text-sm"
         />
-      </label>
+        <label className="bg-primary text-primary-foreground inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-1.5 text-sm font-medium hover:opacity-90">
+          <Upload className="size-4" />
+          {uploading ? '上传中...' : '上传 HTML'}
+          <input
+            type="file"
+            accept=".html,text/html"
+            onChange={handleUpload}
+            disabled={uploading}
+            className="hidden"
+          />
+        </label>
+      </div>
+      <p className="text-muted-foreground mt-2 text-xs">
+        上传 tools/publish.py 生成的单文件 HTML，标题自动从文章内容提取
+      </p>
     </div>
   );
 }
