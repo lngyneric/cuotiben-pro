@@ -191,26 +191,38 @@ export async function getDueCards(userId: string, subject?: string) {
 // ─── 种子卡导入 ──────────────────────────────────────────────────────────────
 
 export async function seedCards(userId: string) {
-  // 检查是否已导入
-  const existing = await listCards(userId);
-  if (existing.length > 0) return 0;
-
-  let count = 0;
-  for (const c of seedData as any[]) {
-    await createCard(userId, {
-      src: c.src || '',
-      subject: c.subject || '',
-      tag: c.tag || '',
-      kind: c.kind || '',
-      question: c.question || '',
-      myAnswer: c.myAnswer || '',
-      answer: c.answer || '',
-      principle: c.principle || '',
-      note: c.note || '',
-      diagram: c.diagram || null,
-      mastered: false,
-    });
-    count++;
+  const debug: any = { userId, seedLen: 0, existing: -1, imported: 0, error: null };
+  try {
+    debug.seedLen = (seedData as any[])?.length || 0;
+    const existing = await listCards(userId);
+    debug.existing = existing.length;
+    if (existing.length > 0) {
+      (globalThis as any).__seedDebug = debug;
+      return 0;
+    }
+    for (const c of seedData as any[]) {
+      await createCard(userId, {
+        src: c.src || '',
+        subject: c.subject || '',
+        tag: c.tag || '',
+        kind: c.kind || '',
+        question: c.question || '',
+        myAnswer: c.myAnswer || '',
+        answer: c.answer || '',
+        principle: c.principle || '',
+        note: c.note || '',
+        diagram: c.diagram || null,
+        mastered: false,
+      });
+      debug.imported++;
+    }
+  } catch (e: any) {
+    debug.error = e?.message || String(e);
   }
-  return count;
+  (globalThis as any).__seedDebug = debug;
+  return debug.imported;
+}
+
+export function getSeedDebug() {
+  return (globalThis as any).__seedDebug || null;
 }
