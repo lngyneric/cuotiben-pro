@@ -11,6 +11,20 @@ import {
 // Database access stays behind server functions (dynamic import keeps
 // drizzle out of the client bundle), mirroring the analytics pattern.
 
+/** 当前请求是否有登录用户（members-only 文章门禁） */
+async function hasSessionUser(): Promise<boolean> {
+  try {
+    const { getRequestHeaders } = await import('@tanstack/react-start/server');
+    const { getAuth } = await import('@/core/auth');
+    const session = await getAuth().api.getSession({
+      headers: getRequestHeaders(),
+    });
+    return !!session?.user;
+  } catch {
+    return false;
+  }
+}
+
 async function getDbPosts(): Promise<BlogPost[]> {
   try {
     const { listPublishedArticles } = await import('@/modules/posts/service');
@@ -34,14 +48,17 @@ async function getDbPosts(): Promise<BlogPost[]> {
 /**
  * All blog posts: database posts merged with local MDX posts,
  * deduped by slug (database wins), newest first.
+ * Members-only posts are filtered out for anonymous visitors.
  */
 export const getBlogPostsFn = createServerFn()
   .inputValidator((data: { locale: string; limit?: number }) => data)
   .handler(async ({ data }) => {
     const dbPosts = await getDbPosts();
-    return mergePosts(dbPosts, getLocalPosts(data.locale), {
+    const authed = await hasSessionUser();
+    const posts = mergePosts(dbPosts, getLocalPosts(data.locale), {
       limit: data.limit,
     });
+    return authed ? posts : posts.filter((p) => !p.membersOnly);
   });
 
 /**
@@ -75,6 +92,21 @@ export const getBlogPostFn = createServerFn()
     const mod = loadLocalPost(data.slug, data.locale);
     if (!mod) return null;
     const meta = mod.meta;
+    // 成员专属文章：未登录只返回元信息 + requiresAuth，前端提示登录
+    if (meta.members_only === true && !(await hasSessionUser())) {
+      return {
+        slug: data.slug,
+        title: meta.title,
+        description: meta.description,
+        image: meta.image,
+        createdAt: new Date(meta.created_at).toISOString(),
+        authorName: meta.author_name,
+        authorImage: meta.author_image,
+        source: 'local',
+        membersOnly: true,
+        requiresAuth: true,
+      };
+    }
     return {
       slug: data.slug,
       title: meta.title,
@@ -84,5 +116,6 @@ export const getBlogPostFn = createServerFn()
       authorName: meta.author_name,
       authorImage: meta.author_image,
       source: 'local',
+      membersOnly: meta.members_only === true ? true : undefined,
     };
   });

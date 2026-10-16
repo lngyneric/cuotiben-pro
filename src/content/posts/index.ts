@@ -14,6 +14,8 @@ import { baseLocale } from '@/paraglide/runtime.js';
 export const BLOG_POST_SLUGS = [
   'what-is-shipany',
   'blocks-vs-components',
+  'g8-study-plan-1016',
+  'g8-homework-report-1016',
 ] as const;
 
 export type BlogPostMeta = {
@@ -23,6 +25,8 @@ export type BlogPostMeta = {
   author_name?: string;
   author_image?: string;
   image?: string;
+  /** 仅登录用户可见（如家庭学习资料） */
+  members_only?: boolean;
 };
 
 type PostModule = {
@@ -40,11 +44,15 @@ export type BlogPost = {
   authorName?: string;
   authorImage?: string;
   source: 'local' | 'db';
+  /** 仅登录用户可见；未登录时从列表过滤、详情页提示登录 */
+  membersOnly?: boolean;
 };
 
 export type BlogPostDetail = BlogPost & {
   /** Raw markdown — set for database posts */
   content?: string;
+  /** 成员专属且当前未登录：只返回元信息，不返回正文 */
+  requiresAuth?: boolean;
 };
 
 // Eagerly bundle the local MDX posts (small markdown files), mirroring the
@@ -74,6 +82,7 @@ function localPostToItem(slug: string, meta: BlogPostMeta): BlogPost {
     authorName: meta.author_name,
     authorImage: meta.author_image,
     source: 'local',
+    membersOnly: meta.members_only === true ? true : undefined,
   };
 }
 

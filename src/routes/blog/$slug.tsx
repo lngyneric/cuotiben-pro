@@ -47,6 +47,35 @@ function BlogPostPage() {
   const LocalContent =
     post.source === 'local' ? loadLocalPost(post.slug, locale)?.default : null;
 
+  // 成员专属文章且未登录：不渲染正文，提示登录
+  if (post.requiresAuth) {
+    return (
+      <div className="bg-background text-foreground flex min-h-screen flex-col">
+        <Header />
+        <main className="flex flex-1 items-center justify-center px-6 py-16">
+          <div className="mx-auto max-w-md text-center">
+            <h1 className="text-foreground text-2xl font-semibold tracking-tight">
+              {post.title}
+            </h1>
+            {post.description && (
+              <p className="text-muted-foreground mt-3">{post.description}</p>
+            )}
+            <p className="text-muted-foreground mt-6 text-sm">
+              这篇文章仅对注册用户开放，请先登录后查看。
+            </p>
+            <Link
+              href={`/sign-in?callbackUrl=${encodeURIComponent(`/blog/${post.slug}`)}`}
+              className="bg-primary text-primary-foreground mt-6 inline-block min-h-[48px] rounded-lg px-8 py-3 font-medium"
+            >
+              去登录
+            </Link>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
   return (
     <div className="bg-background text-foreground flex min-h-screen flex-col">
       <Header />
