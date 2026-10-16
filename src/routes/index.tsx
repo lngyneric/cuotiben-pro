@@ -28,7 +28,6 @@ function HomePage() {
       <main>
         <Hero />
         <Features />
-        <Pricing />
         <FAQ />
         <Blog posts={posts} />
         <CTA />
