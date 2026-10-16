@@ -186,3 +186,32 @@ export async function getDueCards(userId: string, subject?: string) {
     return new Date(s.due).getTime() <= now;
   });
 }
+
+// ─── 种子卡导入 ──────────────────────────────────────────────────────────────
+
+import seedData from './seed.json';
+
+export async function seedCards(userId: string) {
+  // 检查是否已导入
+  const existing = await listCards(userId);
+  if (existing.length > 0) return 0;
+
+  let count = 0;
+  for (const c of seedData as any[]) {
+    await createCard(userId, {
+      src: c.src || '',
+      subject: c.subject || '',
+      tag: c.tag || '',
+      kind: c.kind || '',
+      question: c.question || '',
+      myAnswer: c.myAnswer || '',
+      answer: c.answer || '',
+      principle: c.principle || '',
+      note: c.note || '',
+      diagram: c.diagram || null,
+      mastered: false,
+    });
+    count++;
+  }
+  return count;
+}
