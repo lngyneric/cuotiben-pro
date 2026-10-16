@@ -35,15 +35,26 @@ async function POST({ request }: { request: Request }) {
 
     const content = await file.text();
 
-    // 简单安全检查：不允许 <script src=> 外部脚本（内联 script 允许，用于单文件发布）
-    // 实际渲染时用 iframe sandbox 隔离
+    // 提取标题和描述，用于博客卡片展示
+    const titleMatch = content.match(/<title>([^<]*)<\/title>/i);
+    const descMatch = content.match(
+      /<meta\s+name="description"\s+content="([^"]*)"/i
+    );
+    const title = titleMatch?.[1]?.trim() || file.name.replace('.html', '');
+    const description = descMatch?.[1]?.trim() || '';
 
     const key = `html/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     await bucket.put(key, content, {
       httpMetadata: { contentType: 'text/html; charset=utf-8' },
+      customMetadata: { title, description },
     });
 
-    return respData({ key, url: `/api/blog/html/${encodeURIComponent(key)}` });
+    return respData({
+      key,
+      title,
+      description,
+      url: `/api/blog/html/${encodeURIComponent(key)}`,
+    });
   } catch (error: any) {
     return respErr(error.message || 'Upload failed');
   }
@@ -60,12 +71,34 @@ async function GET({ request }: { request: Request }) {
     if (!bucket) return respErr('R2 bucket not configured');
 
     const listed = await bucket.list({ prefix: 'html/' });
-    const items = (listed.objects || []).map((o: any) => ({
-      key: o.key,
-      size: o.size,
-      uploaded: o.uploaded,
-      url: `/api/blog/html/${encodeURIComponent(o.key)}`,
-    }));
+    const items = await Promise.all(
+      (listed.objects || []).map(async (o: any) => {
+        // 从 R2 head 获取自定义元数据（标题/描述）
+        let title = o.key.replace('html/', '').replace('.html', '');
+        let description = '';
+        try {
+          const head = await bucket.head(o.key);
+          if (head?.customMetadata?.title) title = head.customMetadata.title;
+          if (head?.customMetadata?.description)
+            description = head.customMetadata.description;
+        } catch {
+          // 忽略，fallback 用文件名
+        }
+        return {
+          key: o.key,
+          title,
+          description,
+          size: o.size,
+          uploaded: o.uploaded,
+          url: `/api/blog/html/${encodeURIComponent(o.key)}`,
+        };
+      })
+    );
+
+    // 按上传时间倒序
+    items.sort(
+      (a, b) => new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime()
+    );
 
     return respData({ items });
   } catch (error: any) {
