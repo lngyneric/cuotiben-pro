@@ -33,6 +33,8 @@ jobs:
           sed -i 's/"database_name": "shipany-db"/"database_name": "cuotiben-pro-db"/' wrangler.jsonc
           sed -i 's/"name": "shipany-tanstack"/"name": "cuotiben-pro"/' wrangler.jsonc
           sed -i "s|https://<worker>.<your-subdomain>.workers.dev|https://cuotiben-pro.lng-yn.workers.dev|" wrangler.jsonc
+          # R2 bucket for HTML uploads
+          sed -i 's|// "r2_buckets":     \[{ "binding": "BUCKET", "bucket_name": "..." }\]|"r2_buckets": [{ "binding": "HTML_BUCKET", "bucket_name": "cuotiben-html" }]|' wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
