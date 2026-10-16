@@ -24,6 +24,9 @@ function CuotibenPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [showAnswer, setShowAnswer] = useState<Record<string, boolean>>({});
+  const [showImport, setShowImport] = useState(false);
+  const [importJson, setImportJson] = useState('');
+  const [importing, setImporting] = useState(false);
   const [studyMode, setStudyMode] = useState(false);
   const [studyIdx, setStudyIdx] = useState(0);
   const [dueCards, setDueCards] = useState<Card[]>([]);
@@ -160,13 +163,35 @@ function CuotibenPage() {
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ action: 'seed' }),
                 });
-                const j = await r.json();
-                alert(`导入了 ${j.data?.count || 0} 张卡`);
+                let msg: string;
+                try {
+                  const j = await r.json();
+                  // 服务端调试版返回 { count, debug }；respErr 时只有 { code:-1, message }
+                  // 之前这里只取 j.data?.count，任何服务端错误都被显示成"0 张卡"
+                  const detail = j.data?.debug
+                    ? `\n调试信息: ${JSON.stringify(j.data.debug)}`
+                    : j.code !== 0 && j.message
+                      ? `\n服务端错误: ${j.message}`
+                      : '';
+                  msg = `导入了 ${j.data?.count || 0} 张卡${detail}`;
+                } catch {
+                  // 非 JSON 响应（如边缘 500 页面）：r.json() 会抛错
+                  msg = `请求失败(HTTP ${r.status})，请把这条提示截图发我`;
+                }
+                alert(msg);
                 load();
               }}
               className="rounded bg-green-500 px-4 py-2 text-white"
             >
               导入种子题库
+            </button>
+          )}
+          {cards.length === 0 && (
+            <button
+              onClick={() => setShowImport(!showImport)}
+              className="rounded bg-purple-500 px-4 py-2 text-white"
+            >
+              手动导入 JSON
             </button>
           )}
           <button
@@ -177,6 +202,56 @@ function CuotibenPage() {
           </button>
         </div>
       </div>
+
+      {showImport && (
+        <div className="mb-4 rounded-lg border p-4">
+          <h3 className="mb-2 font-bold">手动导入</h3>
+          <input
+            type="file"
+            accept=".json"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) {
+                const reader = new FileReader();
+                reader.onload = () => setImportJson(reader.result as string);
+                reader.readAsText(f);
+              }
+            }}
+            className="mb-2"
+          />
+          <textarea
+            value={importJson}
+            onChange={(e) => setImportJson(e.target.value)}
+            placeholder='粘贴 JSON 数组，如 [{"question":"...","answer":"..."}]'
+            className="mb-2 h-32 w-full rounded border p-2 font-mono text-sm"
+          />
+          <button
+            disabled={importing || !importJson.trim()}
+            onClick={async () => {
+              setImporting(true);
+              try {
+                const cards = JSON.parse(importJson);
+                const r = await fetch('/api/cuotiben', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'import', cards }),
+                });
+                const j = await r.json();
+                alert(`导入了 ${j.data?.count || 0} 张卡${j.code !== 0 ? '\n错误: ' + j.message : ''}`);
+                setShowImport(false);
+                setImportJson('');
+                load();
+              } catch (e: any) {
+                alert('JSON 格式错误: ' + e.message);
+              }
+              setImporting(false);
+            }}
+            className="rounded bg-purple-500 px-4 py-2 text-white disabled:opacity-50"
+          >
+            {importing ? '导入中...' : '开始导入'}
+          </button>
+        </div>
+      )}
 
       <input
         value={filter}

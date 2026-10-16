@@ -67,6 +67,30 @@ async function POST({ request }: { request: Request }) {
       const count = await seedCards(user.id);
       return respData({ count, debug: getSeedDebug() });
     }
+    if (action === 'import') {
+      const { createCard } = await import('@/modules/cuotiben/service');
+      const cards = body.cards;
+      if (!Array.isArray(cards)) return respErr('cards must be an array');
+      let count = 0;
+      for (const c of cards) {
+        if (!c.question) continue;
+        await createCard(user.id, {
+          src: c.src || '',
+          subject: c.subject || '',
+          tag: c.tag || '',
+          kind: c.kind || '',
+          question: c.question || '',
+          myAnswer: c.myAnswer || '',
+          answer: c.answer || '',
+          principle: c.principle || '',
+          note: c.note || '',
+          diagram: c.diagram || null,
+          mastered: false,
+        });
+        count++;
+      }
+      return respData({ count });
+    }
     return respErr('Unknown action');
   } catch (error: any) {
     return respErr(error.message || 'Failed');
