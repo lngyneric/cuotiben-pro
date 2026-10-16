@@ -116,6 +116,29 @@ async function GET({ request }: { request: Request }) {
 
 export const Route = createFileRoute('/api/blog/html')({
   server: {
-    handlers: { GET, POST },
+    handlers: { GET, POST, DELETE },
   },
 });
+
+// DELETE /api/blog/html?key=xxx — 删除 R2 中的 HTML 文件
+async function DELETE({ request }: { request: Request }) {
+  try {
+    const auth = getAuth();
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session?.user) return respErr('Unauthorized');
+
+    const bucket = getBucket();
+    if (!bucket) return respErr('R2 bucket not configured');
+
+    const url = new URL(request.url);
+    const key = url.searchParams.get('key');
+    if (!key || !key.startsWith('html/')) {
+      return respErr('Invalid key');
+    }
+
+    await bucket.delete(key);
+    return respData({ ok: true });
+  } catch (error: any) {
+    return respErr(error.message || 'Delete failed');
+  }
+}
