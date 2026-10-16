@@ -16,7 +16,7 @@ export async function listCards(userId: string, subject?: string) {
   const where = subject
     ? and(eq(cuotibenCard.userId, userId), eq(cuotibenCard.subject, subject))
     : eq(cuotibenCard.userId, userId);
-  return db
+  return db()
     .select()
     .from(cuotibenCard)
     .where(where)
@@ -24,7 +24,7 @@ export async function listCards(userId: string, subject?: string) {
 }
 
 export async function getCard(userId: string, cardId: string) {
-  const rows = await db
+  const rows = await db()
     .select()
     .from(cuotibenCard)
     .where(
@@ -39,7 +39,7 @@ export async function createCard(
   data: Omit<NewCuotibenCard, 'id' | 'userId' | 'createdAt'>
 ) {
   const id = getUuid();
-  await db.insert(cuotibenCard).values({
+  await db().insert(cuotibenCard).values({
     id,
     userId,
     ...data,
@@ -52,7 +52,7 @@ export async function updateCard(
   cardId: string,
   data: Partial<Omit<NewCuotibenCard, 'id' | 'userId'>>
 ) {
-  await db
+  await db()
     .update(cuotibenCard)
     .set(data)
     .where(
@@ -61,13 +61,13 @@ export async function updateCard(
 }
 
 export async function deleteCard(userId: string, cardId: string) {
-  await db
+  await db()
     .delete(cuotibenCard)
     .where(
       and(eq(cuotibenCard.userId, userId), eq(cuotibenCard.id, cardId))
     );
   // 清理关联的 SRS 和日志
-  await db
+  await db()
     .delete(cuotibenSrs)
     .where(
       and(eq(cuotibenSrs.userId, userId), eq(cuotibenSrs.cardId, cardId))
@@ -83,7 +83,7 @@ export async function logAttempt(
   ok: boolean,
   skip = false
 ) {
-  await db.insert(cuotibenQaLog).values({
+  await db().insert(cuotibenQaLog).values({
     id: getUuid(),
     userId,
     cardId,
@@ -97,7 +97,7 @@ export async function logAttempt(
 }
 
 export async function getStats(userId: string, since: Date) {
-  const rows = await db
+  const rows = await db()
     .select()
     .from(cuotibenQaLog)
     .where(
@@ -123,7 +123,7 @@ export async function updateSrs(
   skip: boolean
 ) {
   const now = Date.now();
-  const rows = await db
+  const rows = await db()
     .select()
     .from(cuotibenSrs)
     .where(
@@ -159,21 +159,21 @@ export async function updateSrs(
   const due = new Date(now + ivl * DAY);
 
   if (cur) {
-    await db
+    await db()
       .update(cuotibenSrs)
       .set({ ivl, ease, due, reps })
       .where(
         and(eq(cuotibenSrs.userId, userId), eq(cuotibenSrs.cardId, cardId))
       );
   } else {
-    await db.insert(cuotibenSrs).values({ userId, cardId, ivl, ease, due, reps });
+    await db().insert(cuotibenSrs).values({ userId, cardId, ivl, ease, due, reps });
   }
 }
 
 /** 到期的卡片（SRS due <= now，或从未学过的卡） */
 export async function getDueCards(userId: string, subject?: string) {
   const cards = await listCards(userId, subject);
-  const srsRows = await db
+  const srsRows = await db()
     .select()
     .from(cuotibenSrs)
     .where(eq(cuotibenSrs.userId, userId));
