@@ -151,12 +151,31 @@ function CuotibenPage() {
     <div className="mx-auto max-w-4xl p-4">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold">错题本</h1>
-        <button
-          onClick={loadDue}
-          className="rounded bg-blue-500 px-4 py-2 text-white"
-        >
-          开始学习
-        </button>
+        <div className="flex gap-2">
+          {cards.length === 0 && (
+            <button
+              onClick={async () => {
+                const r = await fetch('/api/cuotiben', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'seed' }),
+                });
+                const j = await r.json();
+                alert(`导入了 ${j.data?.count || 0} 张卡`);
+                load();
+              }}
+              className="rounded bg-green-500 px-4 py-2 text-white"
+            >
+              导入种子题库
+            </button>
+          )}
+          <button
+            onClick={loadDue}
+            className="rounded bg-blue-500 px-4 py-2 text-white"
+          >
+            开始学习
+          </button>
+        </div>
       </div>
 
       <input

@@ -62,6 +62,11 @@ async function POST({ request }: { request: Request }) {
       await logAttempt(user.id, body.cardId, body.kind, body.ok, body.skip);
       return respData({ ok: true });
     }
+    if (action === 'seed') {
+      const { seedCards } = await import('@/modules/cuotiben/service');
+      const count = await seedCards(user.id);
+      return respData({ count });
+    }
     return respErr('Unknown action');
   } catch (error: any) {
     return respErr(error.message || 'Failed');
