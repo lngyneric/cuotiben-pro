@@ -7,8 +7,13 @@ import {
   getCard,
   getDueCards,
   getStats,
+  isMathCard,
   listCards,
   logAttempt,
+  qaApproaches,
+  qaFollowup,
+  qaHint,
+  qaJudge,
   updateCard,
 } from '@/modules/cuotiben/service';
 import { respData, respErr } from '@/lib/resp';
@@ -63,7 +68,8 @@ async function POST({ request }: { request: Request }) {
       return respData({ ok: true });
     }
     if (action === 'seed') {
-      const { seedCards, getSeedDebug } = await import('@/modules/cuotiben/service');
+      const { seedCards, getSeedDebug } =
+        await import('@/modules/cuotiben/service');
       const count = await seedCards(user.id);
       return respData({ count, debug: getSeedDebug() });
     }
@@ -90,6 +96,43 @@ async function POST({ request }: { request: Request }) {
         count++;
       }
       return respData({ count });
+    }
+    if (action === 'qa') {
+      // 问答接口：op = approaches | judge | hint | followup
+      // 当前为 MOCK 实现；接入 Workers AI 后替换 service 层函数体即可
+      const op = body.op;
+      if (op === 'approaches') {
+        const card = body.cardId ? await getCard(user.id, body.cardId) : null;
+        if (!card) return respErr('Card not found');
+        const { options, followup } = await qaApproaches(card);
+        return respData({ mock: true, options, followup });
+      }
+      if (op === 'followup') {
+        const card = body.cardId ? await getCard(user.id, body.cardId) : null;
+        if (!card) return respErr('Card not found');
+        return respData({ mock: true, ...(await qaFollowup(card)) });
+      }
+      if (op === 'hint') {
+        const card = body.cardId ? await getCard(user.id, body.cardId) : null;
+        const { hint } = await qaHint(
+          { principle: card?.principle || body.principle || '' },
+          body.student || '',
+          body.attempt || 0
+        );
+        return respData({ mock: true, hint });
+      }
+      if (op === 'judge') {
+        const expected =
+          body.expected ||
+          (body.cardId ? (await getCard(user.id, body.cardId))?.answer : '') ||
+          '';
+        const { correct, confidence } = await qaJudge(
+          expected,
+          body.student || ''
+        );
+        return respData({ mock: true, correct, confidence });
+      }
+      return respErr('Unknown qa op');
     }
     return respErr('Unknown action');
   } catch (error: any) {
