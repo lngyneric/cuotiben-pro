@@ -50,14 +50,16 @@ export function HtmlUpload() {
   const items = data?.items || [];
 
   return (
-    <div className="mt-16 rounded-lg border p-6">
-      <h2 className="mb-4 text-xl font-bold">HTML 发布</h2>
-      <p className="text-muted-foreground mb-4 text-sm">
+    <div className="bg-card mt-16 rounded-lg border p-6">
+      <h2 className="text-foreground mb-2 text-lg font-semibold tracking-tight">
+        HTML 发布
+      </h2>
+      <p className="text-muted-foreground mb-4 text-sm leading-7">
         上传已包含 CSS 的单文件 HTML（如 tools/publish.py 生成的），保存到
-        R2，通过链接分享。
+        R2，通过链接分享。渲染风格与博客 MDX 文章统一。
       </p>
 
-      <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-white hover:bg-blue-600">
+      <label className="bg-primary text-primary-foreground inline-flex cursor-pointer items-center gap-2 rounded-full px-6 py-2.5 text-sm font-medium hover:opacity-90">
         <Upload className="size-4" />
         {uploading ? '上传中...' : '上传 HTML'}
         <input
@@ -71,19 +73,21 @@ export function HtmlUpload() {
 
       {items.length > 0 && (
         <div className="mt-6">
-          <h3 className="mb-3 font-semibold">已发布 ({items.length})</h3>
+          <h3 className="text-foreground mb-3 text-base font-semibold">
+            已发布 ({items.length})
+          </h3>
           <div className="space-y-2">
             {items.map((item) => (
               <div
                 key={item.key}
-                className="flex items-center justify-between rounded border p-3"
+                className="border-border flex items-center justify-between rounded-lg border p-3"
               >
                 <div className="flex items-center gap-2">
-                  <FileText className="size-4 text-gray-500" />
-                  <span className="text-sm">
+                  <FileText className="text-muted-foreground size-4" />
+                  <span className="text-foreground text-sm">
                     {item.key.replace('html/', '')}
                   </span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-muted-foreground text-xs">
                     {(item.size / 1024).toFixed(1)}KB
                   </span>
                 </div>
@@ -91,7 +95,7 @@ export function HtmlUpload() {
                   href={item.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-sm text-blue-500 hover:underline"
+                  className="text-primary inline-flex items-center gap-1 text-sm font-medium underline-offset-4 hover:underline"
                 >
                   查看 <ExternalLink className="size-3" />
                 </a>
