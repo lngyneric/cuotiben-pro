@@ -8,6 +8,7 @@ import {
   type NewCuotibenCard,
 } from '@/config/db/schema';
 import { getUuid } from '@/lib/hash';
+import { seedData } from './seed-data';
 
 // ─── Cards ───────────────────────────────────────────────────────────────────
 
@@ -188,8 +189,6 @@ export async function getDueCards(userId: string, subject?: string) {
 }
 
 // ─── 种子卡导入 ──────────────────────────────────────────────────────────────
-
-import { seedData } from './seed-data';
 
 export async function seedCards(userId: string) {
   // 检查是否已导入
