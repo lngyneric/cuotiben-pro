@@ -40,19 +40,23 @@ async function POST({ request }: { request: Request }) {
     const descMatch = content.match(
       /<meta\s+name="description"\s+content="([^"]*)"/i
     );
+    // 尝试从文件名推断分类（如 g8-study-plan → G8学习）
+    // 优先用表单提交的 category
+    const category = (formData.get('category') as string) || '未分类';
     const title = titleMatch?.[1]?.trim() || file.name.replace('.html', '');
     const description = descMatch?.[1]?.trim() || '';
 
     const key = `html/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     await bucket.put(key, content, {
       httpMetadata: { contentType: 'text/html; charset=utf-8' },
-      customMetadata: { title, description },
+      customMetadata: { title, description, category },
     });
 
     return respData({
       key,
       title,
       description,
+      category,
       url: `/api/blog/html/${encodeURIComponent(key)}`,
     });
   } catch (error: any) {
@@ -73,14 +77,17 @@ async function GET({ request }: { request: Request }) {
     const listed = await bucket.list({ prefix: 'html/' });
     const items = await Promise.all(
       (listed.objects || []).map(async (o: any) => {
-        // 从 R2 head 获取自定义元数据（标题/描述）
+        // 从 R2 head 获取自定义元数据（标题/描述/分类）
         let title = o.key.replace('html/', '').replace('.html', '');
         let description = '';
+        let category = '未分类';
         try {
           const head = await bucket.head(o.key);
           if (head?.customMetadata?.title) title = head.customMetadata.title;
           if (head?.customMetadata?.description)
             description = head.customMetadata.description;
+          if (head?.customMetadata?.category)
+            category = head.customMetadata.category;
         } catch {
           // 忽略，fallback 用文件名
         }
@@ -88,6 +95,7 @@ async function GET({ request }: { request: Request }) {
           key: o.key,
           title,
           description,
+          category,
           size: o.size,
           uploaded: o.uploaded,
           url: `/api/blog/html/${encodeURIComponent(o.key)}`,
