@@ -37,6 +37,21 @@ function assertProductionAuthSecret() {
   }
 }
 
+// Browsers share cookies across ports, so several projects on localhost would
+// overwrite each other's session cookie. AUTH_COOKIE_PREFIX wins; in dev the
+// app name gives each project its own cookie names. Production keeps
+// better-auth's default so existing sessions survive an upgrade.
+export function getAuthCookiePrefix(): string {
+  const source =
+    envConfigs.auth_cookie_prefix ||
+    (process.env.NODE_ENV === 'production' ? '' : envConfigs.app_name);
+  const slug = (source || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'better-auth';
+}
+
 const recentVerificationEmailSentAt = new Map<string, number>();
 const VERIFICATION_EMAIL_MIN_INTERVAL_MS = 60_000;
 
@@ -365,6 +380,7 @@ export function getAuth(configs?: Record<string, string>) {
       },
     },
     advanced: {
+      cookiePrefix: getAuthCookiePrefix(),
       database: { generateId: () => getUuid() },
     },
     emailAndPassword: {

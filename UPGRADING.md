@@ -46,6 +46,85 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-10-17: Per-project session cookies in dev
+
+Browsers share cookies across ports, so several projects running `pnpm dev`
+on `localhost` overwrote each other's `better-auth.*` session cookie, and a
+reload in one project signed you out of all of them. In dev the cookie prefix
+now comes from `AUTH_COOKIE_PREFIX`, or else a slug of `VITE_APP_NAME` (e.g.
+`My App` → `my-app.session_token`). Production keeps `better-auth` unless
+`AUTH_COOKIE_PREFIX` is set, so deployed users stay signed in.
+
+### Action required
+
+- [ ] **Code that reads `better-auth.session_token` directly**: build the name
+      from `getAuthCookiePrefix()` (`@/core/auth`) instead, as
+      `src/routes/api/auth/token.ts` does. Otherwise it breaks in dev.
+- [ ] **Several local projects with the same `VITE_APP_NAME`**: give each a
+      different `AUTH_COOKIE_PREFIX` in `.env.development`.
+
+Local dev sessions sign out once after the upgrade. No schema, permission or
+production changes.
+
+---
+
+## 2026-10-17: Appearance settings (off by default)
+
+Admin Settings → General → Appearance gets a master switch, **Enable
+appearance settings** (`appearance_enabled`). It is **off by default**, and
+while off the site renders exactly from code: the `:root`/`.dark` palette in
+`globals.css`, the fonts there, `DEFAULT_APPEARANCE` for the sidebar, light/dark
+per visitor, and `<Toaster richColors>`. No `data-theme` attribute or inline
+style is put on `<html>`.
+
+Turned on, the admin picks:
+
+- **Light / dark** (`app_color_mode`): the default for visitors who haven't
+  picked one. With "Let users pick their own theme color" off, Light or Dark
+  is forced on everyone and the toggles are hidden.
+- **Site theme** (Classic, Forest, Ocean, Violet, Sunset, Rose, Slate): this
+  replaces the code palette (Classic is a layered neutral, not your
+  `:root`). The colored themes paint the dashboard sidebar and tint the main
+  area.
+- **Font** (Inter, System, Rounded, Serif). Self-hosted, OFL-licensed.
+- **Font size** (Small, Medium, Large): scales rem, like browser zoom.
+- **Sidebar style** (Inset, Floating, Classic = shadcn `variant`) and
+  **collapse** (hide completely, or collapse to icons = shadcn `collapsible`).
+- **Let users pick their own theme color** (`user_theme_enabled`): adds a
+  theme color picker to the user menu (cookie `app_theme`). Users can change
+  nothing else.
+
+Appearance fields save on click. Presets live in `src/config/appearance.ts`.
+
+### Action required
+
+- [ ] **Install**: `pnpm install` (adds `@fontsource-variable/nunito` and
+      `@fontsource-variable/source-serif-4`).
+- [ ] **`src/styles/globals.css`**: the template only _adds_ a "Color themes"
+      block and a toast block; `:root`/`.dark` are unchanged. Keep your
+      palette and copy those two blocks in.
+- [ ] **Dashboard sidebar header** (always on, not behind the switch): the
+      brand row is now as tall as the content header, so it lines up with the
+      sidebar toggle. It also shows the `VITE_APP_LOGO` image (default
+      `/logo.svg`) when that URL loads. Check that your logo looks right
+      there. The template's `.env.example` used to point at a missing
+      `/logo.png`; fix it in your env files if you copied that.
+- [ ] **`<html data-theme>`**: if your project (or a library such as
+      daisyUI) already uses `data-theme` on `<html>`, keep the switch off or
+      rename one of them.
+- [ ] **Customized `__root.tsx`**: keep the template's `ThemeProvider`
+      `defaultTheme`/`forcedTheme` and `Toaster richColors` expressions. If you
+      had hard-coded `defaultTheme="dark"`, set `DEFAULT_COLOR_MODE = 'dark'`
+      in `src/config/appearance.ts` instead.
+- [ ] **Customized `app-sidebar.tsx` / `app-layout.tsx` / `user-menu.tsx`**:
+      merge the new props (`variant`, `collapsible`, `logo`), and keep sidebar
+      text on `sidebar-foreground` tokens so it stays readable on a colored
+      sidebar.
+
+No schema, env or permission changes.
+
+---
+
 ## 2026-10-12: Activity timeline, product events, admin password reset
 
 ### Action required

@@ -7,12 +7,15 @@ import {
   MoonIcon,
   PaletteIcon,
   SunIcon,
+  SwatchBookIcon,
   UserIcon,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
 import { signOut } from '@/core/auth/client';
+import { tDynamic } from '@/core/i18n/dynamic';
 import { useRouter } from '@/core/i18n/navigation';
+import { THEMES } from '@/config/appearance';
 import { localeNames } from '@/config/locale';
 import { m } from '@/paraglide/messages.js';
 import {
@@ -21,6 +24,8 @@ import {
   localizeHref,
   setLocale,
 } from '@/paraglide/runtime.js';
+import { useAppearance } from '@/hooks/use-appearance';
+import { ThemeDot } from '@/components/appearance-options';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -55,6 +60,15 @@ export function UserMenu({
   const router = useRouter();
   const locale = getLocale();
   const { theme, setTheme } = useTheme();
+  const {
+    siteAppearance,
+    userTheme,
+    userThemeEnabled,
+    colorModeForced,
+    setUserTheme,
+  } = useAppearance();
+  const siteSwatch =
+    THEMES.find((t) => t.id === siteAppearance.theme)?.swatch ?? '';
   const { isMobile } = useSidebar();
 
   async function handleSignOut() {
@@ -85,7 +99,7 @@ export function UserMenu({
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{name}</span>
-                <span className="text-foreground/70 truncate text-xs">
+                <span className="text-sidebar-foreground/70 truncate text-xs">
                   {email}
                 </span>
               </div>
@@ -144,39 +158,75 @@ export function UserMenu({
                 ))}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger className="gap-2 px-2 py-2">
-                <PaletteIcon className="size-4" />
-                <span className="flex-1">
-                  {theme === 'dark'
-                    ? m['common.nav.theme_dark']()
-                    : theme === 'light'
-                      ? m['common.nav.theme_light']()
-                      : m['common.nav.theme_system']()}
-                </span>
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                <DropdownMenuItem onClick={() => setTheme('light')}>
-                  <SunIcon className="size-4" />
+            {!colorModeForced && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="gap-2 px-2 py-2">
+                  <PaletteIcon className="size-4" />
                   <span className="flex-1">
-                    {m['common.nav.theme_light']()}
+                    {theme === 'dark'
+                      ? m['common.nav.theme_dark']()
+                      : theme === 'light'
+                        ? m['common.nav.theme_light']()
+                        : m['common.nav.theme_system']()}
                   </span>
-                  {theme === 'light' && <CheckIcon className="size-3.5" />}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme('dark')}>
-                  <MoonIcon className="size-4" />
-                  <span className="flex-1">{m['common.nav.theme_dark']()}</span>
-                  {theme === 'dark' && <CheckIcon className="size-3.5" />}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme('system')}>
-                  <MonitorIcon className="size-4" />
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onClick={() => setTheme('light')}>
+                    <SunIcon className="size-4" />
+                    <span className="flex-1">
+                      {m['common.nav.theme_light']()}
+                    </span>
+                    {theme === 'light' && <CheckIcon className="size-3.5" />}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setTheme('dark')}>
+                    <MoonIcon className="size-4" />
+                    <span className="flex-1">
+                      {m['common.nav.theme_dark']()}
+                    </span>
+                    {theme === 'dark' && <CheckIcon className="size-3.5" />}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setTheme('system')}>
+                    <MonitorIcon className="size-4" />
+                    <span className="flex-1">
+                      {m['common.nav.theme_system']()}
+                    </span>
+                    {theme === 'system' && <CheckIcon className="size-3.5" />}
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
+            {userThemeEnabled && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="gap-2 px-2 py-2">
+                  <SwatchBookIcon className="size-4" />
                   <span className="flex-1">
-                    {m['common.nav.theme_system']()}
+                    {m['common.nav.theme_color']()}
                   </span>
-                  {theme === 'system' && <CheckIcon className="size-3.5" />}
-                </DropdownMenuItem>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem onClick={() => setUserTheme(null)}>
+                    <ThemeDot color={siteSwatch} className="size-3.5" />
+                    <span className="flex-1">
+                      {m['common.themes.site_default']()}
+                    </span>
+                    {!userTheme && <CheckIcon className="size-3.5" />}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {THEMES.map((t) => (
+                    <DropdownMenuItem
+                      key={t.id}
+                      onClick={() => setUserTheme(t.id)}
+                    >
+                      <ThemeDot color={t.swatch} className="size-3.5" />
+                      <span className="flex-1">
+                        {tDynamic(`common.themes.${t.id}`)}
+                      </span>
+                      {userTheme === t.id && <CheckIcon className="size-3.5" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut}>
               <LogOutIcon className="size-4" />

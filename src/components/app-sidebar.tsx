@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, type LucideIcon } from 'lucide-react';
 
 import { Link, usePathname } from '@/core/i18n/navigation';
@@ -39,18 +39,35 @@ export interface NavItem {
 
 export function AppSidebar({
   brand,
+  logo,
   brandHref = '/',
   navItems,
   footerNavItems,
   footer,
+  variant = 'inset',
+  collapsible = 'offcanvas',
 }: {
   brand: React.ReactNode;
+  /** Logo image shown before the brand (alone on the icon rail). */
+  logo?: string;
   brandHref?: string;
   navItems: NavItem[];
   footerNavItems?: NavItem[];
   footer?: React.ReactNode;
+  variant?: 'sidebar' | 'floating' | 'inset';
+  /** offcanvas hides the sidebar on toggle; icon shrinks it to an icon rail. */
+  collapsible?: 'offcanvas' | 'icon';
 }) {
   const pathname = usePathname();
+  // A misconfigured logo URL falls back to the text brand, not a broken image.
+  const [logoFailed, setLogoFailed] = useState(false);
+  const showLogo = !!logo && !logoFailed;
+  // The SSR'd image may have failed before hydration, when onError can't fire.
+  const logoRef = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    const img = logoRef.current;
+    if (img?.complete && img.naturalWidth === 0) setLogoFailed(true);
+  }, [logo]);
 
   // Group nav items by their (static) group label.
   const groups: { label?: string; items: NavItem[] }[] = [];
@@ -80,10 +97,14 @@ export function AppSidebar({
     return set;
   };
 
-  // Which collapsible parents are open. Seeded with the active parent (SSR-safe,
-  // derived from the path), then merged with the persisted set after mount.
+  // Hrefs of every collapsible parent: all open by default.
+  const allParents = () =>
+    new Set(navItems.filter((i) => i.items?.length).map((i) => i.href));
+
+  // Which collapsible parents are open. Seeded with all of them (SSR-safe),
+  // then replaced by the persisted set after mount if the user has one.
   const storageKey = `sidebar-open:${brandHref}`;
-  const [openItems, setOpenItems] = useState<Set<string>>(activeParents);
+  const [openItems, setOpenItems] = useState<Set<string>>(allParents);
 
   useEffect(() => {
     let saved: string[] | null = null;
@@ -91,7 +112,7 @@ export function AppSidebar({
       saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
     } catch {}
     setOpenItems(() => {
-      const next = saved ? new Set(saved) : new Set<string>();
+      const next = saved ? new Set(saved) : allParents();
       for (const href of activeParents()) next.add(href);
       return next;
     });
@@ -127,17 +148,34 @@ export function AppSidebar({
   }
 
   return (
-    <Sidebar variant="inset">
-      <SidebarHeader>
+    <Sidebar variant={variant} collapsible={collapsible}>
+      {/* Same height as the content header (h-14) so the brand centers on
+          the sidebar toggle, with equal space above and below. */}
+      <SidebarHeader className="h-14 justify-center py-0">
         <SidebarMenu>
           <SidebarMenuItem>
             <Link
               href={brandHref}
-              className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
+              className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0"
             >
-              <span className="flex-1 font-serif text-lg leading-none italic">
+              {showLogo && (
+                <img
+                  ref={logoRef}
+                  src={logo}
+                  alt=""
+                  onError={() => setLogoFailed(true)}
+                  className="size-7 shrink-0 rounded-lg object-contain"
+                />
+              )}
+              <span className="flex-1 truncate font-serif text-lg leading-none italic group-data-[collapsible=icon]:hidden">
                 {brand}
               </span>
+              {/* Icon rail without a logo: the brand's first letter. */}
+              {!showLogo && typeof brand === 'string' && (
+                <span className="hidden w-full text-center font-serif text-lg leading-none italic group-data-[collapsible=icon]:block">
+                  {brand.charAt(0)}
+                </span>
+              )}
             </Link>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -171,7 +209,7 @@ export function AppSidebar({
                           <Icon />
                           <span>{item.label}</span>
                           <ChevronRight
-                            className={`text-muted-foreground ml-auto size-4 shrink-0 transition-transform ${
+                            className={`text-sidebar-foreground/70 ml-auto size-4 shrink-0 transition-transform ${
                               open ? 'rotate-90' : ''
                             }`}
                           />

@@ -96,7 +96,11 @@ a default, not a choice — revise it.
   `--background --foreground --card --popover --primary --secondary --muted
   --accent --border --input --ring --radius` and the `--sidebar-*` family.
   Dark-by-default briefs: put the dark palette in `:root` and set
-  `defaultTheme="dark"` on the ThemeProvider in `src/routes/__root.tsx`.
+  `DEFAULT_COLOR_MODE = 'dark'` in `src/config/appearance.ts` (don't
+  hard-code ThemeProvider props in `__root.tsx`; they carry the admin's
+  light/dark setting). This palette is what the site shows while the admin's
+  appearance switch is off (the default). Don't edit the "Color themes" block:
+  those presets only apply once an admin turns the switch on.
 - **Fonts**: install via `pnpm add @fontsource-variable/<font>`, import in
   `src/routes/__root.tsx`, update `--font-sans` / `--font-serif-display` in
   `globals.css`. Remove imports of fonts you no longer use.

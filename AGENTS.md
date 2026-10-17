@@ -442,6 +442,26 @@ anything else:
 - Label each kind with `admin.user_detail.timeline_<kind>` in both
   `messages/en.json` and `messages/zh.json`.
 
+### Appearance (theme, font, size, sidebar)
+
+The site's look comes from code by default: the `:root`/`.dark` palette and
+fonts in `src/styles/globals.css`, `DEFAULT_APPEARANCE` (sidebar variant and
+collapse) and `DEFAULT_COLOR_MODE` (light/dark) in `src/config/appearance.ts`.
+Restyle a project there.
+
+An admin can turn on **Settings → General → Appearance**
+(`appearance_enabled`, off by default). Then the presets in
+`src/config/appearance.ts` take over: built-in color themes (the
+`[data-theme='<id>']` blocks in `globals.css`, applied on `<html>`), font,
+font size, sidebar layout and light/dark. Optionally, users may pick their own
+theme color from the user menu. Values are resolved in the root loader and
+read with `useAppearance()` from `@/hooks/use-appearance`.
+
+- Text inside the dashboard sidebar uses `sidebar-foreground` tokens, never
+  `foreground`/`muted-foreground`, so it stays readable on colored sidebars.
+- Don't hard-code `ThemeProvider` props or `AppSidebar` `variant` /
+  `collapsible`. They carry the admin's settings.
+
 ### shadcn/ui v4 (Base Nova)
 
 - **No `asChild` prop.** Use `className={cn(buttonVariants())}` on Link instead.
