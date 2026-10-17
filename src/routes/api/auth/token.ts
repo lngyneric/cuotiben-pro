@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 
-import { getAuth } from '@/core/auth';
+import { getAuth, getAuthCookiePrefix } from '@/core/auth';
 import { respData, respErr } from '@/lib/resp';
 
 function parseCookies(header: string | null): Record<string, string> {
@@ -33,19 +33,14 @@ async function GET({ request }: { request: Request }) {
 
     const cookies = parseCookies(request.headers.get('cookie'));
     // Cookie name varies: __Secure- prefix when using HTTPS
-    const token =
-      cookies['better-auth.session_token'] ||
-      cookies['__Secure-better-auth.session_token'];
+    const baseName = `${getAuthCookiePrefix()}.session_token`;
+    const cookieName =
+      `__Secure-${baseName}` in cookies ? `__Secure-${baseName}` : baseName;
+    const token = cookies[cookieName];
 
     if (!token) {
       return respErr('No session token found');
     }
-
-    // Also return the cookie name so client knows which to use
-    const cookieName =
-      '__Secure-better-auth.session_token' in cookies
-        ? '__Secure-better-auth.session_token'
-        : 'better-auth.session_token';
 
     return respData({ token, cookieName });
   } catch (error: any) {
