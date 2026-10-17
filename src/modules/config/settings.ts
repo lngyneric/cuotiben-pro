@@ -5,6 +5,18 @@
  * and they'll automatically appear in the admin panel.
  */
 
+import {
+  APPEARANCE_ENABLED_KEY,
+  COLOR_MODE_CONFIG_KEY,
+  COLOR_MODES,
+  DEFAULT_APPEARANCE,
+  FONT_SIZES,
+  FONTS,
+  SIDEBAR_COLLAPSIBLES,
+  SIDEBAR_VARIANTS,
+  THEMES,
+} from '@/config/appearance';
+
 export interface Setting {
   name: string;
   title: string;
@@ -52,6 +64,12 @@ export function getSettingGroups(): SettingGroup[] {
       name: 'appinfo',
       title: 'App Info',
       description: 'Basic application settings',
+      tab: 'general',
+    },
+    {
+      name: 'appearance',
+      title: 'Appearance',
+      description: 'Theme color, font, font size and sidebar layout',
       tab: 'general',
     },
     {
@@ -278,6 +296,76 @@ export function getSettings(): Setting[] {
       type: 'text',
       placeholder: 'https://example.com',
       group: 'appinfo',
+      tab: 'general',
+    },
+
+    // ─── General / Appearance ────────────────────────────────────────
+    {
+      name: APPEARANCE_ENABLED_KEY,
+      title: 'Enable appearance settings',
+      type: 'switch',
+      group: 'appearance',
+      tab: 'general',
+    },
+    {
+      name: COLOR_MODE_CONFIG_KEY,
+      title: 'Light / dark',
+      type: 'select',
+      options: COLOR_MODES.map((c) => ({ label: c.id, value: c.id })),
+      group: 'appearance',
+      tab: 'general',
+      defaultValue: 'system',
+    },
+    {
+      name: 'app_theme',
+      title: 'Site theme',
+      type: 'select',
+      options: THEMES.map((t) => ({ label: t.id, value: t.id })),
+      group: 'appearance',
+      tab: 'general',
+      defaultValue: DEFAULT_APPEARANCE.theme,
+    },
+    {
+      name: 'app_font',
+      title: 'Font',
+      type: 'select',
+      options: FONTS.map((f) => ({ label: f.id, value: f.id })),
+      group: 'appearance',
+      tab: 'general',
+      defaultValue: DEFAULT_APPEARANCE.font,
+    },
+    {
+      name: 'app_font_size',
+      title: 'Font size',
+      type: 'select',
+      options: FONT_SIZES.map((f) => ({ label: f.id, value: f.id })),
+      group: 'appearance',
+      tab: 'general',
+      defaultValue: DEFAULT_APPEARANCE.fontSize,
+    },
+    {
+      name: 'app_sidebar_variant',
+      title: 'Sidebar style',
+      type: 'select',
+      options: SIDEBAR_VARIANTS.map((v) => ({ label: v.id, value: v.id })),
+      group: 'appearance',
+      tab: 'general',
+      defaultValue: DEFAULT_APPEARANCE.sidebarVariant,
+    },
+    {
+      name: 'app_sidebar_collapsible',
+      title: 'Sidebar collapse',
+      type: 'select',
+      options: SIDEBAR_COLLAPSIBLES.map((v) => ({ label: v.id, value: v.id })),
+      group: 'appearance',
+      tab: 'general',
+      defaultValue: DEFAULT_APPEARANCE.sidebarCollapsible,
+    },
+    {
+      name: 'user_theme_enabled',
+      title: 'Let users pick their own theme color',
+      type: 'switch',
+      group: 'appearance',
       tab: 'general',
     },
 

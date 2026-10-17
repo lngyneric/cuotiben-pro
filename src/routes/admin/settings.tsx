@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useRouter } from '@tanstack/react-router';
 import {
   ChevronDown,
   ExternalLink,
@@ -9,9 +9,16 @@ import {
   Plus,
   Save,
 } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 
 import { tDynamic } from '@/core/i18n/dynamic';
+import {
+  APPEARANCE_ENABLED_KEY,
+  COLOR_MODE_CONFIG_KEY,
+  isAppearanceValue,
+  type AppearanceKey,
+} from '@/config/appearance';
 import {
   getSettingGroups,
   getSettings,
@@ -22,7 +29,13 @@ import { getTestSpec } from '@/modules/config/settings-test-specs';
 import { apiGet, apiPost } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { m } from '@/paraglide/messages.js';
+import {
+  appearanceOptions,
+  colorModeOptions,
+  useAppearance,
+} from '@/hooks/use-appearance';
 import { SettingsTestDialog } from '@/components/admin/settings-test-dialog';
+import { AppearanceOptions } from '@/components/appearance-options';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -44,6 +57,7 @@ function AdminSettingsPage() {
     wechat_test_amount: m['admin.settings.placeholders.wechat_test_amount'](),
   };
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [configs, setConfigs] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState('general');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -86,7 +100,41 @@ function AdminSettingsPage() {
 
   function handleChange(name: string, value: string) {
     setConfigs((prev) => ({ ...prev, [name]: value }));
+    if (INSTANT_SETTINGS.has(name)) instantSaveMutation.mutate({ name, value });
   }
+
+  // Appearance settings save on click and repaint at once. Doesn't refetch
+  // admin-config, which would wipe other unsaved edits in the form.
+  const { applySiteAppearance } = useAppearance();
+  const { setTheme } = useTheme();
+  const instantSaveMutation = useMutation({
+    mutationFn: ({ name, value }: { name: string; value: string }) =>
+      apiPost('/api/admin/config', { [name]: value }),
+    onSuccess: (_, { name, value }) => {
+      if (name === APPEARANCE_ENABLED_KEY) {
+        // Switches the style source (code vs settings); the root loader
+        // re-renders <html> from it, keeping other unsaved form edits.
+        router.invalidate();
+        toast.success(m['admin.settings.applied']());
+        return;
+      }
+      const key = ADMIN_APPEARANCE_FIELDS[name];
+      if (key && isAppearanceValue(key, value)) {
+        applySiteAppearance(key, value);
+      } else if (name === COLOR_MODE_CONFIG_KEY) {
+        // Preview it on the admin's own screen too.
+        setTheme(value);
+        router.invalidate();
+      } else {
+        router.invalidate();
+      }
+      queryClient.invalidateQueries({ queryKey: ['public-config'] });
+      toast.success(m['admin.settings.applied']());
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || m['admin.settings.save_error']());
+    },
+  });
 
   function addCustomRow() {
     setCustomRows((prev) => [...prev, { key: '', value: '' }]);
@@ -113,6 +161,8 @@ function AdminSettingsPage() {
       toast.success(m['admin.settings.save_success']());
       queryClient.invalidateQueries({ queryKey: ['admin-config'] });
       queryClient.invalidateQueries({ queryKey: ['public-config'] });
+      // Root loader carries the site theme; re-run it to repaint.
+      router.invalidate();
     },
     onError: (err: any) => {
       toast.error(err?.message || m['admin.settings.save_error']());
@@ -254,7 +304,12 @@ function AdminSettingsPage() {
           ) : (
             tabGroups.map((group) => {
               const groupSettings = tabSettings.filter(
-                (s) => s.group === group.name
+                (s) =>
+                  s.group === group.name &&
+                  // Appearance options only show once the switch is on.
+                  (s.group !== 'appearance' ||
+                    s.name === APPEARANCE_ENABLED_KEY ||
+                    configs[APPEARANCE_ENABLED_KEY] === 'true')
               );
               if (groupSettings.length === 0) return null;
 
@@ -394,6 +449,23 @@ function fieldTip(name: string): string | undefined {
   return text === key ? undefined : text;
 }
 
+// Appearance settings render as chip pickers instead of a plain select.
+const ADMIN_APPEARANCE_FIELDS: Record<string, AppearanceKey> = {
+  app_theme: 'theme',
+  app_font: 'font',
+  app_font_size: 'fontSize',
+  app_sidebar_variant: 'sidebarVariant',
+  app_sidebar_collapsible: 'sidebarCollapsible',
+};
+
+// Saved as soon as they change, without the Save button.
+const INSTANT_SETTINGS = new Set([
+  APPEARANCE_ENABLED_KEY,
+  ...Object.keys(ADMIN_APPEARANCE_FIELDS),
+  COLOR_MODE_CONFIG_KEY,
+  'user_theme_enabled',
+]);
+
 function SettingField({
   setting,
   label,
@@ -417,6 +489,25 @@ function SettingField({
       {tip}
     </p>
   ) : null;
+
+  const appearanceKey = ADMIN_APPEARANCE_FIELDS[setting.name];
+  if (appearanceKey || setting.name === COLOR_MODE_CONFIG_KEY) {
+    return (
+      <div className="space-y-2">
+        <Label>{label}</Label>
+        <AppearanceOptions
+          options={
+            appearanceKey
+              ? appearanceOptions(appearanceKey)
+              : colorModeOptions()
+          }
+          value={value}
+          onChange={onChange}
+        />
+        {tipNode}
+      </div>
+    );
+  }
 
   if (setting.type === 'switch') {
     return (

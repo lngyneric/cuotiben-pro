@@ -6,6 +6,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useSession } from '@/core/auth/client';
 import { usePathname, useRouter } from '@/core/i18n/navigation';
 import { apiGet } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
+import { useAppearance } from '@/hooks/use-appearance';
 import { useUserPermissions } from '@/hooks/use-user-permissions';
 import { AppSidebar, type NavItem } from '@/components/app-sidebar';
 import { Separator } from '@/components/ui/separator';
@@ -21,6 +23,7 @@ export function AppLayout({
   navItems,
   footerNavItems,
   brand,
+  logo,
   brandHref = '/',
   mobileBrand,
   headerExtra,
@@ -32,6 +35,7 @@ export function AppLayout({
   navItems: NavItem[];
   footerNavItems?: NavItem[];
   brand: React.ReactNode;
+  logo?: string;
   brandHref?: string;
   mobileBrand?: React.ReactNode;
   headerExtra?: React.ReactNode;
@@ -40,6 +44,7 @@ export function AppLayout({
   unauthorizedRedirect?: string;
 }) {
   const { data: session, isPending } = useSession();
+  const { appearance } = useAppearance();
   const router = useRouter();
   const pathname = usePathname();
   // Guard against a double redirect: useLocation() flips to "/sign-in" the moment
@@ -137,7 +142,10 @@ export function AppLayout({
   return (
     <SidebarProvider>
       <AppSidebar
+        variant={appearance.sidebarVariant}
+        collapsible={appearance.sidebarCollapsible}
         brand={brand}
+        logo={logo}
         brandHref={brandHref}
         navItems={navItems}
         footerNavItems={footerNavItems}
@@ -154,7 +162,13 @@ export function AppLayout({
           otherwise wide tables stretch the page and force horizontal scroll
           instead of scrolling inside their own overflow-x-auto wrappers */}
       <SidebarInset className="min-w-0">
-        <header className="flex h-14 shrink-0 items-center gap-2">
+        {/* A floating sidebar sits 8px in; match it so brand and toggle align. */}
+        <header
+          className={cn(
+            'flex h-14 shrink-0 items-center gap-2',
+            appearance.sidebarVariant === 'floating' && 'md:mt-2'
+          )}
+        >
           <div className="flex items-center gap-2 px-4">
             <SidebarTrigger className="-ml-1" />
           </div>

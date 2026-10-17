@@ -13,9 +13,23 @@ import { createServerFn } from '@tanstack/react-start';
 import { ThemeProvider } from 'next-themes';
 
 import { envConfigs } from '@/config';
+import {
+  APPEARANCE_CONFIG_KEYS,
+  APPEARANCE_ENABLED_KEY,
+  APPEARANCE_KEYS,
+  appearanceStyle,
+  COLOR_MODE_CONFIG_KEY,
+  DEFAULT_APPEARANCE,
+  DEFAULT_COLOR_MODE,
+  isColorMode,
+  mergeAppearance,
+  pickAppearance,
+  THEME_COOKIE,
+} from '@/config/appearance';
 import { parseCookieConsent } from '@/lib/cookie-consent';
 import { getQueryClient } from '@/lib/query-client';
 import { getLocale, locales, localizeUrl } from '@/paraglide/runtime.js';
+import { useAppearance } from '@/hooks/use-appearance';
 import { useCookieConsent } from '@/hooks/use-cookie-consent';
 import { CookieConsent } from '@/blocks/cookie-consent';
 import { Ads } from '@/components/analytics/ads';
@@ -27,6 +41,8 @@ import { SandboxPreviewBridge } from '@/components/sandbox-preview-bridge';
 import { Toaster } from '@/components/ui/sonner';
 
 import '@fontsource-variable/inter';
+import '@fontsource-variable/nunito';
+import '@fontsource-variable/source-serif-4';
 import '@fontsource/libre-baskerville/400.css';
 import '@fontsource/libre-baskerville/700.css';
 import '@fontsource/libre-baskerville/400-italic.css';
@@ -46,7 +62,37 @@ const getAnalyticsConfigs = createServerFn().handler(async () => {
   const plausibleSrc = safeEmbedSetting('plausible_src', rawPlausibleSrc);
   const plausibleOff = !!rawPlausibleSrc && !plausibleSrc;
   const cookieConsentEnabled = configs.cookie_consent_enabled === 'true';
+  // Appearance: off by default, and then the code's own styles apply
+  // untouched. On: the admin's site settings; users may override only the
+  // theme color (cookie) when allowed. Everything goes through the allow-list.
+  const appearanceEnabled = configs[APPEARANCE_ENABLED_KEY] === 'true';
+  const userThemeEnabled =
+    appearanceEnabled && configs.user_theme_enabled === 'true';
+  const site = pickAppearance(
+    appearanceEnabled
+      ? Object.fromEntries(
+          APPEARANCE_KEYS.map((k) => [k, configs[APPEARANCE_CONFIG_KEYS[k]]])
+        )
+      : {}
+  );
+  const user = pickAppearance({
+    theme: userThemeEnabled ? getCookie(THEME_COOKIE) : undefined,
+  });
+  const siteAppearance = mergeAppearance(site, DEFAULT_APPEARANCE);
+  const rawColorMode = configs[COLOR_MODE_CONFIG_KEY];
+  const colorMode =
+    appearanceEnabled && isColorMode(rawColorMode)
+      ? rawColorMode
+      : DEFAULT_COLOR_MODE;
   return {
+    appearanceEnabled,
+    colorMode,
+    colorModeForced:
+      appearanceEnabled && !userThemeEnabled && colorMode !== 'system',
+    appearance: mergeAppearance(user, siteAppearance),
+    siteAppearance,
+    userTheme: user.theme,
+    userThemeEnabled,
     cookieConsentEnabled,
     // The visitor's saved choice, so SSR can render consented scripts.
     cookieConsent: cookieConsentEnabled
@@ -118,13 +164,20 @@ function RootComponent() {
     <QueryClientProvider client={getQueryClient()}>
       <ThemeProvider
         attribute="class"
-        defaultTheme="system"
+        defaultTheme={analytics?.colorMode ?? DEFAULT_COLOR_MODE}
+        forcedTheme={
+          analytics?.colorModeForced ? analytics.colorMode : undefined
+        }
         enableSystem
         disableTransitionOnChange
       >
         <Outlet />
         <SandboxPreviewBridge />
-        <Toaster position="top-center" richColors />
+        {/* Appearance on: toasts follow the theme (globals.css). */}
+        <Toaster
+          position="top-center"
+          richColors={!analytics?.appearanceEnabled}
+        />
         <GoogleOneTap />
         {analytics?.gaId ? (
           <GoogleAnalytics
@@ -156,8 +209,14 @@ function RootComponent() {
 }
 
 function RootDocument({ children }: { children: ReactNode }) {
+  const { appearance, appearanceEnabled } = useAppearance();
   return (
-    <html lang={getLocale()} suppressHydrationWarning>
+    <html
+      lang={getLocale()}
+      data-theme={appearanceEnabled ? appearance.theme : undefined}
+      style={appearanceEnabled ? appearanceStyle(appearance) : undefined}
+      suppressHydrationWarning
+    >
       <head>
         <HeadContent />
       </head>
