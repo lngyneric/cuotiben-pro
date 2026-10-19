@@ -4,6 +4,7 @@ import { getAuth } from '@/core/auth';
 import {
   createCard,
   deleteCard,
+  generateSimilar,
   getCard,
   getDueCards,
   getStats,
@@ -99,40 +100,46 @@ async function POST({ request }: { request: Request }) {
     }
     if (action === 'qa') {
       // 问答接口：op = approaches | judge | hint | followup
-      // 当前为 MOCK 实现；接入 Workers AI 后替换 service 层函数体即可
       const op = body.op;
       if (op === 'approaches') {
         const card = body.cardId ? await getCard(user.id, body.cardId) : null;
         if (!card) return respErr('Card not found');
-        const { options, followup } = await qaApproaches(card);
-        return respData({ mock: true, options, followup });
+        const result = await qaApproaches(card);
+        return respData(result);
       }
       if (op === 'followup') {
         const card = body.cardId ? await getCard(user.id, body.cardId) : null;
         if (!card) return respErr('Card not found');
-        return respData({ mock: true, ...(await qaFollowup(card)) });
+        return respData(await qaFollowup(card));
       }
       if (op === 'hint') {
         const card = body.cardId ? await getCard(user.id, body.cardId) : null;
-        const { hint } = await qaHint(
-          { principle: card?.principle || body.principle || '' },
+        const result = await qaHint(
+          {
+            principle: card?.principle || body.principle || '',
+            question: card?.question || body.question || '',
+          },
           body.student || '',
           body.attempt || 0
         );
-        return respData({ mock: true, hint });
+        return respData(result);
       }
       if (op === 'judge') {
-        const expected =
-          body.expected ||
-          (body.cardId ? (await getCard(user.id, body.cardId))?.answer : '') ||
-          '';
-        const { correct, confidence } = await qaJudge(
-          expected,
-          body.student || ''
-        );
-        return respData({ mock: true, correct, confidence });
+        const card = body.cardId ? await getCard(user.id, body.cardId) : null;
+        const question = body.question || card?.question || '';
+        const expected = body.expected || card?.answer || '';
+        const result = await qaJudge(question, expected, body.student || '');
+        return respData(result);
       }
       return respErr('Unknown qa op');
+    }
+    if (action === 'similar') {
+      // 生成类似题
+      const card = body.cardId ? await getCard(user.id, body.cardId) : null;
+      if (!card) return respErr('Card not found');
+      const result = await generateSimilar(card);
+      if (!result) return respErr('AI 不可用，无法生成类似题');
+      return respData(result);
     }
     return respErr('Unknown action');
   } catch (error: any) {
