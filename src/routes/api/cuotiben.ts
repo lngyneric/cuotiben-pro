@@ -2,14 +2,18 @@ import { createFileRoute } from '@tanstack/react-router';
 
 import { getAuth } from '@/core/auth';
 import {
+  answerPractice,
   createCard,
+  createPractice,
   deleteCard,
+  deletePractice,
   generateSimilar,
   getCard,
   getDueCards,
   getStats,
   isMathCard,
   listCards,
+  listPractice,
   logAttempt,
   qaApproaches,
   qaFollowup,
@@ -41,6 +45,9 @@ async function GET({ request }: { request: Request }) {
       const days = parseInt(url.searchParams.get('days') || '7');
       const since = new Date(Date.now() - days * 86400000);
       return respData(await getStats(user.id, since));
+    }
+    if (action === 'practice') {
+      return respData(await listPractice(user.id, subject));
     }
     const cardId = url.searchParams.get('id');
     if (cardId) {
@@ -140,6 +147,31 @@ async function POST({ request }: { request: Request }) {
       const result = await generateSimilar(card);
       if (!result) return respErr('AI 不可用，无法生成类似题');
       return respData(result);
+    }
+    if (action === 'practice') {
+      // 练习题：op = create | list | answer | delete
+      const op = body.op || url.searchParams.get('op') || 'list';
+      if (op === 'create') {
+        const result = await createPractice(user.id, body.cardId);
+        if (!result) return respErr('生成失败（AI 不可用或卡片不存在）');
+        return respData(result);
+      }
+      if (op === 'answer') {
+        const result = await answerPractice(
+          user.id,
+          body.practiceId,
+          body.studentAnswer || ''
+        );
+        return respData(result);
+      }
+      if (op === 'delete') {
+        await deletePractice(user.id, body.practiceId);
+        return respData({ ok: true });
+      }
+      // list
+      const subject =
+        body.subject || url.searchParams.get('subject') || undefined;
+      return respData(await listPractice(user.id, subject));
     }
     return respErr('Unknown action');
   } catch (error: any) {
