@@ -10,6 +10,102 @@ import { m } from '@/paraglide/messages.js';
 import type { Card } from './-types';
 import { safeDiagram } from './-util';
 
+// 导出单文件闪卡 HTML（离线可看）
+function exportFlashcards(cards: Card[]) {
+  const esc = (s: string) =>
+    String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  const cardsHtml = cards
+    .map(
+      (c, i) => `
+    <div class="card" onclick="this.classList.toggle('flip')">
+      <div class="inner">
+        <div class="front">
+          <div class="num">#${i + 1} ${esc(c.tag || '')}</div>
+          <div class="q">${esc(c.question)}</div>
+          <div class="tap">点击翻面</div>
+        </div>
+        <div class="back">
+          <div class="a"><b>答案：</b>${esc(c.answer)}</div>
+          ${c.principle ? `<div class="p"><b>原理：</b>${esc(c.principle)}</div>` : ''}
+          ${c.note ? `<div class="n"><b>错因：</b>${esc(c.note)}</div>` : ''}
+        </div>
+      </div>
+    </div>`
+    )
+    .join('\n');
+  const html = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>错题闪卡</title><style>
+body{font-family:system-ui;margin:0;padding:16px;background:#f5f5f5}
+.card{perspective:1000px;margin:12px auto;max-width:600px;cursor:pointer}
+.inner{position:relative;min-height:200px;transition:transform .6s;transform-style:preserve-3d}
+.card.flip .inner{transform:rotateY(180deg)}
+.front,.back{position:absolute;inset:0;backface-visibility:hidden;background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.back{transform:rotateY(180deg)}
+.num{color:#888;font-size:12px;margin-bottom:8px}
+.q{font-size:17px;line-height:1.6;white-space:pre-wrap}
+.tap{color:#aaa;font-size:12px;margin-top:12px;text-align:center}
+.a,.p,.n{margin:8px 0;line-height:1.6;white-space:pre-wrap}
+h1{text-align:center}
+</style></head><body><h1>错题闪卡（${cards.length} 张）</h1>${cardsHtml}</body></html>`;
+  const blob = new Blob([html], { type: 'text/html' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '错题闪卡.html';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// 类似题按钮：调用 AI 生成同类练习题
+function SimilarButton({ cardId }: { cardId: string }) {
+  const [result, setResult] = useState<{
+    question: string;
+    answer: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [show, setShow] = useState(false);
+
+  const generate = async () => {
+    if (result) {
+      setShow(!show);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await apiPost<{ question: string; answer: string }>(
+        '/api/cuotiben',
+        { action: 'similar', cardId }
+      );
+      setResult(data);
+      setShow(true);
+    } catch (e: any) {
+      toast.error(e.message || '生成失败');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="w-full">
+      <button
+        onClick={generate}
+        disabled={loading}
+        className="min-h-[40px] rounded-lg bg-purple-50 px-3 text-sm text-purple-700 disabled:opacity-50"
+      >
+        {loading ? '生成中...' : '📝 类似题'}
+      </button>
+      {show && result && (
+        <div className="mt-2 rounded-lg bg-purple-50 p-3 text-sm">
+          <div className="font-semibold text-purple-900">类似练习题：</div>
+          <div className="mt-1 whitespace-pre-wrap">{result.question}</div>
+          <div className="mt-2 font-semibold text-purple-900">答案：</div>
+          <div className="whitespace-pre-wrap">{result.answer}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CardsTab({
   cards,
   allEmpty,
@@ -81,6 +177,13 @@ export function CardsTab({
           className="min-h-[44px] shrink-0 rounded-lg bg-blue-600 px-4 text-white"
         >
           {m['cuotiben.btn_add']()}
+        </button>
+        <button
+          onClick={() => exportFlashcards(cards)}
+          className="min-h-[44px] shrink-0 rounded-lg bg-slate-600 px-4 text-white"
+          title="导出单文件闪卡 HTML"
+        >
+          ⤓闪卡
         </button>
       </div>
 
@@ -248,6 +351,7 @@ export function CardsTab({
                 >
                   {m['cuotiben.btn_delete']()}
                 </button>
+                <SimilarButton cardId={c.id} />
               </div>
             </div>
           );

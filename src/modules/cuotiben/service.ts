@@ -225,9 +225,43 @@ export function getSeedDebug() {
 
 // ─── 问答 (QA) ───────────────────────────────────────────────────────────────
 // 接口已就绪：POST /api/cuotiben { action:'qa', op:'approaches'|'judge'|'hint'|'followup', ... }
-// 当前为 MOCK 实现（无 Workers AI binding）。接入 Workers AI 时替换函数体：
-//   approaches / hint / followup → @cf/meta/llama-3.3-70b-instruct-fp8-fast
-//   judge                      → @cf/cloudflare/clef-flash
+// Workers AI 接入：
+//   approaches / hint / followup / similar → @cf/meta/llama-3.3-70b-instruct-fp8-fast
+//   judge                                → @cf/cloudflare/clef-flash
+// 无 AI binding 时自动降级为 MOCK。
+
+const LLAMA_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+const JUDGE_MODEL = '@cf/cloudflare/clef-flash';
+
+function getAI(): any | null {
+  try {
+    const env = (globalThis as any).__CF_ENV__;
+    return env?.AI || null;
+  } catch {
+    return null;
+  }
+}
+
+function aiText(out: any): string {
+  if (!out) return '';
+  if (typeof out.response === 'string') return out.response;
+  if (out.choices?.[0]?.message?.content) return out.choices[0].message.content;
+  if (typeof out.result === 'string') return out.result;
+  if (typeof out === 'string') return out;
+  return '';
+}
+
+function cleanJson(txt: string): string {
+  return String(txt)
+    .trim()
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/, '')
+    .replace(/\s*```$/, '');
+}
+
+function detectLang(q: string, s: string): string {
+  return /[\u4e00-\u9fff]/.test(q + s) ? '中文' : 'English';
+}
 
 export type QaOption = { text: string; correct: boolean };
 
@@ -256,7 +290,38 @@ type QaCardInput = {
 /** 数学卡：生成 4 个解题思路选项（1 正确 + 3 干扰项），并附一条概念追问 */
 export async function qaApproaches(
   card: QaCardInput
-): Promise<{ options: QaOption[]; followup: string }> {
+): Promise<{ options: QaOption[]; followup: string; mock: boolean }> {
+  const ai = getAI();
+  if (ai) {
+    try {
+      const lang = detectLang(card.question, card.subject);
+      const sysA =
+        '你是初中老师，擅长设计选择题干扰项。严格只返回 JSON，不要输出任何解释文字。';
+      const prompt =
+        `题目：${card.question}\n` +
+        `正确答案思路：${card.principle || card.answer}\n` +
+        `学生上次的错误：${card.myAnswer || '无'}\n` +
+        `请用${lang}生成 4 个解题思路选项（1 个正确 + 3 个干扰项，干扰项要像学生常犯的错误）。\n` +
+        `返回 JSON：{"options":[{"text":"...","correct":true},...],"followup":"一条概念追问"}`;
+      const out = await ai.run(LLAMA_MODEL, {
+        messages: [
+          { role: 'system', content: sysA },
+          { role: 'user', content: prompt },
+        ],
+      });
+      const parsed = JSON.parse(cleanJson(aiText(out)));
+      if (parsed.options?.length >= 2) {
+        return {
+          options: shuffle(parsed.options),
+          followup: parsed.followup || qaFollowupText(card),
+          mock: false,
+        };
+      }
+    } catch {
+      // 降级到 MOCK
+    }
+  }
+  // MOCK 降级
   const correctText =
     card.principle?.trim() || card.answer?.trim() || '按标准步骤求解';
   const distractors: string[] = [];
@@ -265,7 +330,6 @@ export async function qaApproaches(
     card.myAnswer.trim() &&
     card.myAnswer.trim() !== card.answer?.trim()
   ) {
-    // 原版做法：干扰项取自孩子原来的错答
     distractors.push(`像上次一样：${card.myAnswer.trim().slice(0, 90)}`);
   }
   distractors.push(
@@ -277,10 +341,10 @@ export async function qaApproaches(
     { text: correctText, correct: true },
     ...distractors.slice(0, 3).map((text) => ({ text, correct: false })),
   ]);
-  return { options, followup: qaFollowupText(card) };
+  return { options, followup: qaFollowupText(card), mock: true };
 }
 
-/** 概念追问（mock：按知识点标签生成通用追问） */
+/** 概念追问 */
 export function qaFollowupText(
   card: Pick<QaCardInput, 'tag' | 'subject'>
 ): string {
@@ -289,27 +353,110 @@ export function qaFollowupText(
 }
 
 export async function qaFollowup(
-  card: Pick<QaCardInput, 'tag' | 'subject'>
-): Promise<{ followup: string }> {
-  return { followup: qaFollowupText(card) };
+  card: Pick<QaCardInput, 'tag' | 'subject' | 'question' | 'principle'>
+): Promise<{ followup: string; mock: boolean }> {
+  const ai = getAI();
+  if (ai) {
+    try {
+      const lang = detectLang((card as any).question || '', card.subject || '');
+      const out = await ai.run(LLAMA_MODEL, {
+        messages: [
+          {
+            role: 'system',
+            content: '你是初中老师。只返回一条概念追问，不要解释。',
+          },
+          {
+            role: 'user',
+            content: `知识点：${card.tag}\n题目：${(card as any).question || ''}\n原理：${(card as any).principle || ''}\n请用${lang}生成一条概念追问，引导学生说出核心概念。`,
+          },
+        ],
+      });
+      const text = aiText(out).trim();
+      if (text) return { followup: text, mock: false };
+    } catch {
+      // 降级
+    }
+  }
+  return { followup: qaFollowupText(card), mock: true };
 }
 
-/** 提示（mock：直接给原理；原版按 attempt 渐进生成） */
+/** 提示（按 attempt 渐进：第一次给方向，第二次给关键步骤） */
 export async function qaHint(
-  card: Pick<QaCardInput, 'principle'>,
+  card: Pick<QaCardInput, 'principle' | 'question'>,
   _student: string,
-  _attempt: number
-): Promise<{ hint: string }> {
+  attempt: number
+): Promise<{ hint: string; mock: boolean }> {
+  const ai = getAI();
+  if (ai) {
+    try {
+      const lang = detectLang((card as any).question || '', '');
+      const level =
+        attempt <= 1
+          ? '只给思考方向，不要给具体步骤'
+          : '给出关键的一步，但不要给完整答案';
+      const out = await ai.run(LLAMA_MODEL, {
+        messages: [
+          {
+            role: 'system',
+            content: '你是初中老师，擅长启发式提示。只返回提示，不要给答案。',
+          },
+          {
+            role: 'user',
+            content: `题目：${(card as any).question || ''}\n原理：${card.principle || ''}\n学生第 ${attempt} 次尝试失败。请用${lang}给一个提示（${level}）。`,
+          },
+        ],
+      });
+      const text = aiText(out).trim();
+      if (text) return { hint: text, mock: false };
+    } catch {
+      // 降级
+    }
+  }
   return {
     hint: card.principle?.trim() || '再读一遍题目，把已知条件一个一个列出来。',
+    mock: true,
   };
 }
 
-/** 判分（mock：关键词重合度启发式；中文按字/词重合计算） */
+/** 判分（Clef-flash；无 AI 时降级为关键词启发式） */
 export async function qaJudge(
+  question: string,
   expected: string,
   student: string
-): Promise<{ correct: boolean; confidence: number }> {
+): Promise<{ correct: boolean; confidence: number; mock: boolean }> {
+  const ai = getAI();
+  if (ai) {
+    try {
+      const out = await ai.run(JUDGE_MODEL, {
+        model: 'clef-flash',
+        state: `Question: ${question}\nExpected answer: ${expected}\nStudent answer: ${student}`,
+        questions: {
+          verdict: {
+            type: 'choice',
+            instructions:
+              'Is the student answer correct? Judge strictly but fairly.',
+            criteria: {
+              correct:
+                'The student answer captures the key points or meaning of the expected answer (wording may differ, language may differ)',
+              incorrect:
+                'The student answer is wrong, contradicts the expected answer, or misses the key points',
+            },
+          },
+        },
+      });
+      const verdict = out?.answers?.verdict;
+      const choice = verdict?.choice || verdict?.route || '';
+      const conf = verdict?.confidence ?? 0.5;
+      return {
+        correct: /correct/i.test(choice) && !/incorrect/i.test(choice),
+        confidence: Math.round(conf * 100) / 100,
+        mock: false,
+      };
+    } catch {
+      // 降级到关键词启发式
+    }
+  }
+  // MOCK 降级：关键词重合度
   const tokens = (s: string) =>
     s
       .toLowerCase()
@@ -336,5 +483,49 @@ export async function qaJudge(
     }
   }
   const ratio = hit / stuTokens.length;
-  return { correct: ratio >= 0.5, confidence: Math.round(ratio * 100) / 100 };
+  return {
+    correct: ratio >= 0.5,
+    confidence: Math.round(ratio * 100) / 100,
+    mock: true,
+  };
+}
+
+/** 生成类似题（Llama；无 AI 时返回 null） */
+export async function generateSimilar(
+  card: QaCardInput
+): Promise<{ question: string; answer: string; mock: boolean } | null> {
+  const ai = getAI();
+  if (!ai) return null;
+  try {
+    const lang = detectLang(card.question, card.subject);
+    const out = await ai.run(LLAMA_MODEL, {
+      messages: [
+        {
+          role: 'system',
+          content:
+            '你是初中老师，擅长出同类练习题。严格只返回 JSON，不要输出解释。',
+        },
+        {
+          role: 'user',
+          content:
+            `原题：${card.question}\n` +
+            `答案：${card.answer}\n` +
+            `原理：${card.principle}\n` +
+            `请用${lang}出一道同类型、同难度的练习题（换数字/换场景，不要重复原题）。\n` +
+            `返回 JSON：{"question":"...","answer":"..."}`,
+        },
+      ],
+    });
+    const parsed = JSON.parse(cleanJson(aiText(out)));
+    if (parsed.question) {
+      return {
+        question: parsed.question,
+        answer: parsed.answer || '',
+        mock: false,
+      };
+    }
+  } catch {
+    // 忽略
+  }
+  return null;
 }
