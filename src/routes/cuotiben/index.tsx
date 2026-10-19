@@ -8,6 +8,7 @@ import { m } from '@/paraglide/messages.js';
 
 import { CardsTab } from './-cards-tab';
 import { FlashTab } from './-flash-tab';
+import { PracticeTab } from './-practice-tab';
 import { QaTab } from './-qa-tab';
 import { StudyTab } from './-study-tab';
 import { CARDS_KEY, DUE_KEY, STATS_KEY, type Card } from './-types';
@@ -73,7 +74,7 @@ function useDeleteCard() {
 
 // ─── 主页面 ──────────────────────────────────────────────────────────────────
 
-type Tab = 'cards' | 'flash' | 'study' | 'qa';
+type Tab = 'cards' | 'flash' | 'study' | 'qa' | 'practice';
 
 function CuotibenPage() {
   const [tab, setTab] = useState<Tab>('cards');
@@ -188,6 +189,7 @@ function CuotibenPage() {
             )}
             {tab === 'study' && <StudyTab subject={subject} log={log} />}
             {tab === 'qa' && <QaTab cards={filtered} log={log} />}
+            {tab === 'practice' && <PracticeTab subject={subject} />}
           </>
         )}
       </main>
@@ -200,6 +202,7 @@ function CuotibenPage() {
               ['flash', '🃏', m['cuotiben.tab_flash']()],
               ['study', '📊', m['cuotiben.tab_study']()],
               ['qa', '💬', m['cuotiben.tab_qa']()],
+              ['practice', '✏️', '练习'],
             ] as [Tab, string, string][]
           ).map(([key, icon, label]) => (
             <button

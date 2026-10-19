@@ -3,6 +3,7 @@ import { and, desc, eq, lte } from 'drizzle-orm';
 import { db } from '@/core/db';
 import {
   cuotibenCard,
+  cuotibenPractice,
   cuotibenQaLog,
   cuotibenSrs,
   type NewCuotibenCard,
@@ -528,4 +529,92 @@ export async function generateSimilar(
     // 忽略
   }
   return null;
+}
+
+// ─── AI 练习题（独立掌握情况） ───────────────────────────────────────────────
+
+/** 从错题生成练习题并入库 */
+export async function createPractice(
+  userId: string,
+  cardId: string
+): Promise<{ id: string; question: string } | null> {
+  const card = await getCard(userId, cardId);
+  if (!card) return null;
+  const gen = await generateSimilar(card);
+  if (!gen) return null;
+  const id = `pr-${getUuid().slice(0, 8)}`;
+  await db()
+    .insert(cuotibenPractice)
+    .values({
+      id,
+      userId,
+      cardId,
+      subject: card.subject || '',
+      tag: card.tag || '',
+      question: gen.question,
+      answer: gen.answer,
+      principle: card.principle || '',
+    });
+  return { id, question: gen.question };
+}
+
+/** 练习题列表 */
+export async function listPractice(userId: string, subject?: string) {
+  const conds = [eq(cuotibenPractice.userId, userId)];
+  if (subject) conds.push(eq(cuotibenPractice.subject, subject));
+  return db()
+    .select()
+    .from(cuotibenPractice)
+    .where(and(...conds))
+    .orderBy(desc(cuotibenPractice.createdAt));
+}
+
+/** 练习题答题：AI 判分，更新掌握情况（独立于错题卡） */
+export async function answerPractice(
+  userId: string,
+  practiceId: string,
+  studentAnswer: string
+): Promise<{
+  correct: boolean;
+  confidence: number;
+  mock: boolean;
+  mastered: boolean;
+}> {
+  const rows = await db()
+    .select()
+    .from(cuotibenPractice)
+    .where(
+      and(
+        eq(cuotibenPractice.id, practiceId),
+        eq(cuotibenPractice.userId, userId)
+      )
+    );
+  const p = rows[0];
+  if (!p) throw new Error('Practice not found');
+  const { correct, confidence, mock } = await qaJudge(
+    p.question,
+    p.answer,
+    studentAnswer
+  );
+  const attempts = (p.attempts || 0) + 1;
+  const correctCount = (p.correctCount || 0) + (correct ? 1 : 0);
+  // 连续答对 2 次算掌握
+  const mastered = correctCount >= 2;
+  await db()
+    .update(cuotibenPractice)
+    .set({ attempts, correctCount, mastered })
+    .where(eq(cuotibenPractice.id, practiceId));
+  return { correct, confidence, mock, mastered };
+}
+
+/** 删除练习题 */
+export async function deletePractice(userId: string, practiceId: string) {
+  await db()
+    .delete(cuotibenPractice)
+    .where(
+      and(
+        eq(cuotibenPractice.id, practiceId),
+        eq(cuotibenPractice.userId, userId)
+      )
+    );
 }

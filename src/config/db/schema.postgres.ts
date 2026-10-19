@@ -755,8 +755,31 @@ export const cuotibenSrs = table(
     due: timestamp('due').notNull(),
     reps: integer('reps').notNull().default(0),
   },
+  (t) => [index('idx_cuotiben_srs_user_due').on(t.userId, t.due)]
+);
+
+// AI 生成的练习题（基于错题），掌握情况独立跟踪
+export const cuotibenPractice = table(
+  'cuotiben_practice',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    cardId: text('card_id').notNull(),
+    subject: text('subject').notNull().default(''),
+    tag: text('tag').notNull().default(''),
+    question: text('question').notNull(),
+    answer: text('answer').notNull().default(''),
+    principle: text('principle').notNull().default(''),
+    mastered: boolean('mastered').default(false).notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    correctCount: integer('correct_count').notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
   (t) => [
-    index('idx_cuotiben_srs_user_due').on(t.userId, t.due),
+    index('idx_cuotiben_practice_user').on(t.userId),
+    index('idx_cuotiben_practice_card').on(t.cardId),
   ]
 );
 
