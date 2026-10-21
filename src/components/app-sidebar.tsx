@@ -97,14 +97,19 @@ export function AppSidebar({
     return set;
   };
 
-  // Hrefs of every collapsible parent: all open by default.
-  const allParents = () =>
-    new Set(navItems.filter((i) => i.items?.length).map((i) => i.href));
+  // Collapsible parents open by default: only the first one (plus whichever
+  // holds the current route, added below).
+  const defaultParents = () => {
+    const first = navItems.find((i) => i.items?.length);
+    const set = first ? new Set([first.href]) : new Set<string>();
+    for (const href of activeParents()) set.add(href);
+    return set;
+  };
 
-  // Which collapsible parents are open. Seeded with all of them (SSR-safe),
+  // Which collapsible parents are open. Seeded with the defaults (SSR-safe),
   // then replaced by the persisted set after mount if the user has one.
   const storageKey = `sidebar-open:${brandHref}`;
-  const [openItems, setOpenItems] = useState<Set<string>>(allParents);
+  const [openItems, setOpenItems] = useState<Set<string>>(defaultParents);
 
   useEffect(() => {
     let saved: string[] | null = null;
@@ -112,7 +117,7 @@ export function AppSidebar({
       saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
     } catch {}
     setOpenItems(() => {
-      const next = saved ? new Set(saved) : allParents();
+      const next = saved ? new Set(saved) : defaultParents();
       for (const href of activeParents()) next.add(href);
       return next;
     });
