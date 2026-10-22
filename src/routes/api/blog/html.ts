@@ -9,6 +9,27 @@ function getBucket(): any {
   return env?.HTML_BUCKET || null;
 }
 
+// 已知分类（与 docs/blog-html-spec.md 对齐）
+export const BLOG_CATEGORIES = ['G8学习', '错题解析', '工具', '未分类'];
+
+// 按标题/摘要/正文关键词自动打标
+function autoCategorize(
+  title: string,
+  description: string,
+  content: string
+): string {
+  const text = `${title} ${description} ${content.slice(0, 3000)}`;
+  const rules: [string, RegExp][] = [
+    ['错题解析', /错题|错因| mistake|error.notebook|cuotiben/i],
+    ['G8学习', /G8|学习计划|作业|study.plan|homework|ManageBac/i],
+    ['工具', /工具|tool|使用说明|教程|guide/i],
+  ];
+  for (const [cat, re] of rules) {
+    if (re.test(text)) return cat;
+  }
+  return '未分类';
+}
+
 // POST /api/blog/html — 上传 HTML 文件到 R2
 async function POST({ request }: { request: Request }) {
   try {
@@ -40,11 +61,13 @@ async function POST({ request }: { request: Request }) {
     const descMatch = content.match(
       /<meta\s+name="description"\s+content="([^"]*)"/i
     );
-    // 尝试从文件名推断分类（如 g8-study-plan → G8学习）
-    // 优先用表单提交的 category
-    const category = (formData.get('category') as string) || '未分类';
     const title = titleMatch?.[1]?.trim() || file.name.replace('.html', '');
     const description = descMatch?.[1]?.trim() || '';
+
+    // 分类：优先用表单提交的 category，否则按内容自动打标
+    const manualCategory = (formData.get('category') as string)?.trim();
+    const category =
+      manualCategory || autoCategorize(title, description, content);
 
     const key = `html/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     await bucket.put(key, content, {
@@ -116,9 +139,46 @@ async function GET({ request }: { request: Request }) {
 
 export const Route = createFileRoute('/api/blog/html')({
   server: {
-    handlers: { GET, POST, DELETE },
+    handlers: { GET, POST, DELETE, PATCH },
   },
 });
+
+// PATCH /api/blog/html — 修改分类（R2 元数据不可原地更新，需重写对象）
+async function PATCH({ request }: { request: Request }) {
+  try {
+    const auth = getAuth();
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (!session?.user) return respErr('Unauthorized');
+
+    const bucket = getBucket();
+    if (!bucket) return respErr('R2 bucket not configured');
+
+    const body = await request.json();
+    const { key, category } = body as { key: string; category: string };
+    if (!key || !key.startsWith('html/')) return respErr('Invalid key');
+    if (!category || !BLOG_CATEGORIES.includes(category)) {
+      return respErr('Invalid category');
+    }
+
+    const obj = await bucket.get(key);
+    if (!obj) return respErr('Not found');
+    const content = await obj.text();
+
+    const meta = obj.customMetadata || {};
+    await bucket.put(key, content, {
+      httpMetadata: { contentType: 'text/html; charset=utf-8' },
+      customMetadata: {
+        title: meta.title || '',
+        description: meta.description || '',
+        category,
+      },
+    });
+
+    return respData({ ok: true, category });
+  } catch (error: any) {
+    return respErr(error.message || 'Update failed');
+  }
+}
 
 // DELETE /api/blog/html?key=xxx — 删除 R2 中的 HTML 文件
 async function DELETE({ request }: { request: Request }) {

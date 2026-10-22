@@ -8,7 +8,7 @@ import {
   Upload,
 } from 'lucide-react';
 
-import { apiDelete, apiGet } from '@/lib/api-client';
+import { apiDelete, apiGet, apiPatch } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 
 interface HtmlItem {
@@ -107,9 +107,29 @@ export function HtmlList({
         <div className="flex items-center gap-2">
           <Calendar className="size-3" />
           {fmtDate(item.uploaded)}
-          <span className="bg-muted rounded px-1.5 py-0.5">
-            {item.category || '未分类'}
-          </span>
+          <select
+            value={item.category || '未分类'}
+            onChange={async (e) => {
+              const category = e.target.value;
+              try {
+                await apiPatch('/api/blog/html', { key: item.key, category });
+                queryClient.invalidateQueries({
+                  queryKey: ['blog-html-list'],
+                });
+              } catch (err: any) {
+                alert('改分类失败: ' + err.message);
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-muted rounded border-0 px-1.5 py-0.5 text-xs"
+            title="点击修改分类"
+          >
+            {['G8学习', '错题解析', '工具', '未分类'].map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
         </div>
         <button
           onClick={async (e) => {
@@ -228,7 +248,7 @@ export function HtmlUpload() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('category', category.trim() || '未分类');
+      if (category.trim()) formData.append('category', category.trim());
 
       const res = await fetch('/api/blog/html', {
         method: 'POST',
@@ -255,7 +275,7 @@ export function HtmlUpload() {
           type="text"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          placeholder="分类（如 G8学习）"
+          placeholder="分类（留空自动识别）"
           className="border-border bg-background rounded-full border px-3 py-1.5 text-sm"
         />
         <label className="bg-primary text-primary-foreground inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-1.5 text-sm font-medium hover:opacity-90">
@@ -271,7 +291,8 @@ export function HtmlUpload() {
         </label>
       </div>
       <p className="text-muted-foreground mt-2 text-xs">
-        上传 tools/publish.py 生成的单文件 HTML，标题自动从文章内容提取
+        上传 tools/publish.py 生成的单文件
+        HTML；分类留空时按标题/内容自动识别，也可以上传后在列表里直接改
       </p>
     </div>
   );
