@@ -367,7 +367,7 @@ export function CardsTab({
 }
 
 function AddCardForm({ onDone }: { onDone: () => void }) {
-  const [subject, setSubject] = useState('数学');
+  const [subject, setSubject] = useState('上海数学');
   const [src, setSrc] = useState('中文数学');
   const [tag, setTag] = useState('');
   const [question, setQuestion] = useState('');
@@ -412,11 +412,17 @@ function AddCardForm({ onDone }: { onDone: () => void }) {
             onChange={(e) => setSubject(e.target.value)}
             className={inputCls}
           >
-            {['数学', 'Math', 'Science', '英语', '物理', '化学', '其他'].map(
-              (s) => (
-                <option key={s}>{s}</option>
-              )
-            )}
+            {[
+              'IGMath',
+              '上海数学',
+              'Science',
+              '英语',
+              '物理',
+              '化学',
+              '其他',
+            ].map((s) => (
+              <option key={s}>{s}</option>
+            ))}
           </select>
         </div>
         <div>
