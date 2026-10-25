@@ -416,6 +416,7 @@ function AddCardForm({ onDone }: { onDone: () => void }) {
               'IGMath',
               '上海数学',
               'Science',
+              'English Writing',
               '英语',
               '物理',
               '化学',
