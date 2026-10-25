@@ -17,7 +17,7 @@ export const Route = createFileRoute('/cuotiben/')({
   component: CuotibenPage,
 });
 
-const SUBJECTS = ['全部', 'Math', '数学', 'Science'];
+const SUBJECTS = ['全部', 'IGMath', '上海数学', 'Science'];
 
 // ─── 数据 hooks（TanStack Query + api-client，不用裸 fetch） ──────────────────
 
