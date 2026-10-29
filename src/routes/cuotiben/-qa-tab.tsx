@@ -43,11 +43,22 @@ export function QaTab({
   const [feedOk, setFeedOk] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const [followup, setFollowup] = useState('');
+  const [followupScore, setFollowupScore] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [answerShown, setAnswerShown] = useState(false);
 
   const card = cards.find((c) => c.id === cardId) ?? null;
   const math = card ? isMath(card) : false;
+
+  // 选卡顺序（未掌握在前）：done 后“下一题”按此顺序取当前卡的后一张
+  const sortedCards = [...cards].sort(
+    (a, b) => Number(a.mastered) - Number(b.mastered)
+  );
+  const nextCard = (() => {
+    if (!card) return null;
+    const idx = sortedCards.findIndex((c) => c.id === card.id);
+    return idx >= 0 ? (sortedCards[idx + 1] ?? null) : null;
+  })();
 
   const approachesQ = useQuery({
     queryKey: ['qa-approaches', card?.id],
@@ -72,6 +83,7 @@ export function QaTab({
     setFeed(null);
     setHint(null);
     setFollowup('');
+    setFollowupScore(null);
     setBusy(false);
     setAnswerShown(false);
   };
@@ -155,7 +167,10 @@ export function QaTab({
     setBusy(false);
   };
 
-  // --- 追问作答 ---
+  // --- 追问作答：有差距也结算，不再原地重试 ---
+  // 记录条件：追问无论对错都记一条 study 记录（qa_log + SRS，
+  // 答错会把卡片打回次日复习队列）；答错时按判分 confidence 给分，
+  // 结算后进下一题，不卡在原题
   const submitFollowup = async () => {
     if (!card || busy) return;
     const v = input.trim();
@@ -165,20 +180,27 @@ export function QaTab({
     }
     setBusy(true);
     try {
-      const r = await qaApi<{ mock: boolean; correct: boolean }>('judge', {
+      const r = await qaApi<{
+        mock: boolean;
+        correct: boolean;
+        confidence?: number;
+      }>('judge', {
         cardId: card.id,
         expected: card.answer,
         student: `${followup} ${v}`,
       });
       log({ cardId: card.id, kind: 'followup', ok: r.correct });
       if (r.correct) {
+        setFollowupScore(null);
         setFeed(m['cuotiben.qa_followup_correct']());
         setFeedOk(true);
-        setStep('done');
       } else {
-        setFeed(m['cuotiben.qa_followup_wrong']());
+        const score = Math.round((r.confidence ?? 0) * 100);
+        setFollowupScore(score);
+        setFeed(m['cuotiben.qa_followup_gap']({ score }));
         setFeedOk(false);
       }
+      setStep('done');
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -419,8 +441,35 @@ export function QaTab({
       )}
 
       {step === 'done' && (
-        <div className="mt-3 rounded-lg bg-green-50 p-4 text-center font-bold text-green-700">
-          {m['cuotiben.qa_done']()}
+        <div
+          className={`mt-3 rounded-lg p-4 text-center font-bold ${
+            followupScore !== null
+              ? 'bg-amber-50 text-amber-800'
+              : 'bg-green-50 text-green-700'
+          }`}
+        >
+          {followupScore !== null ? (
+            <div>
+              <div>
+                {m['cuotiben.qa_followup_gap']({ score: followupScore })}
+              </div>
+              {card.principle && (
+                <div className="mt-2 rounded-lg border-l-4 border-amber-500 bg-amber-50 p-2 text-left text-sm font-normal whitespace-pre-wrap text-slate-700">
+                  💡 {card.principle}
+                </div>
+              )}
+            </div>
+          ) : (
+            m['cuotiben.qa_done']()
+          )}
+          {nextCard && (
+            <button
+              onClick={() => start(nextCard)}
+              className="mt-3 min-h-[44px] rounded-lg bg-blue-600 px-6 text-white"
+            >
+              {m['cuotiben.qa_next']()}
+            </button>
+          )}
         </div>
       )}
 
