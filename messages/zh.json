@@ -1173,6 +1173,8 @@
   "cuotiben.qa_followup_placeholder": "说说你的理解…",
   "cuotiben.qa_followup_correct": "🎉 回答正确，概念清晰！",
   "cuotiben.qa_followup_wrong": "🤔 还差一点",
+  "cuotiben.qa_followup_gap": "和标准答案有差距 — 得分：{score}",
+  "cuotiben.qa_next": "下一题 →",
   "cuotiben.qa_show_answer": "看答案",
   "cuotiben.qa_done": "🎉 本轮问答完成！",
   "cuotiben.qa_mock_note": "本地简易判分",

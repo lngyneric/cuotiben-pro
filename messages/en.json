@@ -1173,6 +1173,8 @@
   "cuotiben.qa_followup_placeholder": "Explain your understanding…",
   "cuotiben.qa_followup_correct": "🎉 Correct, concept is clear!",
   "cuotiben.qa_followup_wrong": "🤔 Almost there",
+  "cuotiben.qa_followup_gap": "Gap vs the standard answer — score: {score}",
+  "cuotiben.qa_next": "Next question →",
   "cuotiben.qa_show_answer": "Show answer",
   "cuotiben.qa_done": "🎉 Q&A session complete!",
   "cuotiben.qa_mock_note": "local heuristic grading",
