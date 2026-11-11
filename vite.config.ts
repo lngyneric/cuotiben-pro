@@ -106,19 +106,22 @@ export default defineConfig({
           ],
         },
         // Bare locale homes match without a trailing-slash redirect.
+        // zh is the default locale, so it stays unprefixed.
         {
           pattern: '/',
           localized: [
-            ['zh', '/zh'],
-            ['en', '/'],
+            ['zh', '/'],
+            ['en', '/en'],
           ],
         },
-        // "as-needed" prefix: zh under /zh, en (default) unprefixed.
+        // "as-needed" prefix: en under /en, zh (default) unprefixed.
+        // Order matters: the prefixed locale must come first — the
+        // unprefixed pattern is a catch-all and would swallow /en/* URLs.
         {
           pattern: '/:path(.*)?',
           localized: [
-            ['zh', '/zh/:path(.*)?'],
-            ['en', '/:path(.*)?'],
+            ['en', '/en/:path(.*)?'],
+            ['zh', '/:path(.*)?'],
           ],
         },
       ],

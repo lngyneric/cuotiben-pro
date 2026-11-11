@@ -101,5 +101,5 @@ export const envConfigs: Record<string, string> = {
   replicate_api_token: procEnv.REPLICATE_API_TOKEN ?? '',
 
   // Locale (public)
-  locale: publicEnv('VITE_DEFAULT_LOCALE') ?? 'en',
+  locale: publicEnv('VITE_DEFAULT_LOCALE') ?? 'zh',
 };

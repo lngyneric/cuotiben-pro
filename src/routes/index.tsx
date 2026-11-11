@@ -47,7 +47,7 @@ export const Route = createFileRoute('/')({
     return { locale, posts };
   },
   head: ({ loaderData }) => {
-    const locale = loaderData?.locale ?? 'en';
+    const locale = loaderData?.locale ?? 'zh';
     const urlFor = (loc: string) =>
       localizeUrl(`${envConfigs.app_url}/`, { locale: loc as any }).href;
     return {
@@ -64,7 +64,7 @@ export const Route = createFileRoute('/')({
           hrefLang: loc,
           href: urlFor(loc),
         })),
-        { rel: 'alternate', hrefLang: 'x-default', href: urlFor('en') },
+        { rel: 'alternate', hrefLang: 'x-default', href: urlFor('zh') },
       ],
     };
   },

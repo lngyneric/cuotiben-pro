@@ -1,7 +1,7 @@
 {
   "$schema": "https://inlang.com/schema/project-settings",
-  "baseLocale": "en",
-  "locales": ["en", "zh"],
+  "baseLocale": "zh",
+  "locales": ["zh", "en"],
   "modules": ["./project.inlang/plugin-message-format.js"],
   "plugin.inlang.messageFormat": {
     "pathPattern": "./messages/{locale}.json"
