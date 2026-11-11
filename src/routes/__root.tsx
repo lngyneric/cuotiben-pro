@@ -26,6 +26,7 @@ import {
   pickAppearance,
   THEME_COOKIE,
 } from '@/config/appearance';
+import { withAppBase } from '@/lib/base-path';
 import { parseCookieConsent } from '@/lib/cookie-consent';
 import { getQueryClient } from '@/lib/query-client';
 import { getLocale, locales, localizeUrl } from '@/paraglide/runtime.js';
@@ -137,8 +138,12 @@ export const Route = createRootRoute({
         { name: 'description', content: envConfigs.app_description },
       ],
       links: [
-        { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' },
-        { rel: 'apple-touch-icon', href: '/favicon.svg' },
+        {
+          rel: 'icon',
+          href: withAppBase('/favicon.svg'),
+          type: 'image/svg+xml',
+        },
+        { rel: 'apple-touch-icon', href: withAppBase('/favicon.svg') },
         ...locales.map((loc) => ({
           rel: 'alternate',
           hrefLang: loc,

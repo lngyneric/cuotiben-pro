@@ -82,8 +82,49 @@ ss -tlnp | grep 3210   # 应只有 127.0.0.1:3210
 ```nginx
 # 错题本 Pro blog（内网版）——注意 proxy_pass 不带 URI，不剥离 /wiki 前缀，
 # 应用原生匹配 /wiki/...（Vite base + router basepath 已 baked 进镜像）。
-# 必须用容器名：nginx 容器在 docker_default 网、不是 host 网络，写
-# 127.0.0.1:3210 会指到 nginx 容器自己、连不上 blog。
+# 静态资源例外：Nitro 只在根路径 /assets/... 下提供 public 文件，HTML 里
+# 的 /wiki/assets/... 到容器会 404（且应用层改写 URL 也救不了——Nitro 的
+# 静态中间件在应用 handler 之前跑，改写后的请求只会撞上路由器的 basepath
+# 重定向）。所以静态路径在 nginx 这一层先剥掉 /wiki 前缀再反代；页面与
+# API 请求保持原样走 /wiki/。
+location /wiki/assets/ {
+    rewrite ^/wiki/(.*)$ /$1 break;
+    proxy_pass http://cuotiben-pro-blog:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+location /wiki/imgs/ {
+    rewrite ^/wiki/(.*)$ /$1 break;
+    proxy_pass http://cuotiben-pro-blog:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+location = /wiki/favicon.svg {
+    rewrite ^/wiki/(.*)$ /$1 break;
+    proxy_pass http://cuotiben-pro-blog:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+location = /wiki/logo.svg {
+    rewrite ^/wiki/(.*)$ /$1 break;
+    proxy_pass http://cuotiben-pro-blog:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
 location /wiki/ {
     proxy_pass http://cuotiben-pro-blog:3000;
     proxy_set_header Host $host;
