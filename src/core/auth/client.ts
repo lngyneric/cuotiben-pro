@@ -8,10 +8,19 @@ import { getAppBasePath } from '@/lib/base-path';
 // `/wiki` prefix and send auth calls to the ai-shifu site on the same host.
 // Server-side there is no window: VITE_APP_URL already carries the base
 // path when the intranet build sets it, so use it as-is.
+//
+// The `/api/auth` suffix is REQUIRED, not cosmetic: better-auth's client
+// resolves baseURL with `withPath`, which returns the URL unchanged when it
+// already has a path — so `https://host/wiki` does NOT get `/api/auth`
+// appended, and useSession() ends up calling `/wiki/get-session` (404).
+// That 404 made every guarded page bounce back to sign-in right after a
+// successful AAD login (the session cookie was fine all along). Passing the
+// full auth URL (`…/wiki/api/auth`) makes the client call
+// `/wiki/api/auth/get-session`, which the server route resolves.
 const baseURL =
   typeof window !== 'undefined'
-    ? `${window.location.origin}${getAppBasePath()}`
-    : import.meta.env?.VITE_APP_URL || 'http://localhost:3000';
+    ? `${window.location.origin}${getAppBasePath()}/api/auth`
+    : `${(import.meta.env?.VITE_APP_URL || 'http://localhost:3000').replace(/\/$/, '')}/api/auth`;
 
 export const authClient = createAuthClient({ baseURL });
 
