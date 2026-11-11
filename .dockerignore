@@ -13,6 +13,9 @@ src/paraglide
 .env
 .env.local
 .env.development
+# Intranet deploy secret file (AUTH_SECRET, AAD URL). NEVER baked into the
+# image — it is passed at runtime via compose `env_file:` only.
+.env.intranet
 !.env.example
 !.env.production
 

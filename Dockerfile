@@ -32,6 +32,19 @@ WORKDIR /app
 # NODE_ENV=production so loadEnvFiles() in vite.config.ts reads .env.production
 ENV NODE_ENV=production
 
+# Intranet build args (build-time public values; see vite.config.ts):
+# - APP_BASE_PATH=/wiki bakes the /wiki base path into asset URLs, the
+#   router basepath and the server-function paths. It must be set HERE —
+#   setting it only at runtime does not change the built bundle.
+# - VITE_APP_URL / VITE_AAD_LOGIN_ENABLED are public (client-visible) vars.
+#   Secrets (AUTH_SECRET, AAD URL) are NEVER build args — runtime env only.
+ARG APP_BASE_PATH=
+ARG VITE_APP_URL=
+ARG VITE_AAD_LOGIN_ENABLED=
+ENV APP_BASE_PATH=${APP_BASE_PATH}
+ENV VITE_APP_URL=${VITE_APP_URL}
+ENV VITE_AAD_LOGIN_ENABLED=${VITE_AAD_LOGIN_ENABLED}
+
 COPY . .
 RUN pnpm build
 
@@ -40,7 +53,9 @@ FROM base AS runner
 WORKDIR /app
 
 RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 appuser
+    adduser --system --uid 1001 appuser && \
+    mkdir -p /app/data/blog-html && \
+    chown -R appuser:nodejs /app/data
 
 COPY --from=builder --chown=appuser:nodejs /app/.output ./.output
 

@@ -83,8 +83,44 @@ export default {
   },
 };
 
+// Sub-path mount (intranet /wiki): Paraglide's middleware and urlPatterns
+// only understand root-relative paths, but the browser requests /wiki/... .
+// Feed it an effective URL with the base path stripped for locale detection
+// and redirect decisions, and put the base path back on any redirect
+// Location it issues — otherwise a zh-locale visitor to /wiki/blog would be
+// redirected to /zh/wiki/blog (or /zh/blog), i.e. off the app and onto the
+// ai-shifu site sharing the same domain. The handler itself still receives
+// the ORIGINAL request; the TanStack router strips the basepath itself.
+function effectiveRequestUrl(req: Request): URL {
+  const base = (process.env.APP_BASE_PATH || '').trim().replace(/\/$/, '');
+  const url = new URL(req.url);
+  if (base && (url.pathname === base || url.pathname.startsWith(base + '/'))) {
+    url.pathname = url.pathname.slice(base.length) || '/';
+  }
+  return url;
+}
+
+function rebaseRedirect(response: Response): void {
+  const base = (process.env.APP_BASE_PATH || '').trim().replace(/\/$/, '');
+  if (!base) return;
+  const location = response.headers.get('Location');
+  if (!location) return;
+  try {
+    const url = new URL(location);
+    if (!url.pathname.startsWith(base + '/') && url.pathname !== base) {
+      url.pathname = base + url.pathname;
+      response.headers.set('Location', url.href);
+    }
+  } catch {
+    // Non-URL Location — leave it alone.
+  }
+}
+
 async function handleRequest(req: Request): Promise<Response> {
-  const response = await paraglideMiddleware(req, () => handler.fetch(req));
+  const response = await paraglideMiddleware(req, () => handler.fetch(req), {
+    effectiveRequestUrl: (request) => effectiveRequestUrl(request),
+    onRedirect: (redirectResponse) => rebaseRedirect(redirectResponse),
+  });
   // First-touch attribution: remember UTM params for 30 days so sign-up can
   // stamp them onto the user row. Never overwrite an existing cookie.
   const params = new URL(req.url).searchParams;

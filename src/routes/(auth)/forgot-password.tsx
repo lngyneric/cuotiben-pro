@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { requestPasswordReset } from '@/core/auth/client';
 import { Link } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
+import { withAppBase } from '@/lib/base-path';
 import { m } from '@/paraglide/messages.js';
 import { localizeHref } from '@/paraglide/runtime.js';
 import { usePublicConfig } from '@/hooks/use-public-config';
@@ -42,7 +43,7 @@ function ForgotPasswordPage() {
       setError('');
       try {
         const origin = window.location.origin;
-        const redirectTo = `${origin}${localizeHref('/reset-password')}`;
+        const redirectTo = `${origin}${withAppBase(localizeHref('/reset-password'))}`;
         const result = await requestPasswordReset({
           email: value.email,
           redirectTo,

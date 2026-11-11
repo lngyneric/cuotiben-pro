@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, type LucideIcon } from 'lucide-react';
 
 import { Link, usePathname } from '@/core/i18n/navigation';
+import { withAppBase } from '@/lib/base-path';
 import { localizeHref } from '@/paraglide/runtime.js';
 import {
   Sidebar,
@@ -278,7 +279,7 @@ export function AppSidebar({
                 <SidebarMenuItem key={item.href}>
                   {item.newTab ? (
                     <a
-                      href={localizeHref(item.href)}
+                      href={withAppBase(localizeHref(item.href))}
                       target="_blank"
                       rel="noopener noreferrer"
                     >

@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 
 import { useSession } from '@/core/auth/client';
 import { apiGet } from '@/lib/api-client';
+import { withAppBase } from '@/lib/base-path';
 import {
   isAllowedAppProtocolUrl,
   isAppProtocolUrl,
@@ -42,7 +43,7 @@ function AuthCallbackPage() {
     // Web target, or nothing usable: no token involved, just go.
     if (!isAppProtocolUrl(target)) {
       handledRef.current = true;
-      window.location.replace(localizeHref(internalPath || '/'));
+      window.location.replace(withAppBase(localizeHref(internalPath || '/')));
       return;
     }
 
@@ -52,7 +53,7 @@ function AuthCallbackPage() {
     );
     if (!allowed) {
       handledRef.current = true;
-      window.location.replace(localizeHref('/'));
+      window.location.replace(withAppBase(localizeHref('/')));
       return;
     }
 
@@ -60,8 +61,10 @@ function AuthCallbackPage() {
     if (!session?.user) {
       handledRef.current = true;
       window.location.replace(
-        localizeHref(
-          `/sign-in?redirect=${encodeURIComponent(target as string)}`
+        withAppBase(
+          localizeHref(
+            `/sign-in?redirect=${encodeURIComponent(target as string)}`
+          )
         )
       );
       return;

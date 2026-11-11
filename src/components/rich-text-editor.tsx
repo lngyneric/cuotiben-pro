@@ -31,6 +31,7 @@ import MarkdownIt from 'markdown-it';
 import { toast } from 'sonner';
 import TurndownService from 'turndown';
 
+import { withAppBase } from '@/lib/base-path';
 import { cn } from '@/lib/utils';
 import { markdownStyles } from '@/components/markdown-content';
 import { Button } from '@/components/ui/button';
@@ -292,7 +293,7 @@ export function RichTextEditor({
     try {
       const formData = new FormData();
       formData.append('files', files[0]);
-      const res = await fetch('/api/storage/upload-image', {
+      const res = await fetch(withAppBase('/api/storage/upload-image'), {
         method: 'POST',
         body: formData,
       });

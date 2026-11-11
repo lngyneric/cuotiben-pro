@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 import { apiDelete, apiGet, apiPatch } from '@/lib/api-client';
+import { withAppBase } from '@/lib/base-path';
 import { cn } from '@/lib/utils';
 
 interface HtmlItem {
@@ -16,6 +17,7 @@ interface HtmlItem {
   title: string;
   description: string;
   category: string;
+  visibility?: string;
   size: number;
   uploaded: string;
   url: string;
@@ -96,6 +98,11 @@ export function HtmlList({
       <button onClick={() => onSelect(item)} className="w-full text-left">
         <div className="text-foreground text-sm leading-6 font-medium">
           {item.title}
+          {item.visibility === 'self' && (
+            <span className="bg-muted text-muted-foreground ml-2 rounded-full px-1.5 py-0.5 text-[10px]">
+              仅自己可见
+            </span>
+          )}
         </div>
         {item.description && (
           <div className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-5">
@@ -238,6 +245,7 @@ export function HtmlList({
 export function HtmlUpload() {
   const [uploading, setUploading] = useState(false);
   const [category, setCategory] = useState('');
+  const [visibility, setVisibility] = useState('all');
   const queryClient = useQueryClient();
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -249,8 +257,9 @@ export function HtmlUpload() {
       const formData = new FormData();
       formData.append('file', file);
       if (category.trim()) formData.append('category', category.trim());
+      formData.append('visibility', visibility);
 
-      const res = await fetch('/api/blog/html', {
+      const res = await fetch(withAppBase('/api/blog/html'), {
         method: 'POST',
         body: formData,
         credentials: 'include',
@@ -278,6 +287,15 @@ export function HtmlUpload() {
           placeholder="分类（留空自动识别）"
           className="border-border bg-background rounded-full border px-3 py-1.5 text-sm"
         />
+        <select
+          value={visibility}
+          onChange={(e) => setVisibility(e.target.value)}
+          title="可见范围：全体已注册可见，或仅自己可见"
+          className="border-border bg-background rounded-full border px-3 py-1.5 text-sm"
+        >
+          <option value="all">全体可见</option>
+          <option value="self">仅自己可见</option>
+        </select>
         <label className="bg-primary text-primary-foreground inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-1.5 text-sm font-medium hover:opacity-90">
           <Upload className="size-4" />
           {uploading ? '上传中...' : '上传 HTML'}

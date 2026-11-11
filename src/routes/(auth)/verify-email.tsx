@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { authClient, useSession } from '@/core/auth/client';
 import { Link, useRouter } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
+import { withAppBase } from '@/lib/base-path';
 import { m } from '@/paraglide/messages.js';
 import { deLocalizeHref, localizeHref } from '@/paraglide/runtime.js';
 import { Button } from '@/components/ui/button';
@@ -113,7 +114,7 @@ function VerifyEmailPage() {
 
   const hardNavigateToNextUrl = () => {
     if (typeof window === 'undefined') return;
-    window.location.assign(localizeHref(nextUrl));
+    window.location.assign(withAppBase(localizeHref(nextUrl)));
   };
 
   const checkSessionAndRedirect = async () => {
@@ -194,7 +195,7 @@ function VerifyEmailPage() {
       setLoading(true);
       const result = await authClient.sendVerificationEmail({
         email,
-        callbackURL: localizeHref(nextUrl || '/'),
+        callbackURL: withAppBase(localizeHref(nextUrl || '/')),
       });
       if (result?.error) {
         toast.error(

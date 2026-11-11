@@ -1,0 +1,48 @@
+# Intranet deployment for the cuotiben-pro blog:
+# https://eu.sysmex.com.cn/wiki/ (PRD nginx `location /wiki/`).
+#
+# Standalone stack — shares nothing with ai-shifu: no shared network,
+# volumes, compose files or nginx. The app binds only 127.0.0.1:3210 on the
+# host; browsers reach it exclusively through the PRD nginx (see
+# docs/blog-intranet-deploy.md). Operate it ONLY with
+#   docker compose -f docker-compose.intranet.yml ...
+# and never with a bare `docker compose up` in the ai-shifu worktrees
+# (a bare up there rebuilds the ai-shifu main stack).
+#
+# First run on the server:
+#   cp .env.intranet.example .env.intranet   # then fill in the real values
+#   docker compose -f docker-compose.intranet.yml up -d --build
+name: cuotiben-pro-blog
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DATABASE_PROVIDER: sqlite
+        # Build-time public values (baked into the bundle; see Dockerfile).
+        APP_BASE_PATH: /wiki
+        VITE_APP_URL: https://eu.sysmex.com.cn/wiki
+        VITE_AAD_LOGIN_ENABLED: 'true'
+    image: cuotiben-pro-blog:intranet
+    container_name: cuotiben-pro-blog
+    restart: unless-stopped
+    # Loopback only — the PRD nginx proxies to this port. Never publish it
+    # on 0.0.0.0: the blog must not be reachable by IP:port directly.
+    ports:
+      - '127.0.0.1:3210:3000'
+    volumes:
+      # Named volume (not a bind mount): Docker initializes it from the
+      # image's /app/data (owned by appuser), so the SQLite db and the
+      # uploaded HTML files are writable without host-side chown.
+      - cuotiben-blog-data:/app/data
+    env_file:
+      - .env.intranet
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      HOST: 0.0.0.0
+
+volumes:
+  cuotiben-blog-data:

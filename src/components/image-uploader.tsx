@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ImageIcon, RefreshCw, Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { withAppBase } from '@/lib/base-path';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
@@ -46,7 +47,7 @@ const uploadImageFile = async (file: File) => {
   const formData = new FormData();
   formData.append('files', file);
 
-  const response = await fetch('/api/storage/upload-image', {
+  const response = await fetch(withAppBase('/api/storage/upload-image'), {
     method: 'POST',
     body: formData,
   });

@@ -1,5 +1,12 @@
 // Typed client for the app's REST endpoints (src/routes/api/**).
 // Unwraps the resp.ts envelope: { code: 0 | -1, message, data? }.
+//
+// All URLs passed here are root-relative (`/api/...`) and get the app base
+// path prepended (`/wiki/api/...` on the intranet build). Without this, a
+// page served under /wiki would call /api/... on the bare domain — which is
+// the ai-shifu site on the same host — instead of this app.
+
+import { withAppBase } from '@/lib/base-path';
 
 export class ApiError extends Error {
   constructor(
@@ -24,7 +31,7 @@ export interface PageParams {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetch(withAppBase(url), {
     ...init,
     headers: {
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),

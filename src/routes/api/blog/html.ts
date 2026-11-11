@@ -1,13 +1,22 @@
 import { createFileRoute } from '@tanstack/react-router';
 
 import { getAuth } from '@/core/auth';
+import {
+  canManageBlogHtml,
+  canViewBlogHtml,
+  isBlogAdmin,
+  sanitizeBlogHtml,
+  type BlogViewer,
+} from '@/modules/blog-html/service';
+import {
+  deleteBlogHtml,
+  getBlogHtml,
+  listBlogHtml,
+  putBlogHtml,
+  updateBlogHtmlCategory,
+  type BlogHtmlVisibility,
+} from '@/modules/blog-html/storage';
 import { respData, respErr } from '@/lib/resp';
-
-// R2 bucket binding（wrangler.jsonc 里配置）
-function getBucket(): any {
-  const env = (globalThis as any).__CF_ENV__;
-  return env?.HTML_BUCKET || null;
-}
 
 // 已知分类（与 docs/blog-html-spec.md 对齐）
 export const BLOG_CATEGORIES = ['G8学习', '错题解析', '工具', '未分类'];
@@ -30,15 +39,35 @@ function autoCategorize(
   return '未分类';
 }
 
-// POST /api/blog/html — 上传 HTML 文件到 R2
+async function requireViewer(request: Request): Promise<{
+  user: any;
+  viewer: BlogViewer;
+} | null> {
+  const auth = getAuth();
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session?.user) return null;
+  return {
+    user: session.user,
+    viewer: {
+      userId: session.user.id,
+      isAdmin: await isBlogAdmin(session.user.id),
+    },
+  };
+}
+
+function employeeNoOf(user: any): string {
+  // AAD users are keyed by the synthetic email {employeeNo}@sysmex.internal.
+  const email = String(user?.email || '');
+  return email.endsWith('@sysmex.internal')
+    ? email.slice(0, -'@sysmex.internal'.length)
+    : '';
+}
+
+// POST /api/blog/html — 上传 HTML 文件（R2 或本地磁盘，见 storage.ts）
 async function POST({ request }: { request: Request }) {
   try {
-    const auth = getAuth();
-    const session = await auth.api.getSession({ headers: request.headers });
-    if (!session?.user) return respErr('Unauthorized');
-
-    const bucket = getBucket();
-    if (!bucket) return respErr('R2 bucket not configured');
+    const authed = await requireViewer(request);
+    if (!authed) return respErr('Unauthorized', { status: 401 });
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
@@ -54,7 +83,10 @@ async function POST({ request }: { request: Request }) {
       return respErr('File too large (max 5MB)');
     }
 
-    const content = await file.text();
+    const rawContent = await file.text();
+    // 服务端消毒：去掉 <script>/<iframe>/on* 事件/javascript: 链接等
+    // （见 src/modules/blog-html/service.ts；渲染时仍有 iframe sandbox）。
+    const content = sanitizeBlogHtml(rawContent);
 
     // 提取标题和描述，用于博客卡片展示
     const titleMatch = content.match(/<title>([^<]*)<\/title>/i);
@@ -69,69 +101,38 @@ async function POST({ request }: { request: Request }) {
     const category =
       manualCategory || autoCategorize(title, description, content);
 
-    const key = `html/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-    await bucket.put(key, content, {
-      httpMetadata: { contentType: 'text/html; charset=utf-8' },
-      customMetadata: { title, description, category },
-    });
+    // 可见范围：all（全体已注册可见，默认）或 self（仅自己和管理员可见）
+    const visibilityParam = (formData.get('visibility') as string)?.trim();
+    const visibility: BlogHtmlVisibility =
+      visibilityParam === 'self' ? 'self' : 'all';
 
-    return respData({
-      key,
+    const key = `html/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const item = await putBlogHtml(key, content, {
       title,
       description,
       category,
-      url: `/api/blog/html/${encodeURIComponent(key)}`,
+      visibility,
+      uploaderId: authed.user.id,
+      uploaderEmployeeNo: employeeNoOf(authed.user),
     });
+
+    return respData(item);
   } catch (error: any) {
     return respErr(error.message || 'Upload failed');
   }
 }
 
-// GET /api/blog/html — 列出已上传的 HTML
+// GET /api/blog/html — 列出已上传的 HTML（服务端按会话过滤可见范围）
 async function GET({ request }: { request: Request }) {
   try {
-    const auth = getAuth();
-    const session = await auth.api.getSession({ headers: request.headers });
-    if (!session?.user) return respErr('Unauthorized');
+    const authed = await requireViewer(request);
+    if (!authed) return respErr('Unauthorized', { status: 401 });
 
-    const bucket = getBucket();
-    if (!bucket) return respErr('R2 bucket not configured');
-
-    const listed = await bucket.list({ prefix: 'html/' });
-    const items = await Promise.all(
-      (listed.objects || []).map(async (o: any) => {
-        // 从 R2 head 获取自定义元数据（标题/描述/分类）
-        let title = o.key.replace('html/', '').replace('.html', '');
-        let description = '';
-        let category = '未分类';
-        try {
-          const head = await bucket.head(o.key);
-          if (head?.customMetadata?.title) title = head.customMetadata.title;
-          if (head?.customMetadata?.description)
-            description = head.customMetadata.description;
-          if (head?.customMetadata?.category)
-            category = head.customMetadata.category;
-        } catch {
-          // 忽略，fallback 用文件名
-        }
-        return {
-          key: o.key,
-          title,
-          description,
-          category,
-          size: o.size,
-          uploaded: o.uploaded,
-          url: `/api/blog/html/${encodeURIComponent(o.key)}`,
-        };
-      })
+    const items = await listBlogHtml();
+    const visible = items.filter((item) =>
+      canViewBlogHtml(item, authed.viewer)
     );
-
-    // 按上传时间倒序
-    items.sort(
-      (a, b) => new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime()
-    );
-
-    return respData({ items });
+    return respData({ items: visible });
   } catch (error: any) {
     return respErr(error.message || 'Failed');
   }
@@ -143,15 +144,11 @@ export const Route = createFileRoute('/api/blog/html')({
   },
 });
 
-// PATCH /api/blog/html — 修改分类（R2 元数据不可原地更新，需重写对象）
+// PATCH /api/blog/html — 修改分类（仅上传者本人或管理员）
 async function PATCH({ request }: { request: Request }) {
   try {
-    const auth = getAuth();
-    const session = await auth.api.getSession({ headers: request.headers });
-    if (!session?.user) return respErr('Unauthorized');
-
-    const bucket = getBucket();
-    if (!bucket) return respErr('R2 bucket not configured');
+    const authed = await requireViewer(request);
+    if (!authed) return respErr('Unauthorized', { status: 401 });
 
     const body = await request.json();
     const { key, category } = body as { key: string; category: string };
@@ -160,35 +157,24 @@ async function PATCH({ request }: { request: Request }) {
       return respErr('Invalid category');
     }
 
-    const obj = await bucket.get(key);
-    if (!obj) return respErr('Not found');
-    const content = await obj.text();
+    const got = await getBlogHtml(key);
+    if (!got) return respErr('Not found', { status: 404 });
+    if (!canManageBlogHtml(got.meta, authed.viewer)) {
+      return respErr('Forbidden', { status: 403 });
+    }
 
-    const meta = obj.customMetadata || {};
-    await bucket.put(key, content, {
-      httpMetadata: { contentType: 'text/html; charset=utf-8' },
-      customMetadata: {
-        title: meta.title || '',
-        description: meta.description || '',
-        category,
-      },
-    });
-
+    await updateBlogHtmlCategory(key, category);
     return respData({ ok: true, category });
   } catch (error: any) {
     return respErr(error.message || 'Update failed');
   }
 }
 
-// DELETE /api/blog/html?key=xxx — 删除 R2 中的 HTML 文件
+// DELETE /api/blog/html?key=xxx — 删除 HTML 文件（仅上传者本人或管理员）
 async function DELETE({ request }: { request: Request }) {
   try {
-    const auth = getAuth();
-    const session = await auth.api.getSession({ headers: request.headers });
-    if (!session?.user) return respErr('Unauthorized');
-
-    const bucket = getBucket();
-    if (!bucket) return respErr('R2 bucket not configured');
+    const authed = await requireViewer(request);
+    if (!authed) return respErr('Unauthorized', { status: 401 });
 
     const url = new URL(request.url);
     const key = url.searchParams.get('key');
@@ -196,7 +182,13 @@ async function DELETE({ request }: { request: Request }) {
       return respErr('Invalid key');
     }
 
-    await bucket.delete(key);
+    const got = await getBlogHtml(key);
+    if (!got) return respErr('Not found', { status: 404 });
+    if (!canManageBlogHtml(got.meta, authed.viewer)) {
+      return respErr('Forbidden', { status: 403 });
+    }
+
+    await deleteBlogHtml(key);
     return respData({ ok: true });
   } catch (error: any) {
     return respErr(error.message || 'Delete failed');

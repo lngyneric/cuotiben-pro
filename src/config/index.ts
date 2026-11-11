@@ -15,7 +15,9 @@ const publicEnv = (key: string) => metaEnv[key] ?? procEnv[key];
 
 export const envConfigs: Record<string, string> = {
   // App (public)
-  app_url: publicEnv('VITE_APP_URL') ?? 'http://localhost:3000',
+  // `||` (not `??`): an empty-string VITE_APP_URL (e.g. an unset Docker
+  // build arg exported as ENV) must fall back to the default, not stick.
+  app_url: publicEnv('VITE_APP_URL') || 'http://localhost:3000',
   app_name: publicEnv('VITE_APP_NAME') ?? 'ShipAny',
   app_description: publicEnv('VITE_APP_DESCRIPTION') ?? 'Ship your SaaS faster',
   app_logo: publicEnv('VITE_APP_LOGO') ?? '/logo.svg',
@@ -29,9 +31,26 @@ export const envConfigs: Record<string, string> = {
   db_max_connections: procEnv.DB_MAX_CONNECTIONS ?? '1',
 
   // Auth
-  auth_url: procEnv.AUTH_URL ?? publicEnv('VITE_APP_URL') ?? '',
+  auth_url: procEnv.AUTH_URL || publicEnv('VITE_APP_URL') || '',
   auth_secret: procEnv.AUTH_SECRET ?? '',
   auth_cookie_prefix: procEnv.AUTH_COOKIE_PREFIX ?? '',
+
+  // Intranet AAD login form on the sign-in page (build-time public flag;
+  // only the intranet build sets VITE_AAD_LOGIN_ENABLED=true).
+  aad_login_enabled: publicEnv('VITE_AAD_LOGIN_ENABLED') ?? '',
+
+  // Intranet deployment (APP_BASE_PATH=/wiki behind eu.sysmex.com.cn/wiki/).
+  // Empty = served at the domain root (Cloudflare default). This value is
+  // also the Vite `base` (see vite.config.ts) and is therefore baked in at
+  // build time — setting it only at runtime is not enough.
+  app_base_path: procEnv.APP_BASE_PATH ?? '',
+
+  // Internal enterprise AAD (NOT Microsoft Entra): worker number + password
+  // verified against the intranet AAD server. See src/modules/aad/service.ts.
+  aad_auth_url: procEnv.AAD_AUTH_URL ?? 'http://10.40.20.195:8082',
+
+  // Blog HTML local storage (intranet backend only; Cloudflare keeps R2).
+  blog_html_dir: procEnv.BLOG_HTML_DIR ?? './data/blog-html',
 
   // Payment - Stripe
   stripe_secret_key: procEnv.STRIPE_SECRET_KEY ?? '',

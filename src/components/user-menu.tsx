@@ -17,6 +17,7 @@ import { tDynamic } from '@/core/i18n/dynamic';
 import { useRouter } from '@/core/i18n/navigation';
 import { THEMES } from '@/config/appearance';
 import { localeNames } from '@/config/locale';
+import { withAppBase } from '@/lib/base-path';
 import { m } from '@/paraglide/messages.js';
 import {
   getLocale,
@@ -134,7 +135,7 @@ export function UserMenu({
             {profileHref && (
               <DropdownMenuItem
                 onClick={() => {
-                  window.open(localizeHref(profileHref), '_blank');
+                  window.open(withAppBase(localizeHref(profileHref)), '_blank');
                 }}
               >
                 <UserIcon className="size-4" />

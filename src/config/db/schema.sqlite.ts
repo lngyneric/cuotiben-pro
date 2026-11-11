@@ -853,4 +853,41 @@ export type CuotibenCard = typeof cuotibenCard.$inferSelect;
 export type NewCuotibenCard = typeof cuotibenCard.$inferInsert;
 export type CuotibenQaLog = typeof cuotibenQaLog.$inferSelect;
 export type CuotibenSrs = typeof cuotibenSrs.$inferSelect;
+
+// ─── Blog HTML (intranet local storage) ──────────────────────────────────────
+// 仅内网 SQLite 用：元数据存在这里，HTML 本体存在服务器磁盘
+// (BLOG_HTML_DIR，见 src/modules/blog-html/storage.ts)。Cloudflare 线上站
+// 继续走 R2，不读这张表，所以 postgres / mysql / d1 模板里不加此表；
+// 本地后端在 DATABASE_PROVIDER 不是 sqlite 时拒绝启动，而不是静默建表失败。
+export const blogHtmlFile = table(
+  'blog_html_file',
+  {
+    // 与 R2 侧的 key 格式一致：`html/<slug>.html`（R2 的 object key 亦然，
+    // 便于两边迁移/对照；`html/` 前缀是防路径遍历的硬性要求）。
+    key: text('key').primaryKey(),
+    title: text('title').notNull().default(''),
+    description: text('description').notNull().default(''),
+    category: text('category').notNull().default('未分类'),
+    // all = 全体已注册可见（默认）；self = 仅上传者本人和管理员可见。
+    visibility: text('visibility').notNull().default('all'),
+    uploaderId: text('uploader_id').references(() => user.id),
+    uploaderEmployeeNo: text('uploader_employee_no').notNull().default(''),
+    sha256: text('sha256').notNull().default(''),
+    size: integer('size').notNull().default(0),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+      .default(sqliteNowMs)
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => [
+    index('idx_blog_html_uploader').on(t.uploaderId),
+    index('idx_blog_html_created').on(t.createdAt),
+  ]
+);
+
+export type BlogHtmlFile = typeof blogHtmlFile.$inferSelect;
+export type NewBlogHtmlFile = typeof blogHtmlFile.$inferInsert;
 export type CuotibenPractice = typeof cuotibenPractice.$inferSelect;

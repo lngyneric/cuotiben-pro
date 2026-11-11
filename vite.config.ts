@@ -15,6 +15,19 @@ import { loadEnvFiles } from './src/lib/env';
 // from the actual host/container environment.
 loadEnvFiles();
 
+// App base path (intranet: APP_BASE_PATH=/wiki behind eu.sysmex.com.cn/wiki/).
+// This is a BUILD-TIME value: Vite `base` bakes it into asset URLs and the
+// TanStack router basepath is derived from it (start-plugin-core
+// deriveRouterBasepath). Setting APP_BASE_PATH only at runtime is NOT
+// enough — the intranet image must be built with it set (see
+// docker-compose.intranet.yml build args). Empty = served at domain root.
+const appBasePath = (process.env.APP_BASE_PATH || '')
+  .trim()
+  .replace(/\/+$/, '')
+  .replace(/^\/*/, '');
+const viteBase = appBasePath ? `/${appBasePath}/` : '/';
+const routerBasepath = appBasePath ? `/${appBasePath}` : '/';
+
 // Cloudflare Workers build (pnpm cf:build / cf:deploy): stub out unused DB
 // drivers — mysql2 crashes workerd at module evaluation (node:net,
 // node:process requires); postgres.js runs fine under nodejs_compat but is
@@ -47,6 +60,9 @@ const workersDb = isCloudflareBuild ? workersDbProvider() : '';
 const keepPostgres = workersDb === 'postgresql' || workersDb === 'postgres';
 
 export default defineConfig({
+  // Sub-path mount (intranet /wiki). Asset URLs, the router basepath and
+  // server-function paths all derive from this.
+  base: viteBase,
   server: {
     port: 3000,
     // Cloud sandboxes (ShipAny Code / e2b) proxy the dev server through a
@@ -109,6 +125,9 @@ export default defineConfig({
     }),
     tanstackStart({
       srcDirectory: 'src',
+      router: {
+        basepath: routerBasepath,
+      },
     }),
     viteReact(),
     nitro(),

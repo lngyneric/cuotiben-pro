@@ -26,6 +26,7 @@
     "admin:mcp": "tsx scripts/admin-mcp.ts",
     "test:admin": "node --import tsx --test tests/admin-agent.test.ts",
     "test:atomic": "node --import tsx --test tests/atomic.test.ts",
+    "test:blog-html": "node --import tsx --test tests/blog-html.test.ts",
     "test:atomic:d1": "ATOMIC_D1=1 node --import tsx --test tests/atomic.test.ts",
     "test:atomic:pg": "TSX_TSCONFIG_PATH=tests/tsconfig.pg.json node --import tsx --test tests/atomic.test.ts"
   },

@@ -7,6 +7,7 @@ import { authClient, signIn, signUp, useSession } from '@/core/auth/client';
 import { Link, useRouter } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
 import { apiPost } from '@/lib/api-client';
+import { withAppBase } from '@/lib/base-path';
 import { resolveAfterAuthUrl, safeInternalPath } from '@/lib/redirect';
 import { m } from '@/paraglide/messages.js';
 import { localizeHref } from '@/paraglide/runtime.js';
@@ -146,7 +147,7 @@ function SignUpPage() {
           )}&callbackUrl=${encodeURIComponent(afterLoginUrl)}`;
           void authClient.sendVerificationEmail({
             email: value.email,
-            callbackURL: localizeHref(afterLoginUrl),
+            callbackURL: withAppBase(localizeHref(afterLoginUrl)),
           });
           router.push(verifyPath);
         } else {
@@ -154,7 +155,7 @@ function SignUpPage() {
           // cookie — a client push would let the guard read a stale (logged-out)
           // session store and bounce straight back to /sign-in.
           navigatingRef.current = true;
-          window.location.assign(localizeHref(afterLoginUrl));
+          window.location.assign(withAppBase(localizeHref(afterLoginUrl)));
         }
       } catch (err: any) {
         setError(err.message || 'Sign up failed');

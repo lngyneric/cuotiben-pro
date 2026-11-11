@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { authClient, signIn, useSession } from '@/core/auth/client';
 import { Link, useRouter } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
+import { apiPost } from '@/lib/api-client';
+import { withAppBase } from '@/lib/base-path';
 import { resolveAfterAuthUrl, safeInternalPath } from '@/lib/redirect';
 import { m } from '@/paraglide/messages.js';
 import { localizeHref } from '@/paraglide/runtime.js';
@@ -83,7 +85,35 @@ function SignInPage() {
   const githubEnabled = configs.github_auth_enabled === 'true';
   const passwordResetEnabled = configs.password_reset_enabled === 'true';
   const hasSocial = googleEnabled || githubEnabled;
-  const hasAnyMethod = emailEnabled || hasSocial;
+  // Intranet only: employee-number login against the internal AAD server.
+  // (Build-time flag VITE_AAD_LOGIN_ENABLED; the public site never sets it.)
+  const aadEnabled = envConfigs.aad_login_enabled === 'true';
+  const hasAnyMethod = emailEnabled || hasSocial || aadEnabled;
+
+  const [aadEmployeeNo, setAadEmployeeNo] = useState('');
+  const [aadPassword, setAadPassword] = useState('');
+  const [aadSubmitting, setAadSubmitting] = useState(false);
+  const [aadError, setAadError] = useState('');
+
+  async function handleAadSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setAadError('');
+    setAadSubmitting(true);
+    try {
+      await apiPost('/api/auth/aad', {
+        employeeNo: aadEmployeeNo,
+        password: aadPassword,
+      });
+      // Hard navigation so the destination reloads with a fresh session
+      // cookie — same reason as the email flow below.
+      navigatingRef.current = true;
+      window.location.assign(withAppBase(localizeHref(afterLoginUrl)));
+    } catch (err: any) {
+      setAadError(err.message || '工号登录失败');
+    } finally {
+      setAadSubmitting(false);
+    }
+  }
 
   const form = useForm({
     defaultValues: { email: '', password: '' },
@@ -108,7 +138,7 @@ function SignInPage() {
             )}&callbackUrl=${encodeURIComponent(afterLoginUrl)}`;
             void authClient.sendVerificationEmail({
               email: value.email,
-              callbackURL: localizeHref(afterLoginUrl),
+              callbackURL: withAppBase(localizeHref(afterLoginUrl)),
             });
             router.push(verifyPath);
             return;
@@ -119,7 +149,7 @@ function SignInPage() {
           // cookie — a client push would let the guard read a stale (logged-out)
           // session store and bounce straight back to /sign-in.
           navigatingRef.current = true;
-          window.location.assign(localizeHref(afterLoginUrl));
+          window.location.assign(withAppBase(localizeHref(afterLoginUrl)));
         }
       } catch (err: any) {
         setError(err.message || 'Sign in failed');
@@ -305,6 +335,60 @@ function SignInPage() {
                   )}
                 </FieldGroup>
               </form>
+            )}
+
+            {aadEnabled && (
+              <>
+                <FieldSeparator className="*:data-[slot=field-separator-content]:bg-card">
+                  或
+                </FieldSeparator>
+                <form onSubmit={handleAadSubmit}>
+                  <FieldGroup>
+                    <div className="text-center text-sm font-medium">
+                      工号登录（企业账号）
+                    </div>
+                    {aadError && (
+                      <div className="bg-destructive/10 text-destructive rounded-lg p-3 text-sm">
+                        {aadError}
+                      </div>
+                    )}
+                    <Field>
+                      <FieldLabel htmlFor="aad-employee-no">工号</FieldLabel>
+                      <Input
+                        id="aad-employee-no"
+                        name="employeeNo"
+                        type="text"
+                        autoComplete="username"
+                        value={aadEmployeeNo}
+                        onChange={(e) => setAadEmployeeNo(e.target.value)}
+                        required
+                        placeholder="例如 sch00256"
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="aad-password">密码</FieldLabel>
+                      <Input
+                        id="aad-password"
+                        name="password"
+                        type="password"
+                        autoComplete="current-password"
+                        value={aadPassword}
+                        onChange={(e) => setAadPassword(e.target.value)}
+                        required
+                        placeholder="企业账号密码"
+                      />
+                    </Field>
+                    <Field>
+                      <Button type="submit" disabled={aadSubmitting}>
+                        {aadSubmitting ? '...' : '工号登录'}
+                      </Button>
+                      <FieldDescription className="text-center">
+                        使用内部企业账号登录；密码仅用于本次校验，不保存。
+                      </FieldDescription>
+                    </Field>
+                  </FieldGroup>
+                </form>
+              </>
             )}
           </CardContent>
         </Card>

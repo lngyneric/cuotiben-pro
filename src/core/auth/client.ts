@@ -1,9 +1,16 @@
 import { oneTapClient } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
 
+import { getAppBasePath } from '@/lib/base-path';
+
+// The auth endpoints live under the app base path too (`/wiki/api/auth/...`
+// on the intranet build). `window.location.origin` alone would drop the
+// `/wiki` prefix and send auth calls to the ai-shifu site on the same host.
+// Server-side there is no window: VITE_APP_URL already carries the base
+// path when the intranet build sets it, so use it as-is.
 const baseURL =
   typeof window !== 'undefined'
-    ? window.location.origin
+    ? `${window.location.origin}${getAppBasePath()}`
     : import.meta.env?.VITE_APP_URL || 'http://localhost:3000';
 
 export const authClient = createAuthClient({ baseURL });

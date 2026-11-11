@@ -1,4 +1,5 @@
 import type { ClientEventKind, EventDetail } from '@/config/events';
+import { withAppBase } from '@/lib/base-path';
 
 /**
  * Report a product event from the browser, e.g.
@@ -12,7 +13,7 @@ import type { ClientEventKind, EventDetail } from '@/config/events';
 export function track(kind: ClientEventKind, detail?: EventDetail): void {
   if (typeof window === 'undefined') return;
   try {
-    void fetch('/api/events', {
+    void fetch(withAppBase('/api/events'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind, detail }),

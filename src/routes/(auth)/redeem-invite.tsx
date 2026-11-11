@@ -4,6 +4,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { signOut, useSession } from '@/core/auth/client';
 import { useRouter } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
+import { withAppBase } from '@/lib/base-path';
 import { m } from '@/paraglide/messages.js';
 import { localizeHref } from '@/paraglide/runtime.js';
 import { Button } from '@/components/ui/button';
@@ -32,7 +33,7 @@ function RedeemInvitePage() {
       return;
     }
     let cancelled = false;
-    fetch('/api/user/info')
+    fetch(withAppBase('/api/user/info'))
       .then((r) => r.json())
       .then((res) => {
         if (cancelled) return;
@@ -58,7 +59,7 @@ function RedeemInvitePage() {
     }
     setLoading(true);
     try {
-      const validate = await fetch('/api/invite-codes/validate', {
+      const validate = await fetch(withAppBase('/api/invite-codes/validate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: trimmed }),
@@ -69,7 +70,7 @@ function RedeemInvitePage() {
         return;
       }
 
-      const redeem = await fetch('/api/invite-codes/redeem', {
+      const redeem = await fetch(withAppBase('/api/invite-codes/redeem'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: trimmed }),
@@ -81,7 +82,7 @@ function RedeemInvitePage() {
       }
 
       // Hard navigation so the new plan/membership is reflected everywhere.
-      window.location.assign(localizeHref('/settings'));
+      window.location.assign(withAppBase(localizeHref('/settings')));
     } catch (err: any) {
       setError(err?.message || m['common.sign.invite_code_invalid']());
       setLoading(false);
