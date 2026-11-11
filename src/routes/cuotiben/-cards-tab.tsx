@@ -417,6 +417,7 @@ function AddCardForm({ onDone }: { onDone: () => void }) {
               '上海数学',
               'Science',
               'English Writing',
+              '语文',
               '英语',
               '物理',
               '化学',
