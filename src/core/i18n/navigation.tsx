@@ -17,7 +17,7 @@ export function useCurrentLocale(): string {
 
 type LinkProps = Omit<ComponentProps<'a'>, 'href'> & {
   href: string;
-  locale?: string; // kept for API compat; locale switching goes via setLocale()
+  locale?: string; // kept for API compat; locale switching goes via switchLocale() (core/i18n/urls.ts) — paraglide's setLocale() doesn't know the /wiki base path
   prefetch?: boolean | string;
   children?: ReactNode;
 };

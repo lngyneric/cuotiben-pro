@@ -15,16 +15,12 @@ import { useTheme } from 'next-themes';
 import { signOut } from '@/core/auth/client';
 import { tDynamic } from '@/core/i18n/dynamic';
 import { useRouter } from '@/core/i18n/navigation';
+import { switchLocale } from '@/core/i18n/urls';
 import { THEMES } from '@/config/appearance';
 import { localeNames } from '@/config/locale';
 import { withAppBase } from '@/lib/base-path';
 import { m } from '@/paraglide/messages.js';
-import {
-  getLocale,
-  locales,
-  localizeHref,
-  setLocale,
-} from '@/paraglide/runtime.js';
+import { getLocale, locales, localizeHref } from '@/paraglide/runtime.js';
 import { useAppearance } from '@/hooks/use-appearance';
 import { ThemeDot } from '@/components/appearance-options';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -78,8 +74,9 @@ export function UserMenu({
   }
 
   function handleLocaleSwitch(newLocale: string) {
-    // Writes the locale cookie and reloads on the localized URL.
-    setLocale(newLocale as typeof locale);
+    // Base-path-aware: paraglide's setLocale() would localize the full URL
+    // and send intranet users to /en/wiki (404). See core/i18n/urls.ts.
+    switchLocale(newLocale);
   }
 
   return (

@@ -1,8 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router';
 
-import { envConfigs } from '@/config';
+import { localizedAbsoluteUrl } from '@/core/i18n/urls';
 import { m } from '@/paraglide/messages.js';
-import { getLocale, locales, localizeUrl } from '@/paraglide/runtime.js';
+import { getLocale, locales } from '@/paraglide/runtime.js';
 import { Blog } from '@/blocks/blog';
 import { CourseTracks } from '@/blocks/course-tracks';
 import { CTA } from '@/blocks/cta';
@@ -48,8 +48,7 @@ export const Route = createFileRoute('/')({
   },
   head: ({ loaderData }) => {
     const locale = loaderData?.locale ?? 'zh';
-    const urlFor = (loc: string) =>
-      localizeUrl(`${envConfigs.app_url}/`, { locale: loc as any }).href;
+    const urlFor = (loc: string) => localizedAbsoluteUrl('/', loc);
     return {
       meta: [
         {

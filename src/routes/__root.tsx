@@ -12,6 +12,7 @@ import {
 import { createServerFn } from '@tanstack/react-start';
 import { ThemeProvider } from 'next-themes';
 
+import { localizedAbsoluteUrl } from '@/core/i18n/urls';
 import { envConfigs } from '@/config';
 import {
   APPEARANCE_CONFIG_KEYS,
@@ -29,7 +30,7 @@ import {
 import { withAppBase } from '@/lib/base-path';
 import { parseCookieConsent } from '@/lib/cookie-consent';
 import { getQueryClient } from '@/lib/query-client';
-import { getLocale, locales, localizeUrl } from '@/paraglide/runtime.js';
+import { getLocale, locales } from '@/paraglide/runtime.js';
 import { useAppearance } from '@/hooks/use-appearance';
 import { useCookieConsent } from '@/hooks/use-cookie-consent';
 import { CookieConsent } from '@/blocks/cookie-consent';
@@ -122,14 +123,10 @@ export const Route = createRootRoute({
   loader: () => getAnalyticsConfigs(),
   head: () => {
     // head() runs on the SSR server AND again on the client during hydration.
-    // On the client, app_url falls back to the localhost dev default when
-    // VITE_APP_URL wasn't inlined into the client bundle at build — which would
-    // emit a second, localhost set of hreflang links. Prefer the live origin
-    // on the client so it always matches; the server uses the configured URL.
-    const appUrl =
-      (typeof window !== 'undefined' && window.location?.origin) ||
-      envConfigs.app_url ||
-      '';
+    // localizedAbsoluteUrl() prefers the live origin on the client (VITE_APP_URL
+    // may not be inlined into dev bundles) and localizes the root-relative
+    // path before prepending the /wiki base — paraglide's localizeUrl on the
+    // full app URL would emit /en/wiki/ (404).
     return {
       meta: [
         { charSet: 'utf-8' },
@@ -147,7 +144,7 @@ export const Route = createRootRoute({
         ...locales.map((loc) => ({
           rel: 'alternate',
           hrefLang: loc,
-          href: localizeUrl(`${appUrl}/`, { locale: loc }).href,
+          href: localizedAbsoluteUrl('/', loc),
         })),
       ],
     };

@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { ExternalLink } from 'lucide-react';
 
+import { localizedAbsoluteUrl } from '@/core/i18n/urls';
 import { envConfigs } from '@/config';
 import { m } from '@/paraglide/messages.js';
-import { getLocale, locales, localizeUrl } from '@/paraglide/runtime.js';
+import { getLocale, locales } from '@/paraglide/runtime.js';
 import { Footer } from '@/blocks/footer';
 import { Header } from '@/blocks/header';
 
@@ -17,8 +18,7 @@ export const Route = createFileRoute('/blog/')({
   },
   head: ({ loaderData }) => {
     const locale = loaderData?.locale;
-    const urlFor = (loc: string) =>
-      localizeUrl(`${envConfigs.app_url}/blog`, { locale: loc as any }).href;
+    const urlFor = (loc: string) => localizedAbsoluteUrl('/blog', loc);
     return {
       meta: [
         {

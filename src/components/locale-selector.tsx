@@ -1,8 +1,9 @@
 import { Check, ChevronDown, Globe, Languages } from 'lucide-react';
 
+import { switchLocale } from '@/core/i18n/urls';
 import { localeNames } from '@/config/locale';
 import { cn } from '@/lib/utils';
-import { getLocale, locales, setLocale } from '@/paraglide/runtime.js';
+import { getLocale, locales } from '@/paraglide/runtime.js';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,8 +21,9 @@ export function LocaleSelector({
   const locale = getLocale();
 
   function handleSwitch(newLocale: string) {
-    // Writes the locale cookie and reloads on the localized URL.
-    setLocale(newLocale as typeof locale);
+    // Base-path-aware: paraglide's setLocale() would localize the full URL
+    // and send intranet users to /en/wiki (404). See core/i18n/urls.ts.
+    switchLocale(newLocale);
   }
 
   return (
