@@ -71,7 +71,7 @@ docker logs cuotiben-pro-blog --tail 50
 ss -tlnp | grep 3210   # 应只有 127.0.0.1:3210
 ```
 
-## nginx 片段（PRD nginx，`nginx.prod.conf` 的 443 server 块）
+## nginx 片段（PRD nginx，服务器上是 `/home/sysmex/ai-shifu/docker/nginx.conf`，容器 `ai-shifu-nginx`，443 server 块）
 
 > 只加这一段，不动其他 location。改前备份原文件，改后 `nginx -t` 再 reload；
 > Dev 的 `nginx.dev.conf` 一个字不动。
@@ -94,8 +94,8 @@ location /wiki/ {
 重载（只重载 PRD nginx 容器，不重建其他容器）：
 
 ```bash
-docker exec ai-shifu-nginx-prod nginx -t
-docker exec ai-shifu-nginx-prod nginx -s reload
+docker exec ai-shifu-nginx nginx -t
+docker exec ai-shifu-nginx nginx -s reload
 ```
 
 ## 验证步骤
