@@ -7,7 +7,7 @@
 ```
 浏览器（公司网内） ── https://eu.sysmex.com.cn/wiki/ ──► PRD nginx (443)
                                                           location /wiki/
-                                                          proxy_pass http://127.0.0.1:3210;
+                                                          proxy_pass http://cuotiben-pro-blog:3000;
                                                                              │
                                                   ┌──────────────────────────┘
                                                   ▼
@@ -19,7 +19,10 @@
 ```
 
 - **独立栈**：`docker-compose.intranet.yml` 一个服务，不动 ai-shifu 的任何
-  compose/nginx/容器。应用只绑 `127.0.0.1:3210`，不直接对外。
+  compose/nginx/容器；唯一共享的是 `docker_default` 网络（PRD nginx 容器所
+  在网，blog 容器加入该网，nginx 以容器名 `cuotiben-pro-blog:3000` 反代——
+  nginx 容器不是 host 网络，容器内 `127.0.0.1:3210` 指它自己、到不了 blog）。
+  应用另绑 `127.0.0.1:3210` 供主机侧直查，不直接对外。
 - **存储**：本地磁盘 + SQLite。Cloudflare 线上站继续走 R2，代码按运行时
   自动选择（`globalThis.__CF_ENV__.HTML_BUCKET` 有则 R2，否则本地）。
 - **登录**：内部 AAD（工号 + 密码，`POST /api/auth/aad`）。AAD 不是微软
@@ -79,8 +82,10 @@ ss -tlnp | grep 3210   # 应只有 127.0.0.1:3210
 ```nginx
 # 错题本 Pro blog（内网版）——注意 proxy_pass 不带 URI，不剥离 /wiki 前缀，
 # 应用原生匹配 /wiki/...（Vite base + router basepath 已 baked 进镜像）。
+# 必须用容器名：nginx 容器在 docker_default 网、不是 host 网络，写
+# 127.0.0.1:3210 会指到 nginx 容器自己、连不上 blog。
 location /wiki/ {
-    proxy_pass http://127.0.0.1:3210;
+    proxy_pass http://cuotiben-pro-blog:3000;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -88,6 +93,7 @@ location /wiki/ {
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
+    client_max_body_size 6m;
 }
 ```
 

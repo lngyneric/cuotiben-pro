@@ -1,10 +1,11 @@
 # Intranet deployment for the cuotiben-pro blog:
 # https://eu.sysmex.com.cn/wiki/ (PRD nginx `location /wiki/`).
 #
-# Standalone stack — shares nothing with ai-shifu: no shared network,
-# volumes, compose files or nginx. The app binds only 127.0.0.1:3210 on the
-# host; browsers reach it exclusively through the PRD nginx (see
-# docs/blog-intranet-deploy.md). Operate it ONLY with
+# Standalone stack — shares nothing with ai-shifu except the `docker_default`
+# network (see below): no shared volumes, compose files or nginx. The app
+# binds only 127.0.0.1:3210 on the host for host-side checks; browsers reach
+# it exclusively through the PRD nginx (see docs/blog-intranet-deploy.md).
+# Operate it ONLY with
 #   docker compose -f docker-compose.intranet.yml ...
 # and never with a bare `docker compose up` in the ai-shifu worktrees
 # (a bare up there rebuilds the ai-shifu main stack).
@@ -43,6 +44,18 @@ services:
       NODE_ENV: production
       PORT: '3000'
       HOST: 0.0.0.0
+    networks:
+      # Shared with the PRD nginx container (ai-shifu-nginx lives on
+      # docker_default). The nginx container is NOT on host networking, so
+      # 127.0.0.1:3210 is unreachable from inside it — the nginx location
+      # must proxy to http://cuotiben-pro-blog:3000 by container name.
+      # `external: true` below: this network is owned by the ai-shifu
+      # docker compose project; we only join it, never create/delete it.
+      - docker_default
 
 volumes:
   cuotiben-blog-data:
+
+networks:
+  docker_default:
+    external: true
