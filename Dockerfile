@@ -46,6 +46,15 @@ ENV VITE_APP_URL=${VITE_APP_URL}
 ENV VITE_AAD_LOGIN_ENABLED=${VITE_AAD_LOGIN_ENABLED}
 
 COPY . .
+# Pre-compile Paraglide messages BEFORE vite build. On a clean checkout
+# src/paraglide does not exist yet and the vite plugin regenerates it during
+# the build; message imports can resolve before all per-message files land,
+# so Rollup replaces the missing exports with (void 0) — observed in the
+# first intranet image as "TypeError: (void 0) is not a function" in SSR
+# chunks with no messages chunk in .output. Generating here first makes the
+# build deterministic; the plugin still regenerates with its own options
+# during `pnpm build`.
+RUN ./node_modules/.bin/paraglide-js compile --project ./project.inlang --outdir ./src/paraglide --strategy url cookie baseLocale --output-structure message-modules
 RUN pnpm build
 
 # Production image — run the nitro server output
