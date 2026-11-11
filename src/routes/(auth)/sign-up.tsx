@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from '@tanstack/react-form';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 import { z } from 'zod';
 
 import { authClient, signIn, signUp, useSession } from '@/core/auth/client';
@@ -350,5 +350,12 @@ function SignUpPage() {
 }
 
 export const Route = createFileRoute('/(auth)/sign-up')({
+  // Intranet (AAD) builds have no self-registration: AAD users are
+  // auto-created on first login. Send direct /sign-up visits to /sign-in.
+  beforeLoad: () => {
+    if (envConfigs.aad_login_enabled === 'true') {
+      throw redirect({ to: '/sign-in' });
+    }
+  },
   component: SignUpPage,
 });
