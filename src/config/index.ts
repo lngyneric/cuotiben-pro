@@ -18,8 +18,10 @@ export const envConfigs: Record<string, string> = {
   // `||` (not `??`): an empty-string VITE_APP_URL (e.g. an unset Docker
   // build arg exported as ENV) must fall back to the default, not stick.
   app_url: publicEnv('VITE_APP_URL') || 'http://localhost:3000',
-  app_name: publicEnv('VITE_APP_NAME') ?? 'ShipAny',
-  app_description: publicEnv('VITE_APP_DESCRIPTION') ?? 'Ship your SaaS faster',
+  app_name: publicEnv('VITE_APP_NAME') ?? '企业大学 AI-Coach',
+  app_description:
+    publicEnv('VITE_APP_DESCRIPTION') ??
+    '企业大学 AI-Coach：人人皆可学，人人皆进步。',
   app_logo: publicEnv('VITE_APP_LOGO') ?? '/logo.svg',
 
   // Database

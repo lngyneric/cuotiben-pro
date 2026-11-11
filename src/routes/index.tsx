@@ -4,20 +4,21 @@ import { envConfigs } from '@/config';
 import { m } from '@/paraglide/messages.js';
 import { getLocale, locales, localizeUrl } from '@/paraglide/runtime.js';
 import { Blog } from '@/blocks/blog';
+import { CourseTracks } from '@/blocks/course-tracks';
 import { CTA } from '@/blocks/cta';
 import { FAQ } from '@/blocks/faq';
-import { Features } from '@/blocks/features';
 import { Footer } from '@/blocks/footer';
 import { Header } from '@/blocks/header';
 import { Hero } from '@/blocks/hero';
-import { Pricing } from '@/blocks/pricing';
+import { Mission } from '@/blocks/mission';
 import { SupportWidget } from '@/blocks/support-widget';
 import { getBlogPostsFn } from '@/content/posts/server';
 
 /**
- * Default landing page — demo content. Rewrite this file (and the blocks in
- * src/blocks/) for your project. The primitives in src/components/ stay.
- * See /quick-start or /clone-website to automate the rewrite.
+ * 企业大学 AI-Coach landing page (MIT HR style): photo hero with a
+ * highlight row, the four course tracks with tabs, a mission section,
+ * then blog, FAQ and CTA. Pricing and the generic Features section are
+ * not part of this page (the files stay for other routes).
  */
 function HomePage() {
   const { posts } = Route.useLoaderData();
@@ -27,9 +28,10 @@ function HomePage() {
       <Header />
       <main>
         <Hero />
-        <Features />
-        <FAQ />
+        <CourseTracks />
+        <Mission />
         <Blog posts={posts} />
+        <FAQ />
         <CTA />
       </main>
       <Footer />

@@ -7,13 +7,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 
-const FAQ_KEYS = [
-  'stack',
-  'payment',
-  'database',
-  'customize',
-  'license',
-] as const;
+const FAQ_KEYS = ['login', 'access', 'courses', 'videos', 'feedback'] as const;
 
 export function FAQ() {
   return (
