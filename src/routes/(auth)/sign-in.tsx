@@ -9,6 +9,7 @@ import { envConfigs } from '@/config';
 import { apiPost } from '@/lib/api-client';
 import { withAppBase } from '@/lib/base-path';
 import { resolveAfterAuthUrl, safeInternalPath } from '@/lib/redirect';
+import { bridgeToAiShifu } from '@/lib/sso-bridge';
 import { m } from '@/paraglide/messages.js';
 import { localizeHref } from '@/paraglide/runtime.js';
 import { usePublicConfig } from '@/hooks/use-public-config';
@@ -113,8 +114,15 @@ function SignInPage() {
       });
       // Hard navigation so the destination reloads with a fresh session
       // cookie — same reason as the email flow below.
+      // After AAD sign-in, hop through the ai-shifu SSO bridge once so the
+      // user is logged into ai-shifu too; if the bridge is unavailable the
+      // call returns false and we fall back to the normal destination.
       navigatingRef.current = true;
-      window.location.assign(withAppBase(localizeHref(afterLoginUrl)));
+      const destination = withAppBase(localizeHref(afterLoginUrl));
+      const bridged = await bridgeToAiShifu(destination);
+      if (!bridged) {
+        window.location.assign(destination);
+      }
     } catch (err: any) {
       setAadError(err.message || '工号登录失败');
     } finally {

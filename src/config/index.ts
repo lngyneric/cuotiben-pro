@@ -36,6 +36,10 @@ export const envConfigs: Record<string, string> = {
   auth_url: procEnv.AUTH_URL || publicEnv('VITE_APP_URL') || '',
   auth_secret: procEnv.AUTH_SECRET ?? '',
   auth_cookie_prefix: procEnv.AUTH_COOKIE_PREFIX ?? '',
+  // SSO bridge (wiki -> ai-shifu): shared HMAC secret used to sign the
+  // short-lived SSO JWT minted by GET /api/auth/sso. Must match the
+  // SSO_SHARED_SECRET configured on the ai-shifu side.
+  sso_shared_secret: procEnv.SSO_SHARED_SECRET ?? '',
 
   // Intranet AAD login form on the sign-in page (build-time public flag;
   // only the intranet build sets VITE_AAD_LOGIN_ENABLED=true).
