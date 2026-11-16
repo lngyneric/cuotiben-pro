@@ -169,6 +169,7 @@ test('callJevRouting：一次调用并行问意图 + 每门候选打分，解析
     'recommend',
     'course_info',
     'study_plan',
+    'doc_info',
     'other',
   ]);
   assert.equal(sentPayload.questions.rel_0.type, 'noul');
@@ -190,6 +191,7 @@ test('jevShortlist：只取打分 ≥0.6 的，最多 2 门；低分返回空', 
         { slug: 'course-leadership', noul: 0.91 },
         { slug: 'course-sales', noul: 0.2 },
       ],
+      docScores: [],
     }),
     ['course-leadership']
   );
@@ -201,6 +203,7 @@ test('jevShortlist：只取打分 ≥0.6 的，最多 2 门；低分返回空', 
         { slug: 'course-leadership', noul: 0.5 },
         { slug: 'course-sales', noul: 0.4 },
       ],
+      docScores: [],
     }),
     []
   );
@@ -212,6 +215,7 @@ test('isOffTopicIntent：意图 other 且置信度 ≥0.7 才算无关', () => {
     intent: 'other' as const,
     intentConfidence: conf,
     scores: [],
+    docScores: [],
   });
   assert.equal(isOffTopicIntent(other(0.9)), true);
   assert.equal(isOffTopicIntent(other(0.7)), true);
@@ -221,6 +225,7 @@ test('isOffTopicIntent：意图 other 且置信度 ≥0.7 才算无关', () => {
       intent: 'recommend',
       intentConfidence: 0.99,
       scores: [],
+      docScores: [],
     }),
     false
   );

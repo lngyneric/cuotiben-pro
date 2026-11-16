@@ -23,10 +23,18 @@ interface RecommendedCourse {
   link: string;
 }
 
+interface DocSource {
+  docTitle: string;
+  sectionTitle: string;
+  url: string;
+}
+
 interface RecommendResult {
-  mode: 'ai' | 'keyword';
+  mode: 'ai' | 'keyword' | 'doc';
   found: boolean;
   courses: RecommendedCourse[];
+  answer?: string;
+  sources?: DocSource[];
 }
 
 const TOPIC_KEYS = [
@@ -172,7 +180,41 @@ function AiAssistantPage() {
                 </p>
               )}
 
-              {result && result.found && (
+              {result && result.found && result.mode === 'doc' && (
+                <div className="mt-8 space-y-4">
+                  <p className="text-muted-foreground text-center text-xs">
+                    {m['ai_assistant.mode_doc']()}
+                  </p>
+                  <article className="border-border bg-card rounded-2xl border p-6">
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                      {result.answer}
+                    </p>
+                    {result.sources?.map((source) => (
+                      <a
+                        key={source.url}
+                        href={source.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="border-border mt-4 flex items-center justify-between gap-2 rounded-xl border px-4 py-3 text-sm"
+                      >
+                        <span>
+                          <span className="text-muted-foreground block text-xs">
+                            {m['ai_assistant.doc_source']()}
+                          </span>
+                          <span className="font-medium">
+                            {source.docTitle} · {source.sectionTitle}
+                          </span>
+                        </span>
+                        <span className="text-primary shrink-0 font-medium">
+                          {m['ai_assistant.open_doc']()} ↗
+                        </span>
+                      </a>
+                    ))}
+                  </article>
+                </div>
+              )}
+
+              {result && result.found && result.mode !== 'doc' && (
                 <div className="mt-8 space-y-4">
                   <p className="text-muted-foreground text-center text-xs">
                     {result.mode === 'ai'

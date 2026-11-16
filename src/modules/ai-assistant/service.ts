@@ -10,12 +10,13 @@
 //   4. 一次推荐 1–2 门，查不到就直说查不到。
 //
 // 意图路由（Jev）：推荐链路里先调 TypeSafe Jev 做两件事——①意图分类
-// （choice：推荐课程 / 了解某门课 / 学习规划 / 其他）；②对关键词粗筛
-// 出的候选课做语义相关性打分（noul，每门一题）。Jev 只做判断、不生成：
-// 意图明确与课程学习无关且置信度够高时直接返回查不到（不硬推课、不浪费
-// 一次 LLM 调用）；打分高的候选收窄后交给 Magpie LLM 做最终挑选；Jev
-// 超时、失败、无 key 时一律静默回退到原有链路（LLM 全量目录 → 关键词
-// 匹配）。内网直连 api.typesafe.ai 会被地域屏蔽（HTTP 451），须经出口
+// （choice：推荐课程 / 了解某门课 / 学习规划 / 查文档 / 其他）；②对
+// 关键词粗筛出的候选课与文档 section 做语义相关性打分（noul，每项一题）。
+// Jev 只做判断、不生成：意图明确与课程学习、文档内容都无关且置信度够高
+// 时直接返回查不到（不硬推课、不浪费一次 LLM 调用）；打分高的候选收窄后
+// 交给 Magpie LLM 做最终挑选或按原文作答；Jev 超时、失败、无 key 时一律
+// 静默回退到原有链路（LLM 全量目录 → 关键词匹配；文档则走关键词预筛）。
+// 内网直连 api.typesafe.ai 会被地域屏蔽（HTTP 451），须经出口
 // 代理（TYPESAFE_PROXY_URL，如 http://172.17.0.1:7897）；Node 22 的
 // fetch 不读代理环境变量，所以 Jev 请求走 node:https + 自建 CONNECT
 // 代理 agent，不引入新依赖。
@@ -279,6 +280,7 @@ export type AssistantIntent =
   | 'recommend'
   | 'course_info'
   | 'study_plan'
+  | 'doc_info'
   | 'other';
 
 export interface JevCandidate {
@@ -288,11 +290,27 @@ export interface JevCandidate {
   description: string;
 }
 
+/**
+ * 文档候选：一个已上传 HTML 文件里的一个 section。
+ * links 可选：Jev 打分不用，文档回答的 prompt 会带上，方便 LLM 引用
+ * 正式制度原文等相关链接。
+ */
+export interface DocCandidate {
+  docKey: string;
+  docTitle: string;
+  sectionId: string;
+  sectionTitle: string;
+  text: string;
+  links?: { text: string; href: string }[];
+}
+
 export interface JevRouting {
   intent: AssistantIntent;
   intentConfidence: number;
   /** 按 noul 降序，每项都是调用方给出的候选之一。 */
   scores: { slug: string; noul: number }[];
+  /** 按 noul 降序，每项都是调用方给出的文档候选之一。 */
+  docScores: { docKey: string; sectionId: string; noul: number }[];
 }
 
 export interface JevRoutingInput {
@@ -302,6 +320,8 @@ export interface JevRoutingInput {
   query: string;
   /** 关键词粗筛出的候选（可为空：为空时只做意图分类）。 */
   candidates: JevCandidate[];
+  /** 关键词粗筛出的文档 section（可为空）。 */
+  docCandidates?: DocCandidate[];
 }
 
 /** Jev 传输层：默认走 node:https；测试可注入桩，禁止真实联网。 */
@@ -506,7 +526,7 @@ const defaultJevTransport: JevTransport = { postJson: postJevJson };
  * 由调用方静默回退到原有链路。绝不抛错、绝不把 key 写进日志。
  */
 export async function callJevRouting(
-  { apiKey, proxyUrl, query, candidates }: JevRoutingInput,
+  { apiKey, proxyUrl, query, candidates, docCandidates = [] }: JevRoutingInput,
   transport: JevTransport = defaultJevTransport
 ): Promise<JevRouting | null> {
   if (!apiKey) return null;
@@ -521,8 +541,10 @@ export async function callJevRouting(
           '用户想了解某一门具体课程的内容、讲师、时长，或者怎么上这门课。',
         study_plan:
           '用户想做学习规划或学习路径：按阶段安排先学什么、后学什么，或为某个目标制定学习计划。',
+        doc_info:
+          '用户在问入社培训文档里的具体做法或制度：如何请假、考勤怎么记、某个系统怎么开通、FAQ 里的问题——问的是做法、流程、入口或规定本身，而不是想找一门课程来学。',
         other:
-          '用户问的不是课程学习的事（例如请假、报销、系统操作、闲聊打招呼），或无法判断与课程学习有关。',
+          '用户问的既不是课程学习、也不是入社培训文档里的事（例如天气、报销、闲聊打招呼），或无法判断与课程学习、入社文档有关。',
       },
     },
   };
@@ -534,20 +556,34 @@ export async function callJevRouting(
         `简介：${c.description.slice(0, 80)}）是否与用户想学的内容相关？`,
     };
   }
+  for (const [j, d] of docCandidates.entries()) {
+    questions[`docrel_${j}`] = {
+      type: 'noul',
+      instructions:
+        `《${d.docTitle}》第 ${d.sectionId} 节「${d.sectionTitle}」` +
+        `（内容：${d.text.slice(0, 120)}）是否能回答用户的问题？`,
+    };
+  }
   const doc = candidates
     .map(
       (c, i) =>
         `${i + 1}. ${c.slug} | ${c.title} | ${c.categories.join(',')} | ${c.description.slice(0, 120)}`
     )
-    .join('\n')
-    .slice(0, 2000);
+    .join('\n');
+  const docList = docCandidates
+    .map(
+      (d, j) =>
+        `D${j + 1}. ${d.docKey}#${d.sectionId} | ${d.docTitle} | ${d.sectionTitle} | ${d.text.slice(0, 120)}`
+    )
+    .join('\n');
+  const stateDoc = [doc, docList].filter((s) => s.length > 0).join('\n');
 
   let res: { status: number; body: string };
   try {
     res = await transport.postJson(
       JEV_ENDPOINT,
       {
-        state: { message: query, doc },
+        state: { message: query, doc: stateDoc.slice(0, 2000) },
         model: JEV_MODEL,
         questions,
       },
@@ -570,6 +606,7 @@ export async function callJevRouting(
     'recommend',
     'course_info',
     'study_plan',
+    'doc_info',
     'other',
   ];
   if (!validIntents.includes(intent as AssistantIntent)) return null;
@@ -587,10 +624,24 @@ export async function callJevRouting(
       };
     })
     .sort((a, b) => b.noul - a.noul);
+  const docScores = docCandidates
+    .map((d, j) => {
+      const n = answers[`docrel_${j}`]?.noul;
+      return {
+        docKey: d.docKey,
+        sectionId: d.sectionId,
+        noul:
+          typeof n === 'number' && Number.isFinite(n)
+            ? Math.min(1, Math.max(0, n))
+            : 0,
+      };
+    })
+    .sort((a, b) => b.noul - a.noul);
   return {
     intent: intent as AssistantIntent,
     intentConfidence: confidence,
     scores,
+    docScores,
   };
 }
 
@@ -606,6 +657,20 @@ export function jevShortlist(routing: JevRouting | null): string[] {
     .map((s) => s.slug);
 }
 
+/**
+ * Jev 文档短名单：相关性打分高于阈值的 section，最多
+ * AI_ASSISTANT_MAX_RESULTS 节。为空时调用方不走文档回答。
+ */
+export function jevDocShortlist(
+  routing: JevRouting | null
+): { docKey: string; sectionId: string }[] {
+  if (!routing) return [];
+  return routing.docScores
+    .filter((s) => s.noul >= JEV_RELEVANCE_THRESHOLD)
+    .slice(0, AI_ASSISTANT_MAX_RESULTS)
+    .map((s) => ({ docKey: s.docKey, sectionId: s.sectionId }));
+}
+
 /** 意图明确与课程学习无关（且置信度够高）时直接返回查不到。 */
 export function isOffTopicIntent(routing: JevRouting | null): boolean {
   return (
@@ -613,4 +678,330 @@ export function isOffTopicIntent(routing: JevRouting | null): boolean {
     routing.intent === 'other' &&
     routing.intentConfidence >= JEV_INTENT_CONFIDENCE_THRESHOLD
   );
+}
+
+/** 意图是查入社培训文档（置信度不限：文档链路自己有相关性门槛）。 */
+export function isDocIntent(routing: JevRouting | null): boolean {
+  return !!routing && routing.intent === 'doc_info';
+}
+
+/**
+ * 文档 section 的关键词打分：复用课程那套标题 3 分 / 分类 2 分 /
+ * 简介 1 分（含反向分类与中文 2 字 gram），section 标题当标题、
+ * 文档标题当分类、section 全文当简介。
+ */
+export function docKeywordScoreList(
+  sections: DocCandidate[],
+  query: string
+): KeywordScore[] {
+  return keywordScoreList(
+    sections.map((s) => ({
+      slug: `${s.docKey}#${s.sectionId}`,
+      title: s.sectionTitle,
+      description: s.text,
+      categories: [s.docTitle],
+    })),
+    query
+  );
+}
+
+/** 无 Jev 时文档关键词兜底的最低命中分：标题命中（3 分）才算命中。 */
+export const DOC_KEYWORD_MIN_SCORE = 3;
+
+export interface DocAnswerInput {
+  baseUrl: string;
+  apiKey: string;
+  model?: string;
+  query: string;
+  sections: DocCandidate[];
+}
+
+/**
+ * 调 OpenAI 兼容的 chat completions 接口（本机部署指向 Magpie 网关），
+ * 按给定的文档 section 原文回答问题。只返回答案正文；任何失败返回
+ * null，由调用方退回原文摘录。prompt 要求只按原文、不编造：原文写明
+ * “速览”“细则以正式制度原文为准”或标有“待填”时必须如实说明，不许
+ * 自己补一个流程。
+ */
+export async function callDocAnswerLLM({
+  baseUrl,
+  apiKey,
+  model = AI_ASSISTANT_MODEL,
+  query,
+  sections,
+}: DocAnswerInput): Promise<string | null> {
+  if (sections.length === 0) return null;
+  const sourcesText = sections
+    .map((s, i) => {
+      const links = (s.links ?? [])
+        .map((l) => `  - ${l.text || '相关链接'}：${l.href}`)
+        .join('\n');
+      return (
+        `【来源 ${i + 1}】《${s.docTitle}》第 ${s.sectionId} 节「${s.sectionTitle}」：\n` +
+        s.text.slice(0, 1500) +
+        (links ? `\n该节相关链接：\n${links}` : '')
+      );
+    })
+    .join('\n\n');
+  const systemPrompt = [
+    '你是企业大学 wiki 的 AI 学习助手，按以下规则回答文档问题：',
+    '1. 只根据下面给出的文档原文回答，文档里没有的内容绝不编造：不猜测流程、不编造链接、电话或联系人。',
+    '2. 如果原文明确写着“速览”“细则以正式制度原文为准”或标有“待填”，如实告诉用户：这部分原文就是速览或尚未填写，正式内容请看来源里的正式制度原文链接，不要自己补一个流程。',
+    '3. 回答简短（一般不超过 300 字），直接给结论和做法；涉及多个来源时注明是哪一篇、哪一节，格式如《文档标题》第 XX 节「小节标题」。',
+    '4. 只输出答案正文，不要输出思考过程。',
+    '文档原文：',
+    sourcesText,
+  ].join('\n');
+
+  let resp: Response;
+  try {
+    resp = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.3,
+        max_tokens: 1024,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: query },
+        ],
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch {
+    return null;
+  }
+  if (!resp.ok) return null;
+  let data: any;
+  try {
+    data = await resp.json();
+  } catch {
+    return null;
+  }
+  const content = String(data?.choices?.[0]?.message?.content ?? '').trim();
+  if (!content) return null;
+  return content.slice(0, 2000);
+}
+
+export interface DocSource {
+  docTitle: string;
+  sectionTitle: string;
+  url: string;
+}
+
+export interface AssistantResult {
+  mode: 'ai' | 'keyword' | 'doc';
+  found: boolean;
+  courses: RecommendedCourse[];
+  routedBy: 'jev' | 'llm' | 'keyword';
+  /** 文档回答的正文（仅 mode=doc）。 */
+  answer?: string;
+  /** 文档回答的来源（仅 mode=doc）。 */
+  sources?: DocSource[];
+}
+
+export interface AssistantQueryInput {
+  query: string;
+  catalog: CourseCatalogItem[];
+  docSections: DocCandidate[];
+  /** 由调用方把课程 slug 解析成链接与类型（读不到返回 null，课不上架）。 */
+  resolveCourse: (
+    slug: string
+  ) => Promise<{ link: string; type: CourseType } | null>;
+  /** 文档 section 的公开链接（含 #pXX 锚点），由调用方拼。 */
+  docSectionUrl: (section: DocCandidate) => string;
+  jevKey: string;
+  proxyUrl?: string;
+  baseUrl: string;
+  apiKey: string;
+  jevTransport?: JevTransport;
+}
+
+/**
+ * 助手一次问答的完整决策链（路由层只做鉴权、限流与取数，决策全在这里，
+ * 便于服务端实测与单测）：
+ *   1. Jev 一次调用：意图分类 + 课程候选打分 + 文档 section 打分。
+ *   2. 意图 other 且置信度够高：有文档命中则走文档，否则直接查不到
+ *      （不浪费 LLM 调用，沿用原有规则）。
+ *   3. 意图 doc_info：先文档，答不出再走课程。
+ *   4. 其余意图：先课程，课程没找到再试文档（第二张网）。
+ *   5. 都没命中：查不到。
+ * Jev 不可用/无 key 时：跳过意图判断，课程链路照旧，文档走关键词
+ * 预筛（分值 ≥ DOC_KEYWORD_MIN_SCORE 才算命中）。
+ */
+export async function runAssistantQuery(
+  input: AssistantQueryInput
+): Promise<AssistantResult> {
+  const { query, catalog, docSections, resolveCourse } = input;
+  const { jevKey, proxyUrl, baseUrl, apiKey } = input;
+
+  // 1. Jev 意图路由（可选）：无 key 时跳过，超时/失败时返回 null。
+  // 日志只记意图与数量，不记用户原问句。
+  let jev: JevRouting | null = null;
+  if (jevKey) {
+    const bySlug = new Map(catalog.map((c) => [c.slug, c]));
+    const candidates: CourseCatalogItem[] = [];
+    for (const s of keywordScoreList(catalog, query).slice(
+      0,
+      JEV_CANDIDATE_LIMIT
+    )) {
+      const c = bySlug.get(s.slug);
+      if (c) candidates.push(c);
+    }
+    const docBySlug = new Map(
+      docSections.map((d) => [`${d.docKey}#${d.sectionId}`, d])
+    );
+    const docCandidates: DocCandidate[] = [];
+    for (const s of docKeywordScoreList(docSections, query).slice(
+      0,
+      JEV_CANDIDATE_LIMIT
+    )) {
+      const d = docBySlug.get(s.slug);
+      if (d) docCandidates.push(d);
+    }
+    jev = await callJevRouting(
+      { apiKey: jevKey, proxyUrl, query, candidates, docCandidates },
+      input.jevTransport
+    );
+    if (jev) {
+      console.info(
+        `[ai-assistant] jev intent=${jev.intent} conf=${jev.intentConfidence.toFixed(2)} candidates=${candidates.length} shortlist=${jevShortlist(jev).length} docCandidates=${docCandidates.length} docShortlist=${jevDocShortlist(jev).length}`
+      );
+    } else {
+      console.info(
+        '[ai-assistant] jev unavailable, falling back to LLM/keyword'
+      );
+    }
+  }
+
+  // 文档命中判定：有 Jev 时以语义短名单为准；无 Jev 时以关键词预筛为准。
+  const docShortlist = jev ? jevDocShortlist(jev) : [];
+  const docKeywordRanked = docKeywordScoreList(docSections, query);
+  const docHit =
+    docShortlist.length > 0 ||
+    (!jev && docKeywordRanked.some((r) => r.score >= DOC_KEYWORD_MIN_SCORE));
+
+  // 文档回答：短名单优先；无 Jev 时用关键词预筛（分值够的取前 2 节）。
+  // LLM 不可用或失败时退回原文摘录（逐字引用，不生成）。
+  async function answerFromDocs(): Promise<AssistantResult | null> {
+    let picked: DocCandidate[] = [];
+    if (docShortlist.length > 0) {
+      const bySlug = new Map(
+        docSections.map((d) => [`${d.docKey}#${d.sectionId}`, d])
+      );
+      for (const s of docShortlist) {
+        const d = bySlug.get(`${s.docKey}#${s.sectionId}`);
+        if (d) picked.push(d);
+      }
+    } else if (!jev) {
+      const bySlug = new Map(
+        docSections.map((d) => [`${d.docKey}#${d.sectionId}`, d])
+      );
+      for (const s of docKeywordRanked
+        .filter((r) => r.score >= DOC_KEYWORD_MIN_SCORE)
+        .slice(0, AI_ASSISTANT_MAX_RESULTS)) {
+        const d = bySlug.get(s.slug);
+        if (d) picked.push(d);
+      }
+    }
+    if (picked.length === 0) return null;
+    const sources: DocSource[] = picked.map((d) => ({
+      docTitle: d.docTitle,
+      sectionTitle: d.sectionTitle,
+      url: input.docSectionUrl(d),
+    }));
+    let answer: string | null = null;
+    if (baseUrl && apiKey) {
+      answer = await callDocAnswerLLM({
+        baseUrl,
+        apiKey,
+        query,
+        sections: picked,
+      });
+    }
+    if (!answer) {
+      const top = picked[0];
+      const excerpt = top.text.slice(0, 300);
+      answer = excerpt + (top.text.length > 300 ? '…' : '');
+    }
+    return {
+      mode: 'doc',
+      found: true,
+      courses: [],
+      routedBy: jev ? 'jev' : 'keyword',
+      answer,
+      sources,
+    };
+  }
+
+  // 课程链路（原有行为）：LLM 挑（短名单非空时只在短名单里挑），
+  // 失败时降级关键词匹配；正文读不到链接的课不上架。
+  async function courseChain(): Promise<AssistantResult | null> {
+    let slugs: string[] = [];
+    let mode: 'ai' | 'keyword' = 'keyword';
+    let routedBy: 'jev' | 'llm' | 'keyword' = 'keyword';
+    if (baseUrl && apiKey) {
+      const shortlist = jev ? jevShortlist(jev) : [];
+      const llmCatalog =
+        shortlist.length > 0
+          ? catalog.filter((c) => shortlist.includes(c.slug))
+          : catalog;
+      const llmSlugs = await callRecommendLLM({
+        baseUrl,
+        apiKey,
+        model: AI_ASSISTANT_MODEL,
+        query,
+        catalog: llmCatalog,
+      });
+      if (llmSlugs && llmSlugs.length > 0) {
+        slugs = llmSlugs;
+        mode = 'ai';
+        routedBy = jev ? 'jev' : 'llm';
+      }
+    }
+    if (slugs.length === 0) {
+      slugs = keywordRecommend(catalog, query);
+      mode = 'keyword';
+      routedBy = 'keyword';
+    }
+    const courses: RecommendedCourse[] = [];
+    for (const slug of slugs) {
+      const parsed = await resolveCourse(slug);
+      if (!parsed) continue;
+      const item = catalog.find((c) => c.slug === slug);
+      if (!item) continue;
+      courses.push({ ...item, type: parsed.type, link: parsed.link });
+    }
+    if (courses.length === 0) return null;
+    return { mode, found: true, courses, routedBy };
+  }
+
+  // 2. 意图明确与课程学习无关：有文档命中走文档，否则直接查不到。
+  if (jev && isOffTopicIntent(jev)) {
+    if (docHit) {
+      const d = await answerFromDocs();
+      if (d) return d;
+    }
+    return { mode: 'keyword', found: false, courses: [], routedBy: 'jev' };
+  }
+
+  // 3. 文档意图：先文档，答不出再走课程。
+  if (jev && isDocIntent(jev)) {
+    const d = await answerFromDocs();
+    if (d) return d;
+  }
+
+  // 4. 其余意图：先课程。
+  const c = await courseChain();
+  if (c) return c;
+
+  // 5. 课程没找到：再试文档（第二张网）。
+  const d = await answerFromDocs();
+  if (d) return d;
+
+  return { mode: 'keyword', found: false, courses: [], routedBy: 'keyword' };
 }
