@@ -55,6 +55,14 @@ export const envConfigs: Record<string, string> = {
   // verified against the intranet AAD server. See src/modules/aad/service.ts.
   aad_auth_url: procEnv.AAD_AUTH_URL ?? 'http://10.40.20.195:8082',
 
+  // TypeSafe Jev 意图路由（AI 学习助手）：判断模型只做意图分类与候选
+  // 打分，不生成文本。空 = 不启用 Jev，推荐走原有链路（Magpie LLM →
+  // 关键词匹配）。密钥只放服务器环境变量（.env.intranet），绝不进 git。
+  typesafe_api_key: procEnv.TYPESAFE_API_KEY ?? '',
+  // Jev 请求的出口代理：内网直连 api.typesafe.ai 会被地域屏蔽（451），
+  // 须经本机出口代理（如 http://172.17.0.1:7897）。空 = 直连。
+  typesafe_proxy_url: procEnv.TYPESAFE_PROXY_URL ?? '',
+
   // Blog HTML local storage (intranet backend only; Cloudflare keeps R2).
   blog_html_dir: procEnv.BLOG_HTML_DIR ?? './data/blog-html',
 
