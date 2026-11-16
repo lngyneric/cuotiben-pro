@@ -132,6 +132,7 @@ export async function callRecommendLLM({
     '1. 只从下面给出的课程目录里选，最多 2 门；目录里没有的课绝不编造。',
     '2. 匹配依据按优先级：标题 → 分类 → 简介。',
     '3. 只输出 JSON，不要任何解释文字，格式：{"slugs": ["course-xxx", "..."]}。没有匹配的课时输出 {"slugs": []}。',
+    '4. 不要输出思考过程，直接给出 JSON。',
     '课程目录（slug | 标题 | 分类 | 简介）：',
     catalogText,
   ].join('\n');
@@ -147,7 +148,9 @@ export async function callRecommendLLM({
       body: JSON.stringify({
         model,
         temperature: 0.3,
-        max_tokens: 256,
+        // 模型会先做推理再输出：256 会被推理占满、到 length 截断时正文
+        // 仍为空（2026-11-16 实测），1024 才够推理 + JSON 答案。
+        max_tokens: 1024,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: query },
