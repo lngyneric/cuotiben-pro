@@ -67,7 +67,16 @@
   `openai_api_key` 填 Magpie 网关密钥；模型固定
   `opencode-go/deepseek-v4.1-flash`（与 ai-shifu PRD 默认一致）。
   **base_url 未填时页面不调 LLM**（不默认 api.openai.com，避免把网关
-  密钥发向第三方），只走关键词匹配。
+  密钥发向第三方），只走关键词匹配。2026-11-16 已由运维直接写入 DB
+  （用户定，不走后台 UI）：停容器 → `docker cp` 取出 blog.db →
+  sqlite upsert `openai_base_url` / `openai_api_key`（密钥取 ai-shifu
+  PRD `.env` 的 `OPENAI_API_KEY`，只在服务器上读，不进聊天、不进 git）
+  → `docker cp` 拷回 → **拷回后必须 `chown appuser:nodejs`**（docker
+  cp 会把属主改成 `node:node`，应用以 appuser 运行，打不开 DB 会报
+  libsql `Unable to open ... : 14`、配置读不到、API 全 503）→ 重启容器。
+  注意：本部署未设 `CONFIG_ENCRYPTION_KEY`，密钥按仓库行为以明文存库
+  （与后台 UI 保存一致）；要加密须先在 `.env.intranet` 加
+  `CONFIG_ENCRYPTION_KEY` 并在后台重存一次密钥。
 - **限流**：每人每 10 秒一次；输入限 200 字；LLM 超时 60 秒即降级。
 - **部署**：随本镜像一起发布，无新增环境变量、无需改库；改完
   `.env.intranet` 的 NO_PROXY（含 `magpie`）后重建容器即可。
