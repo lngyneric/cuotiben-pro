@@ -20,7 +20,7 @@ const HERO_IMAGE_FALLBACK =
 const HIGHLIGHTS = [
   { key: 'newcomer', emoji: '🎓', href: '/blog' },
   { key: 'notebook', emoji: '📝', href: '/cuotiben' },
-  { key: 'assistant', emoji: '🤖', href: '/blog' },
+  { key: 'assistant', emoji: '🤖', href: '/ai-assistant' },
 ] as const;
 
 export function Hero() {

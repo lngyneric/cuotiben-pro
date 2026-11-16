@@ -51,7 +51,26 @@
 | `BLOG_HTML_DIR`          | `/app/data/blog-html`           | 在数据卷里                     |
 
 `NO_PROXY` 说明：Node 的 fetch 不读代理环境变量，AAD 调用本来就直连；
-这里仍要求写上，是给 curl 排障和主机上其他代理感知工具用的。
+这里仍要求写上，是给 curl 排障和主机上其他代理感知工具用的。`magpie`
+是 AI 学习助手调本机 Magpie 网关的容器名，同样走内网直连。
+
+## AI 学习助手（/ai-assistant）
+
+- **页面**：`/ai-assistant`，按大圆找课流程做：必须 AAD 登录（会话即
+  身份）→ 服务端一次读出 sqlite 里全部已发布课程（`course-*`，与大圆
+  `posts_list pageSize=100` 拉全量一致）→ 调模型推荐 1–2 门 → 锁定后取
+  单篇全文、从正文“课程链接”一行读链接（绝不拼链接）；模型不可用时
+  自动降级为关键词匹配（标题 → 分类 → 简介）。
+- **模型配置（管理员在站内 Settings → OpenAI 填，不走 env、不进 git）**：
+  `openai_base_url` 填 `http://magpie:3425/v1`（与 blog 容器同在
+  `docker_default` 网，容器名直达，2026-11-16 已从容器内实测通），
+  `openai_api_key` 填 Magpie 网关密钥；模型固定
+  `opencode-go/deepseek-v4.1-flash`（与 ai-shifu PRD 默认一致）。
+  **base_url 未填时页面不调 LLM**（不默认 api.openai.com，避免把网关
+  密钥发向第三方），只走关键词匹配。
+- **限流**：每人每 10 秒一次；输入限 200 字；LLM 超时 60 秒即降级。
+- **部署**：随本镜像一起发布，无新增环境变量、无需改库；改完
+  `.env.intranet` 的 NO_PROXY（含 `magpie`）后重建容器即可。
 
 ## 部署步骤（服务器上，`/home/sysmex/cuotiben-pro-blog/` 或自选目录）
 
