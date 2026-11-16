@@ -48,6 +48,76 @@ test('keywordRecommend：行为不变，只取前 2 门', () => {
   assert.deepEqual(keywordRecommend(catalog, ''), []);
 });
 
+// 自然问句预筛用目录：3 门领导力课 + 销售 + 检验。
+const naturalCatalog = [
+  {
+    slug: 'course-leadership',
+    title: '从事到人：打造一流的团队执行力',
+    description: '领导力培训视频，讲目标、标准与反馈。',
+    categories: ['领导力'],
+  },
+  {
+    slug: 'course-new-manager',
+    title: 'AI新经理操作指南',
+    description: '领导力培训视频',
+    categories: ['领导力'],
+  },
+  {
+    slug: 'course-team',
+    title: 'Will-Skill矩阵“盘”团队',
+    description: '领导力培训视频',
+    categories: ['领导力'],
+  },
+  {
+    slug: 'course-sales',
+    title: '销售技巧：如何形成有力论据',
+    description: '销售沟通与论据组织。',
+    categories: ['销售'],
+  },
+  {
+    slug: 'course-lab',
+    title: '尿液检验基础',
+    description: '检验科入门，尿液样本处理流程。',
+    categories: ['检验'],
+  },
+];
+
+test('keywordScoreList：自然问句能筛出领导力候选（反向分类 + 2 字 gram）', () => {
+  const scored = keywordScoreList(
+    naturalCatalog,
+    '我想学领导力，有什么课程推荐？'
+  );
+  // 3 门领导力课都命中（分类反向包含 + 简介 gram），销售 / 检验 0 分
+  assert.deepEqual(
+    scored.map((s) => s.slug),
+    ['course-leadership', 'course-new-manager', 'course-team']
+  );
+  assert.equal(scored[0].score, 6); // 分类 2×2（分词 + 整句）+ 简介 1×2
+});
+
+test('keywordScoreList：单关键词“领导力”回归（分值不变）', () => {
+  const scored = keywordScoreList(naturalCatalog, '领导力');
+  assert.deepEqual(
+    scored.map((s) => s.slug),
+    ['course-leadership', 'course-new-manager', 'course-team']
+  );
+  // 每门都是分类 2 + 简介 1；词族在同一字段上只计一次，不因 gram 膨胀
+  assert.deepEqual(
+    scored.map((s) => s.score),
+    [3, 3, 3]
+  );
+});
+
+test('keywordScoreList：无关问句“怎么请假”筛不出候选', () => {
+  assert.deepEqual(keywordScoreList(naturalCatalog, '怎么请假'), []);
+  assert.deepEqual(keywordScoreList(catalog, '怎么请假'), []);
+});
+
+test('keywordScoreList：标题关键词 gram 能命中自然问句里的“盘团队”', () => {
+  const scored = keywordScoreList(naturalCatalog, '怎么盘团队');
+  assert.ok(scored.map((s) => s.slug).includes('course-team'));
+});
+
 test('callJevRouting：无 key 时不发请求，直接返回 null', async () => {
   let called = 0;
   const res = await callJevRouting(

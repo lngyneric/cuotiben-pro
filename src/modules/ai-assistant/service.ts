@@ -88,6 +88,31 @@ function tokenize(query: string): string[] {
   return terms;
 }
 
+const CJK_RE = /[\u4e00-\u9fff]/;
+const CJK_BIGRAM_RE = /^[\u4e00-\u9fff]{2}$/;
+
+/**
+ * 一个词的“词族”：原词 + 由它切出的去重中文 2 字 gram。
+ * gram 只对长度 ≥3 且含中文的词生成（单字词不生成），且只保留纯中文
+ * 的 2 字子串（跨标点的子串如“力，”会被滤掉）；原词与 whole-query
+ * 词原样保留。
+ * 词族按“概念”计分：同一词族在同一字段（标题 / 分类 / 简介）上
+ * 最多计一次，避免“领导力”+“领导”+“导力”把同一命中算三遍，
+ * 保持标题 3 分 / 分类 2 分 / 简介 1 分的权重含义不变。
+ */
+function termFamily(term: string): string[] {
+  const family = [term];
+  if (term.length >= 3 && CJK_RE.test(term)) {
+    for (let i = 0; i + 2 <= term.length; i++) {
+      const gram = term.slice(i, i + 2);
+      if (CJK_BIGRAM_RE.test(gram) && !family.includes(gram)) {
+        family.push(gram);
+      }
+    }
+  }
+  return family;
+}
+
 export interface KeywordScore {
   slug: string;
   score: number;
@@ -96,6 +121,10 @@ export interface KeywordScore {
 /**
  * 关键词打分（标题 3 分 → 分类 2 分 → 简介 1 分），按分数降序。
  * 只返回分数 > 0 的课。keywordRecommend 与 Jev 候选粗筛共用这一份。
+ * 匹配分两层：①词族（原词 + 中文 2 字 gram）任一成员被标题 / 分类 /
+ * 简介包含即命中该字段；②分类反向包含——原词包含分类词（分类 ≥2 字）
+ * 也算分类命中，如“我学领导力”命中分类“领导力”。同一词族在同一
+ * 字段上只计一次分。
  */
 export function keywordScoreList(
   catalog: CourseCatalogItem[],
@@ -110,9 +139,18 @@ export function keywordScoreList(
       const categories = course.categories.map((c) => c.toLowerCase());
       let score = 0;
       for (const term of terms) {
-        if (title.includes(term)) score += 3;
-        if (categories.some((c) => c.includes(term))) score += 2;
-        if (description.includes(term)) score += 1;
+        const family = termFamily(term);
+        const hit = (text: string) => family.some((t) => text.includes(t));
+        if (hit(title)) score += 3;
+        if (
+          categories.some(
+            (c) =>
+              family.some((t) => c.includes(t)) ||
+              (c.length >= 2 && term.includes(c))
+          )
+        )
+          score += 2;
+        if (hit(description)) score += 1;
       }
       return { slug: course.slug, score };
     })
