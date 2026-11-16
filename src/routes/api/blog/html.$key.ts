@@ -10,8 +10,9 @@ import {
 // GET /api/blog/html/:key — 渲染已上传的 HTML。
 //
 // 行为按后端区分（内网版的关键改动）：
-// - 本地后端（内网服务器）：必须登录，未登录 401；`self` 可见范围的文档
-//   只对上传者本人和管理员开放。内网站不再公开渲染。
+// - 本地后端（内网服务器）：`public` 可见范围的文件无需登录即可打开；
+//   其余文件必须登录，未登录 401；`self` 可见范围的文档只对上传者本人
+//   和管理员开放。内网站不再公开渲染（除非文件被显式设为共享公开）。
 // - R2 后端（Cloudflare 线上站）：保持现有公开行为不变（可直接分享）。
 async function GET({
   request,
@@ -29,13 +30,17 @@ async function GET({
 
     const backend = getBlogStorageBackend();
     if (backend === 'local') {
+      const got = await getBlogHtml(key);
+      if (!got) return new Response('Not found', { status: 404 });
+      // 共享公开的文件：无需登录即可打开。
+      if (got.meta.visibility === 'public') {
+        return renderHtml(got.content);
+      }
       const auth = getAuth();
       const session = await auth.api.getSession({ headers: request.headers });
       if (!session?.user) {
         return new Response('Unauthorized', { status: 401 });
       }
-      const got = await getBlogHtml(key);
-      if (!got) return new Response('Not found', { status: 404 });
       const viewer = {
         userId: session.user.id,
         isAdmin: await isBlogAdmin(session.user.id),

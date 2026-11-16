@@ -88,11 +88,18 @@ export async function isBlogAdmin(userId: string): Promise<boolean> {
   }
 }
 
-/** `self` items are visible only to their uploader and to admins. */
+/**
+ * Who may view an item.
+ * - `public`: anyone, including anonymous visitors (no login required).
+ * - `all`: any signed-in user (the file route still requires a session
+ *   on the intranet backend — see src/routes/api/blog/html.$key.ts).
+ * - `self`: only the uploader and admins.
+ */
 export function canViewBlogHtml(
   meta: BlogHtmlMeta,
   viewer: BlogViewer | null
 ): boolean {
+  if (meta.visibility === 'public') return true;
   if (meta.visibility !== 'self') return true;
   if (!viewer) return false;
   if (viewer.isAdmin) return true;

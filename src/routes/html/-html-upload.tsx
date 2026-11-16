@@ -103,6 +103,11 @@ export function HtmlList({
               仅自己可见
             </span>
           )}
+          {item.visibility === 'public' && (
+            <span className="bg-primary/10 text-primary ml-2 rounded-full px-1.5 py-0.5 text-[10px]">
+              共享公开
+            </span>
+          )}
         </div>
         {item.description && (
           <div className="text-muted-foreground mt-1 line-clamp-2 text-xs leading-5">
@@ -136,6 +141,30 @@ export function HtmlList({
                 {c}
               </option>
             ))}
+          </select>
+          <select
+            value={item.visibility || 'all'}
+            onChange={async (e) => {
+              const visibility = e.target.value;
+              try {
+                await apiPatch('/api/blog/html', {
+                  key: item.key,
+                  visibility,
+                });
+                queryClient.invalidateQueries({
+                  queryKey: ['blog-html-list'],
+                });
+              } catch (err: any) {
+                alert('改可见范围失败: ' + err.message);
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-muted rounded border-0 px-1.5 py-0.5 text-xs"
+            title="点击修改可见范围：全体可见需登录，共享公开无需登录"
+          >
+            <option value="all">全体可见</option>
+            <option value="self">仅自己可见</option>
+            <option value="public">共享公开</option>
           </select>
         </div>
         <button
@@ -290,11 +319,12 @@ export function HtmlUpload() {
         <select
           value={visibility}
           onChange={(e) => setVisibility(e.target.value)}
-          title="可见范围：全体已注册可见，或仅自己可见"
+          title="可见范围：全体已注册可见（默认），仅自己可见，或共享公开（无需登录即可打开）"
           className="border-border bg-background rounded-full border px-3 py-1.5 text-sm"
         >
           <option value="all">全体可见</option>
           <option value="self">仅自己可见</option>
+          <option value="public">共享公开</option>
         </select>
         <label className="bg-primary text-primary-foreground inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-1.5 text-sm font-medium hover:opacity-90">
           <Upload className="size-4" />

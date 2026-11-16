@@ -14,6 +14,7 @@ import {
   listBlogHtml,
   putBlogHtml,
   updateBlogHtmlCategory,
+  updateBlogHtmlVisibility,
   type BlogHtmlVisibility,
 } from '@/modules/blog-html/storage';
 import { respData, respErr } from '@/lib/resp';
@@ -101,10 +102,15 @@ async function POST({ request }: { request: Request }) {
     const category =
       manualCategory || autoCategorize(title, description, content);
 
-    // 可见范围：all（全体已注册可见，默认）或 self（仅自己和管理员可见）
+    // 可见范围：public（共享公开，无需登录）/ all（全体已注册可见，默认）
+    // 或 self（仅自己和管理员可见）
     const visibilityParam = (formData.get('visibility') as string)?.trim();
     const visibility: BlogHtmlVisibility =
-      visibilityParam === 'self' ? 'self' : 'all';
+      visibilityParam === 'self'
+        ? 'self'
+        : visibilityParam === 'public'
+          ? 'public'
+          : 'all';
 
     const key = `html/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     const item = await putBlogHtml(key, content, {
@@ -144,17 +150,38 @@ export const Route = createFileRoute('/api/blog/html')({
   },
 });
 
-// PATCH /api/blog/html — 修改分类（仅上传者本人或管理员）
+// PATCH /api/blog/html — 修改分类和/或可见范围（仅上传者本人或管理员）
+// Body: { key, category?: string, visibility?: 'all' | 'self' | 'public' }
 async function PATCH({ request }: { request: Request }) {
   try {
     const authed = await requireViewer(request);
     if (!authed) return respErr('Unauthorized', { status: 401 });
 
     const body = await request.json();
-    const { key, category } = body as { key: string; category: string };
+    const { key, category, visibility } = body as {
+      key: string;
+      category?: string;
+      visibility?: string;
+    };
     if (!key || !key.startsWith('html/')) return respErr('Invalid key');
-    if (!category || !BLOG_CATEGORIES.includes(category)) {
+    if (category !== undefined && !BLOG_CATEGORIES.includes(category)) {
       return respErr('Invalid category');
+    }
+    const nextVisibility: BlogHtmlVisibility | undefined =
+      visibility === undefined
+        ? undefined
+        : visibility === 'self'
+          ? 'self'
+          : visibility === 'public'
+            ? 'public'
+            : visibility === 'all'
+              ? 'all'
+              : undefined;
+    if (visibility !== undefined && nextVisibility === undefined) {
+      return respErr('Invalid visibility');
+    }
+    if (category === undefined && nextVisibility === undefined) {
+      return respErr('Nothing to update');
     }
 
     const got = await getBlogHtml(key);
@@ -163,8 +190,17 @@ async function PATCH({ request }: { request: Request }) {
       return respErr('Forbidden', { status: 403 });
     }
 
-    await updateBlogHtmlCategory(key, category);
-    return respData({ ok: true, category });
+    if (category !== undefined) {
+      await updateBlogHtmlCategory(key, category);
+    }
+    if (nextVisibility !== undefined) {
+      await updateBlogHtmlVisibility(key, nextVisibility);
+    }
+    return respData({
+      ok: true,
+      category: category ?? got.meta.category,
+      visibility: nextVisibility ?? got.meta.visibility,
+    });
   } catch (error: any) {
     return respErr(error.message || 'Update failed');
   }

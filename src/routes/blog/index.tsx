@@ -1,20 +1,22 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
-import { ExternalLink } from 'lucide-react';
 
 import { localizedAbsoluteUrl } from '@/core/i18n/urls';
 import { envConfigs } from '@/config';
+import { cn } from '@/lib/utils';
 import { m } from '@/paraglide/messages.js';
 import { getLocale, locales } from '@/paraglide/runtime.js';
 import { Footer } from '@/blocks/footer';
 import { Header } from '@/blocks/header';
-
-import { HtmlList, HtmlUpload } from './-html-upload';
+import { BlogCard } from '@/components/blog-card';
+import { formatPostDate, type BlogPost } from '@/content/posts';
+import { getBlogPostsFn } from '@/content/posts/server';
 
 export const Route = createFileRoute('/blog/')({
   loader: async () => {
     const locale = getLocale();
-    return { locale };
+    const posts = await getBlogPostsFn({ data: { locale } });
+    return { locale, posts };
   },
   head: ({ loaderData }) => {
     const locale = loaderData?.locale;
@@ -43,8 +45,43 @@ export const Route = createFileRoute('/blog/')({
 });
 
 function BlogPage() {
-  const { locale } = Route.useLoaderData();
-  const [selected, setSelected] = useState<any>(null);
+  const { locale, posts } = Route.useLoaderData();
+  const [search, setSearch] = useState('');
+  const [activeCategory, setActiveCategory] = useState<string>(
+    m['blog.all_categories']()
+  );
+
+  // 分类：数据库文章的 categories（逗号分隔）展开去重；无分类的文章归“未分类”。
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of posts) {
+      const cats = (p.categories ?? []).length
+        ? (p.categories as string[])
+        : ['未分类'];
+      for (const c of cats) set.add(c);
+    }
+    return [m['blog.all_categories'](), ...Array.from(set).sort()];
+  }, [posts]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return posts.filter((p: BlogPost) => {
+      const cats = (p.categories ?? []).length
+        ? (p.categories as string[])
+        : ['未分类'];
+      if (
+        activeCategory !== m['blog.all_categories']() &&
+        !cats.includes(activeCategory)
+      ) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        p.title.toLowerCase().includes(q) ||
+        (p.description || '').toLowerCase().includes(q)
+      );
+    });
+  }, [posts, search, activeCategory]);
 
   return (
     <div className="bg-background text-foreground flex min-h-screen flex-col">
@@ -60,60 +97,53 @@ function BlogPage() {
             </p>
           </div>
 
-          {/* 左右分屏 */}
-          <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
-            {/* 左：列表 */}
-            <div className="bg-card border-border max-h-[70vh] overflow-hidden rounded-lg border p-4">
-              <HtmlList
-                locale={locale}
-                selected={selected}
-                onSelect={setSelected}
-              />
-            </div>
-
-            {/* 右：预览 */}
-            <div className="bg-card border-border min-h-[70vh] overflow-hidden rounded-lg border">
-              {selected ? (
-                <div className="flex h-full flex-col">
-                  <div className="border-border flex items-center justify-between border-b p-4">
-                    <div>
-                      <h2 className="text-foreground text-lg font-semibold tracking-tight">
-                        {selected.title}
-                      </h2>
-                      {selected.description && (
-                        <p className="text-muted-foreground mt-1 line-clamp-1 text-sm">
-                          {selected.description}
-                        </p>
-                      )}
-                    </div>
-                    <a
-                      href={selected.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary inline-flex shrink-0 items-center gap-1 text-sm font-medium underline-offset-4 hover:underline"
-                    >
-                      新窗口 <ExternalLink className="size-3" />
-                    </a>
-                  </div>
-                  <iframe
-                    src={selected.url}
-                    className="w-full flex-1 border-0"
-                    style={{ minHeight: '60vh' }}
-                    title={selected.title}
-                    sandbox="allow-same-origin"
-                  />
-                </div>
-              ) : (
-                <div className="text-muted-foreground flex h-full min-h-[60vh] items-center justify-center">
-                  <p className="text-sm">← 从左侧选择一篇文章预览</p>
-                </div>
-              )}
+          {/* 搜索 + 分类筛选 */}
+          <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3">
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={m['blog.search_placeholder']()}
+              className="border-border bg-card w-full rounded-full border px-4 py-2 text-sm"
+            />
+            <div className="flex flex-wrap justify-center gap-1.5">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setActiveCategory(cat)}
+                  className={cn(
+                    'rounded-full border px-2.5 py-1 text-xs',
+                    activeCategory === cat
+                      ? 'border-primary text-primary font-medium'
+                      : 'border-border text-muted-foreground'
+                  )}
+                >
+                  {cat}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div className="mt-4">
-            <HtmlUpload />
-          </div>
+          {filtered.length === 0 ? (
+            <p className="text-muted-foreground py-16 text-center text-sm">
+              {m['blog.no_posts']()}
+            </p>
+          ) : (
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {filtered.map((post: BlogPost) => (
+                <BlogCard
+                  key={post.slug}
+                  href={`/blog/${post.slug}`}
+                  title={post.title}
+                  description={post.description}
+                  image={post.image}
+                  date={formatPostDate(post.createdAt, locale)}
+                  authorName={post.authorName}
+                  authorImage={post.authorImage}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </main>
       <Footer />

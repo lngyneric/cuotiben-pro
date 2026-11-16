@@ -38,6 +38,11 @@ async function getDbPosts(): Promise<BlogPost[]> {
       authorName: row.authorName || undefined,
       authorImage: row.authorImage || undefined,
       source: 'db' as const,
+      categories:
+        row.categories
+          ?.split(',')
+          .map((c) => c.trim())
+          .filter(Boolean) ?? [],
     }));
   } catch {
     // Database not configured/reachable — local posts still render.

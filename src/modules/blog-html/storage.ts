@@ -26,7 +26,7 @@ import { db } from '@/core/db';
 import { envConfigs } from '@/config';
 import { getAppBasePath } from '@/lib/base-path';
 
-export type BlogHtmlVisibility = 'all' | 'self';
+export type BlogHtmlVisibility = 'all' | 'self' | 'public';
 
 export interface BlogHtmlMeta {
   key: string;
@@ -145,7 +145,7 @@ async function r2Get(
       title: meta.title || '',
       description: meta.description || '',
       category: meta.category || '未分类',
-      visibility: meta.visibility === 'self' ? 'self' : 'all',
+      visibility: normalizeVisibility(meta.visibility),
       uploaderId: meta.uploader_id || null,
       uploaderEmployeeNo: meta.uploader_employee_no || '',
       sha256: '',
@@ -234,13 +234,17 @@ async function localFilePath(key: string): Promise<string> {
   return file;
 }
 
+function normalizeVisibility(v: unknown): BlogHtmlVisibility {
+  return v === 'self' ? 'self' : v === 'public' ? 'public' : 'all';
+}
+
 function rowToMeta(row: any): BlogHtmlMeta {
   return {
     key: row.key,
     title: row.title ?? '',
     description: row.description ?? '',
     category: row.category ?? '未分类',
-    visibility: row.visibility === 'self' ? 'self' : 'all',
+    visibility: normalizeVisibility(row.visibility),
     uploaderId: row.uploaderId ?? null,
     uploaderEmployeeNo: row.uploaderEmployeeNo ?? '',
     sha256: row.sha256 ?? '',
@@ -358,6 +362,20 @@ async function localUpdateCategory(
   if (!rows || rows.length === 0) throw new Error('Not found');
 }
 
+async function localUpdateVisibility(
+  key: string,
+  visibility: BlogHtmlVisibility
+): Promise<void> {
+  requireSqlite();
+  const table = await localTable();
+  const rows = await db()
+    .update(table)
+    .set({ visibility, updatedAt: new Date() })
+    .where(eq(table.key, key))
+    .returning({ key: table.key });
+  if (!rows || rows.length === 0) throw new Error('Not found');
+}
+
 // ─── Unified facade (routes use only this) ──────────────────────────────────
 
 export async function listBlogHtml(): Promise<BlogHtmlItem[]> {
@@ -421,4 +439,25 @@ export async function updateBlogHtmlCategory(
     return;
   }
   await localUpdateCategory(key, category);
+}
+
+export async function updateBlogHtmlVisibility(
+  key: string,
+  visibility: BlogHtmlVisibility
+): Promise<void> {
+  assertSafeBlogKey(key);
+  if (getBlogStorageBackend() === 'r2') {
+    const got = await r2Get(key);
+    if (!got) throw new Error('Not found');
+    await r2Put(key, got.content, {
+      title: got.meta.title,
+      description: got.meta.description,
+      category: got.meta.category,
+      visibility,
+      uploaderId: got.meta.uploaderId,
+      uploaderEmployeeNo: got.meta.uploaderEmployeeNo,
+    });
+    return;
+  }
+  await localUpdateVisibility(key, visibility);
 }

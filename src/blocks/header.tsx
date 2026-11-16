@@ -5,6 +5,7 @@ export function Header() {
   const navLinks = [
     { href: '/#courses', label: m['landing.nav.tracks']() },
     { href: '/blog', label: m['landing.nav.blog']() },
+    { href: '/html', label: m['landing.nav.html']() },
     { href: '/sign-in', label: m['landing.nav.sign_in']() },
   ];
 

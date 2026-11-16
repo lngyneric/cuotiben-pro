@@ -81,6 +81,15 @@ test('sanitizeBlogHtml strips active content but keeps benign markup', () => {
 
 test('canViewBlogHtml: all is public, self is owner/admin only', () => {
   assert.equal(canViewBlogHtml(meta(), null), true);
+  // 共享公开：无需登录，任何人可见。
+  assert.equal(canViewBlogHtml(meta({ visibility: 'public' }), null), true);
+  assert.equal(
+    canViewBlogHtml(meta({ visibility: 'public' }), {
+      userId: 'user-2',
+      isAdmin: false,
+    }),
+    true
+  );
   assert.equal(canViewBlogHtml(meta({ visibility: 'self' }), null), false);
   assert.equal(
     canViewBlogHtml(meta({ visibility: 'self' }), {

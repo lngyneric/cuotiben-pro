@@ -46,6 +46,8 @@ export type BlogPost = {
   source: 'local' | 'db';
   /** 仅登录用户可见；未登录时从列表过滤、详情页提示登录 */
   membersOnly?: boolean;
+  /** 数据库文章的分类（逗号分隔字符串解析而来）；本地 MDX 文章无此字段 */
+  categories?: string[];
 };
 
 export type BlogPostDetail = BlogPost & {
