@@ -179,6 +179,13 @@ export function getSettingGroups(): SettingGroup[] {
       tab: 'ai',
     },
     {
+      name: 'kb_mcp',
+      title: '知识库 MCP',
+      description:
+        '企业知识库 MCP（sysmex-kb），助手查制度/流程/入职文档时调用',
+      tab: 'ai',
+    },
+    {
       name: 'anthropic',
       title: 'Anthropic',
       description: 'Anthropic Claude API',
@@ -913,6 +920,24 @@ export function getSettings(): Setting[] {
       type: 'password',
       placeholder: 'sk-xxx',
       group: 'openai',
+      tab: 'ai',
+    },
+
+    // ─── AI / 知识库 MCP ─────────────────────────────────────────────────
+    {
+      name: 'kb_mcp_url',
+      title: 'MCP URL',
+      type: 'text',
+      placeholder: 'http://100.117.252.66:8000/mcp',
+      group: 'kb_mcp',
+      tab: 'ai',
+    },
+    {
+      name: 'kb_mcp_token',
+      title: 'Bearer Token',
+      type: 'password',
+      placeholder: 'MCP 访问令牌',
+      group: 'kb_mcp',
       tab: 'ai',
     },
 

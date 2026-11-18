@@ -22,13 +22,48 @@
 // 代理 agent，不引入新依赖。
 //
 // 本模块是纯函数，不读数据库、不读配置：目录、base_url、密钥都由 API 路由
-// 传入。LLM 不可用（未配置、超时、返回非法）时调用方降级为关键词匹配，
-// 页面照常可用。
+// 传入。角色与状态快照也一样：调用方在 AssistantQueryInput 里给 role 与
+// statusSummaries（已按权限过滤），本模块只把它们写进 LLM 的 system
+// prompt 作推荐依据。知识库 MCP 的结果由调用方拼成 DocCandidate 混进
+// docSections，与本地文档走同一条文档链路。
 
 import * as https from 'node:https';
 import * as net from 'node:net';
 import { Duplex } from 'node:stream';
 import * as tls from 'node:tls';
+
+import type { AssistantRole, StatusSummary } from './mcp';
+
+/**
+ * 角色与状态上下文：角色决定回答角度（销售/应用/客服）；状态只用于给
+ * 建议作依据（如零跑课先推入门课），不向用户罗列状态明细。状态行由调用
+ * 方按权限过滤后传入，本模块不判权限、不读库。
+ */
+function assistantContextLines(
+  role: AssistantRole | undefined,
+  statusSummaries: StatusSummary[] | undefined
+): string[] {
+  const lines: string[] = [];
+  if (role) {
+    lines.push(
+      role === 'sales'
+        ? '提问人岗位：销售。回答侧重卖点、竞品对比与客户场景。'
+        : role === 'service'
+          ? '提问人岗位：客服。回答侧重服务流程、响应与跟进。'
+          : '提问人岗位：应用（应用支持）。回答侧重原理、操作与排故。'
+    );
+  }
+  const rows = (statusSummaries ?? []).slice(0, 5);
+  if (rows.length > 0) {
+    lines.push('提问人带教状态（按权限可见，仅作推荐依据）：');
+    for (const r of rows) {
+      lines.push(
+        `- ${r.name}${r.department ? `（${r.department}${r.positionName ? '/' + r.positionName : ''}）` : ''}：${r.planType ?? ''}，状态${r.status ?? '未知'}${r.result ? '，通过' + r.result : ''}${r.expectedDate ? '，预计' + r.expectedDate : ''}${r.flags.length ? '，旗标：' + r.flags.join('、') : ''}`
+      );
+    }
+  }
+  return lines;
+}
 
 export interface CourseCatalogItem {
   slug: string;
@@ -178,6 +213,8 @@ export interface RecommendLLMInput {
   model?: string;
   query: string;
   catalog: CourseCatalogItem[];
+  role?: AssistantRole;
+  statusSummaries?: StatusSummary[];
 }
 
 /**
@@ -192,6 +229,8 @@ export async function callRecommendLLM({
   model = AI_ASSISTANT_MODEL,
   query,
   catalog,
+  role,
+  statusSummaries,
 }: RecommendLLMInput): Promise<string[] | null> {
   const catalogText = catalog
     .map(
@@ -205,6 +244,8 @@ export async function callRecommendLLM({
     '2. 匹配依据按优先级：标题 → 分类 → 简介。',
     '3. 只输出 JSON，不要任何解释文字，格式：{"slugs": ["course-xxx", "..."]}。没有匹配的课时输出 {"slugs": []}。',
     '4. 不要输出思考过程，直接给出 JSON。',
+    '5. 如果给了带教状态，优先推荐能补上状态缺口的课（如零跑课先推入门课）；不要在答案里罗列状态明细。',
+    ...assistantContextLines(role, statusSummaries),
     '课程目录（slug | 标题 | 分类 | 简介）：',
     catalogText,
   ].join('\n');
@@ -714,6 +755,8 @@ export interface DocAnswerInput {
   model?: string;
   query: string;
   sections: DocCandidate[];
+  role?: AssistantRole;
+  statusSummaries?: StatusSummary[];
 }
 
 /**
@@ -729,6 +772,8 @@ export async function callDocAnswerLLM({
   model = AI_ASSISTANT_MODEL,
   query,
   sections,
+  role,
+  statusSummaries,
 }: DocAnswerInput): Promise<string | null> {
   if (sections.length === 0) return null;
   const sourcesText = sections
@@ -749,6 +794,7 @@ export async function callDocAnswerLLM({
     '2. 如果原文明确写着“速览”“细则以正式制度原文为准”或标有“待填”，如实告诉用户：这部分原文就是速览或尚未填写，正式内容请看来源里的正式制度原文链接，不要自己补一个流程。',
     '3. 回答简短（一般不超过 300 字），直接给结论和做法；涉及多个来源时注明是哪一篇、哪一节，格式如《文档标题》第 XX 节「小节标题」。',
     '4. 只输出答案正文，不要输出思考过程。',
+    ...assistantContextLines(role, statusSummaries),
     '文档原文：',
     sourcesText,
   ].join('\n');
@@ -808,6 +854,10 @@ export interface AssistantQueryInput {
   query: string;
   catalog: CourseCatalogItem[];
   docSections: DocCandidate[];
+  /** 角色三档（后端维度，页面暂不显示切换）；缺省为应用。 */
+  role?: AssistantRole;
+  /** 按权限过滤后的带教状态快照（直接读 user_status_summary 表）。 */
+  statusSummaries?: StatusSummary[];
   /** 由调用方把课程 slug 解析成链接与类型（读不到返回 null，课不上架）。 */
   resolveCourse: (
     slug: string
@@ -921,6 +971,8 @@ export async function runAssistantQuery(
         apiKey,
         query,
         sections: picked,
+        role: input.role,
+        statusSummaries: input.statusSummaries,
       });
     }
     if (!answer) {
@@ -956,6 +1008,8 @@ export async function runAssistantQuery(
         model: AI_ASSISTANT_MODEL,
         query,
         catalog: llmCatalog,
+        role: input.role,
+        statusSummaries: input.statusSummaries,
       });
       if (llmSlugs && llmSlugs.length > 0) {
         slugs = llmSlugs;

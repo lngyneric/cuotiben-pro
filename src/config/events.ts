@@ -34,6 +34,9 @@ export const userEvents = {
   paywall_hit: { tone: 'amber', client: true },
   // Server only: recordEvent({ userId, kind: 'risk_flagged', detail }).
   risk_flagged: { tone: 'red' },
+  // Server only: AI 学习助手每次问答记一条（只记模式/路由/是否命中/
+  // 课程数，不记原问句），补上助手此前的零审计缺口。
+  ai_assistant_query: { tone: 'gray' },
 } satisfies Record<string, EventDefinition>;
 
 export type UserEventKind = keyof typeof userEvents;

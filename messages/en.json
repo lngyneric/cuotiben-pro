@@ -515,6 +515,7 @@
   "admin.user_detail.timeline_plan_selected": "Picked a plan",
   "admin.user_detail.timeline_paywall_hit": "Hit a paywall",
   "admin.user_detail.timeline_risk_flagged": "Risk flag",
+  "admin.user_detail.timeline_ai_assistant_query": "AI learning assistant query",
   "admin.roles.title": "Roles",
   "admin.roles.description": "Manage system roles and permissions",
   "admin.roles.all_roles": "All Roles",

@@ -515,6 +515,7 @@
   "admin.user_detail.timeline_plan_selected": "选套餐",
   "admin.user_detail.timeline_paywall_hit": "碰到付费点",
   "admin.user_detail.timeline_risk_flagged": "风控记录",
+  "admin.user_detail.timeline_ai_assistant_query": "AI 学习助手提问",
   "admin.roles.title": "角色管理",
   "admin.roles.description": "管理系统角色和权限",
   "admin.roles.all_roles": "所有角色",

@@ -46,6 +46,31 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-18: AI assistant MCP (DB-table reads + sysmex-kb + roles)
+
+### Action required
+
+- [ ] **Settings → AI → 知识库 MCP**: fill `kb_mcp_url` (default
+      `http://100.117.252.66:8000/mcp`) and `kb_mcp_token` (Bearer token
+      for the sysmex-kb MCP). Without the token the assistant skips the
+      knowledge-base lookup and keeps working on local docs only.
+      Changing the URL later requires re-entering the token (endpoint
+      secret protection, see `src/modules/config/service.ts`).
+
+### New, no action needed
+
+- The assistant (`POST /api/ai-assistant/recommend`) now reads the
+  `user_status_summary` table directly (permission-scoped: admins see
+  all, learners see their own rows by employee number, mentors see
+  their mentees by mentor name) and passes the role (销售 / 应用 /
+  客服, backend-only for now, no switcher in the page) plus the status
+  into the LLM prompts. The response also carries `role` and `status`.
+- Every assistant query is recorded as a `user_event`
+  (`ai_assistant_query`, mode/routing/found/course count only, never
+  the question text), so it shows in the admin user timeline.
+- New event kind `ai_assistant_query` (server-only) and timeline label
+  `admin.user_detail.timeline_ai_assistant_query` in both locales.
+
 ## 2026-11-18: Learner status summary table
 
 ### Action required
