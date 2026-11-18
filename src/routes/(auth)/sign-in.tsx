@@ -8,9 +8,18 @@ import { Link, useRouter } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
 import { apiPost } from '@/lib/api-client';
 import { withAppBase } from '@/lib/base-path';
-import { clearSyncFailure, markLoginJustSucceeded } from '@/lib/login-sync';
+import {
+  checkAiShifuLogin,
+  clearSyncFailure,
+  markLoginJustSucceeded,
+} from '@/lib/login-sync';
 import { resolveAfterAuthUrl, safeInternalPath } from '@/lib/redirect';
-import { bridgeToAiShifu, clearSsoBridgeGuard } from '@/lib/sso-bridge';
+import {
+  bridgeToAiShifu,
+  bridgeViaFetch,
+  clearSsoBridgeGuard,
+  fetchSsoUrl,
+} from '@/lib/sso-bridge';
 import { m } from '@/paraglide/messages.js';
 import { localizeHref } from '@/paraglide/runtime.js';
 import { usePublicConfig } from '@/hooks/use-public-config';
@@ -119,24 +128,54 @@ function SignInPage() {
         employeeNo: aadEmployeeNo,
         password: aadPassword,
       });
-      // Hard navigation so the destination reloads with a fresh session
-      // cookie — same reason as the email flow below.
-      // After AAD sign-in, hop through the ai-shifu SSO bridge once so the
-      // user is logged into ai-shifu too; if the bridge is unavailable the
-      // call returns false and we fall back to the normal destination.
+      // Wiki login is verified. From here the wiki session exists, so the
+      // already-signed-in effect must not fire while we sort out ai-shifu.
       navigatingRef.current = true;
-      // Fresh verification: clear the bridge 10-minute guard and the
-      // homepage sync-failure record so the bridge gets another chance,
-      // and mark the login so the homepage can show the success banner
-      // whether the bridge hops or we go straight home.
+      const destination = withAppBase(localizeHref(afterLoginUrl));
+      // Mark the login so the homepage can show the success banner whether
+      // we go straight home or via the bridge.
+      markLoginJustSucceeded();
+      // 1. ai-shifu already logged in? Skip the bridge entirely and go
+      // home directly — no full-page hop, no extra waiting.
+      if (await checkAiShifuLogin()) {
+        window.location.assign(destination);
+        return;
+      }
+      // 2. Not synced: fresh verification — clear the bridge 10-minute
+      // guard and the homepage sync-failure record so the bridge gets
+      // another chance. Mint the SSO URL once and reuse it for both bridge
+      // attempts: /api/auth/sso is rate-limited to one mint per 2 s per
+      // employee, so minting twice in a row would 429 the fallback.
       clearSsoBridgeGuard();
       clearSyncFailure();
-      markLoginJustSucceeded();
-      const destination = withAppBase(localizeHref(afterLoginUrl));
-      const bridged = await bridgeToAiShifu(destination);
-      if (!bridged) {
-        window.location.assign(destination);
+      const ssoUrl = await fetchSsoUrl(destination);
+      // Silent fetch bridge first (no page hop, 8 s cap). Verify right
+      // after: only a confirmed ai-shifu login counts as synced.
+      if (ssoUrl && (await bridgeViaFetch(destination, ssoUrl))) {
+        if (await checkAiShifuLogin()) {
+          window.location.assign(destination);
+          return;
+        }
       }
+      // 3. Fall back to the full-page bridge hop (once, same minted URL).
+      if (ssoUrl) {
+        const bridged = await bridgeToAiShifu(destination, ssoUrl);
+        // A committed navigation unloads this page, so bridged === true
+        // never reaches here. If we are still here and ai-shifu is now
+        // logged in, go home directly.
+        if (!bridged && (await checkAiShifuLogin())) {
+          window.location.assign(destination);
+          return;
+        }
+        if (bridged) return;
+      }
+      // Bridge failed and ai-shifu is still not logged in: do NOT go home
+      // — the homepage guard would bounce straight back here, which is the
+      // endless-loading loop. Stay on sign-in, stop loading and tell the
+      // user to re-verify; the guard is cleared so the next submit retries
+      // the bridge (security re-verification flow).
+      clearSsoBridgeGuard();
+      setAadError('ai-shifu 同步登录失败，请重新验证');
     } catch (err: any) {
       setAadError(err.message || '工号登录失败');
     } finally {
