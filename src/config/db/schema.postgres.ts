@@ -700,8 +700,9 @@ export type NewUserEvent = typeof userEvent.$inferInsert;
 // the sync job (see user-status-summary-spec.md). Never the source of truth —
 // every fact lives in its home system (WeCom smart table for mentoring nodes,
 // ai-shifu MySQL for course progress, wiki user_event for recent activity).
-// One row per learner; id is the employee number when known, else
-// `wecom:<WeCom user id>`. Rows whose identity could not be resolved are
+// One row per smart-table row (one mentoring record); id is
+// `record:<RECORD_ID>`. One person can have two records, so the employee
+// number is a column, not the key. Rows whose identity could not be resolved are
 // still written with the `unresolved_identity` flag and reported by the sync
 // job, never silently dropped.
 export const userStatusSummary = table(
