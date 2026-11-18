@@ -135,9 +135,11 @@ async function POST({ request }: { request: Request }) {
     // 文档索引读不到（读库/读盘失败）时按空索引处理，不阻塞课程链路。
     // 像查制度/流程的问题，另调 sysmex-kb MCP 补知识库结果（token 未配或
     // 调用失败时跳过，结果拼成同形的 DocCandidate 进同一条文档链路）。
+    // 知识库只对管理员开放：非管理员不调 MCP（搜索本身走 MCP 服务的
+    // 登录账号权限，门控管的是谁能触发）。
     let kbSections: DocCandidate[] = [];
     const kbToken = (await getConfig('kb_mcp_token'))?.trim() || '';
-    if (kbToken && looksLikeKbQuery(query)) {
+    if (kbToken && isAdmin && looksLikeKbQuery(query)) {
       const kbUrl =
         (await getConfig('kb_mcp_url'))?.trim() ||
         'http://100.117.252.66:8000/mcp';
@@ -150,7 +152,9 @@ async function POST({ request }: { request: Request }) {
         docKey: 'sysmex-kb',
         docTitle: '企业知识库',
         sectionId: `kb-${i}`,
-        sectionTitle: h.title,
+        sectionTitle: h.category
+          ? `【${h.category}${h.fileType ? ` · ${h.fileType}` : ''}】${h.title}`
+          : h.title,
         text: h.text,
         links: h.url ? [{ text: '原文', href: h.url }] : [],
       }));

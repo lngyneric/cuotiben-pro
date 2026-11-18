@@ -150,19 +150,31 @@ export interface KbHit {
   title: string;
   text: string;
   url?: string;
+  /** 来源站点（global_search 的链接里 /sites/<站点>/ 一段；取不到时为 '其他'）。 */
+  category?: string;
+  /** 文件类型（文件名后缀大写，如 PDF / XLSX；文件夹或无后缀时为空）。 */
+  fileType?: string;
 }
 
 const KB_TIMEOUT_MS = 8_000;
-const KB_MAX_HITS = 3;
+/** 全局搜索一次最多回 10 条（按站点分组后给模型，条数太少分不出组）。 */
+const KB_MAX_HITS = 10;
 const KB_MAX_TEXT = 1500;
 
-/** 一次 MCP POST：Streamable HTTP 回 SSE `data:` 行，部分实现回纯 JSON。 */
+/**
+ * 一次 MCP POST：Streamable HTTP 回 SSE `data:` 行，部分实现回纯 JSON。
+ * 有状态实现（如 sysmex-kb）会在 initialize 的响应头里发
+ * `mcp-session-id`，后续每次请求都必须带上，否则报 400 Missing session ID；
+ * 所以这里同时把响应头里的 session id 带回给调用方（本函数不存全局状态，
+ * session 只活在一次 searchKbMcp 调用里）。
+ */
 async function mcpPost(
   url: string,
   token: string,
   body: unknown,
-  timeoutMs: number
-): Promise<any | null> {
+  timeoutMs: number,
+  sessionId?: string | null
+): Promise<{ json: any | null; sessionId: string | null }> {
   let resp: Response;
   try {
     resp = await fetch(url, {
@@ -171,22 +183,24 @@ async function mcpPost(
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
         Authorization: `Bearer ${token}`,
+        ...(sessionId ? { 'mcp-session-id': sessionId } : {}),
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
-    return null;
+    return { json: null, sessionId: null };
   }
-  if (!resp.ok) return null;
+  const sid = resp.headers.get('mcp-session-id');
+  if (!resp.ok) return { json: null, sessionId: sid };
   const text = await resp.text();
   const trimmed = text.trim();
-  if (!trimmed) return null;
+  if (!trimmed) return { json: null, sessionId: sid };
   if (trimmed.startsWith('{')) {
     try {
-      return JSON.parse(trimmed);
+      return { json: JSON.parse(trimmed), sessionId: sid };
     } catch {
-      return null;
+      return { json: null, sessionId: sid };
     }
   }
   for (const line of text.split('\n')) {
@@ -194,17 +208,23 @@ async function mcpPost(
     if (!t.startsWith('data:')) continue;
     try {
       const j = JSON.parse(t.slice(5).trim());
-      if (j && typeof j === 'object') return j;
+      if (j && typeof j === 'object') return { json: j, sessionId: sid };
     } catch {
       // 不是 JSON 的 data 行，继续找下一行。
     }
   }
-  return null;
+  return { json: null, sessionId: sid };
 }
 
-/** 挑检索工具：名字/描述含 search/query/global/find 的优先，其次看入参。 */
+/**
+ * 挑检索工具：优先全租户的 global_search（不要只查默认站点的
+ * search_sharepoint）；没有 global_search 时再按名字/描述含
+ * search/query/global/find 的挑，其次看入参。
+ */
 function pickSearchTool(tools: any[]): any | null {
   if (tools.length === 0) return null;
+  const global = tools.find((t) => t?.name === 'global_search');
+  if (global) return global;
   const byName = tools.find((t) =>
     /search|query|global|find/i.test(`${t?.name ?? ''} ${t?.description ?? ''}`)
   );
@@ -236,6 +256,45 @@ function buildToolArgs(tool: any, query: string): Record<string, unknown> {
   return args;
 }
 
+/**
+ * 解析 global_search 的 markdown 清单（每行 `序号. 文件名 | 大小 | 修改: … | 链接`），
+ * 逐行拆成结构化命中并按站点分组（组内保持搜索返回的顺序）。站点图标、
+ * DispForm 链接与无后缀的文件夹条目是噪声，直接跳过。返回 [] 时调用方
+ * 回落到下面的 JSON/整段解析。
+ */
+function parseGlobalSearchList(text: string): KbHit[] {
+  const lineRe =
+    /^\s*\d+\.\s+(.+?)\s*\|\s*(.+?)\s*\|\s*修改:[^|]*\|\s*(https?:\/\/\S+)\s*$/;
+  const groups = new Map<string, KbHit[]>();
+  for (const line of text.split('\n')) {
+    const m = lineRe.exec(line);
+    if (!m) continue;
+    const title = m[1].trim();
+    const size = m[2].trim();
+    const url = m[3].trim();
+    if (!title || title.startsWith('__siteIcon__')) continue;
+    if (/DispForm\.aspx/i.test(url)) continue;
+    const ext = title.includes('.')
+      ? (title.split('.').pop() ?? '').trim().toUpperCase()
+      : '';
+    if (!ext) continue; // 无后缀 = 文件夹，不是文档
+    const site =
+      /\/sites\/([^/]+)/i.exec(url)?.[1] ??
+      (/\/personal\//i.test(url) ? '个人盘' : '其他');
+    const hit: KbHit = {
+      title,
+      text: `${title}（${size}）`,
+      url,
+      category: site,
+      fileType: ext,
+    };
+    const list = groups.get(site) ?? [];
+    list.push(hit);
+    groups.set(site, list);
+  }
+  return [...groups.values()].flat().slice(0, KB_MAX_HITS);
+}
+
 function parseKbHits(result: any, toolName: string): KbHit[] {
   const blocks: any[] = Array.isArray(result?.content) ? result.content : [];
   const text = blocks
@@ -243,6 +302,9 @@ function parseKbHits(result: any, toolName: string): KbHit[] {
     .map((b) => b.text)
     .join('\n');
   if (!text.trim()) return [];
+  // global_search 的 markdown 清单先按行解析成分组命中。
+  const mdHits = parseGlobalSearchList(text);
+  if (mdHits.length > 0) return mdHits;
   try {
     const parsed = JSON.parse(text);
     const items: any[] = Array.isArray(parsed)
@@ -290,7 +352,7 @@ export async function searchKbMcp({
 }): Promise<KbHit[]> {
   const endpoint = url.trim().replace(/\/+$/, '');
   if (!endpoint || !token || !query.trim()) return [];
-  const init = await mcpPost(
+  const initRes = await mcpPost(
     endpoint,
     token,
     {
@@ -305,24 +367,28 @@ export async function searchKbMcp({
     },
     timeoutMs
   );
+  const init = initRes?.json;
   if (!init?.result) return [];
+  const sessionId = initRes?.sessionId ?? null;
   // initialized 通知不需要响应，失败也不阻塞。
   mcpPost(
     endpoint,
     token,
     { jsonrpc: '2.0', method: 'notifications/initialized' },
-    timeoutMs
+    timeoutMs,
+    sessionId
   ).catch(() => {});
-  const listed = await mcpPost(
+  const listedRes = await mcpPost(
     endpoint,
     token,
     { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
-    timeoutMs
+    timeoutMs,
+    sessionId
   );
-  const tools: any[] = listed?.result?.tools ?? [];
+  const tools: any[] = listedRes?.json?.result?.tools ?? [];
   const tool = pickSearchTool(tools);
   if (!tool) return [];
-  const called = await mcpPost(
+  const calledRes = await mcpPost(
     endpoint,
     token,
     {
@@ -331,8 +397,10 @@ export async function searchKbMcp({
       method: 'tools/call',
       params: { name: tool.name, arguments: buildToolArgs(tool, query) },
     },
-    timeoutMs
+    timeoutMs,
+    sessionId
   );
+  const called = calledRes?.json;
   if (!called?.result || called?.error) return [];
   return parseKbHits(called.result, tool.name);
 }
