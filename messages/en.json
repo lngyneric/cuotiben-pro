@@ -989,6 +989,7 @@
   "ai_assistant.description": "Chat about anything: courses, policies, your mentoring progress, or just say hi.",
   "ai_assistant.chat_placeholder": "Ask about courses, policies, mentoring…",
   "ai_assistant.send": "Send",
+  "ai_assistant.clear": "Clear chat",
   "ai_assistant.thinking": "Thinking…",
   "ai_assistant.placeholder": "E.g. leadership, lab medicine, sales…",
   "ai_assistant.ask": "Recommend courses",

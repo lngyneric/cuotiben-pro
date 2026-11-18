@@ -1,11 +1,14 @@
 // 对话式 AI 学习助手：大圆式自由对话 + 系统 agent 工具接入。
 //
 // 与 runAssistantQuery（固定推荐流程）不同，这里由 LLM 决定何时调工具：
-//   LLM 每轮只输出一个 JSON：
+//   调工具只输出一个 JSON：
 //     {"action":"tool","tool":"search_courses","args":{"keywords":"领导力"}}
-//     {"action":"answer","answer":"……","courses":["course-xxx"],"docRefs":["<key>"]}
-//   服务端执行工具、把结果喂回 LLM，最多 3 轮工具调用；最后的 courses /
-//   sources 只认工具实际返回过的内容（seen 集），防模型编造卡片。
+//   直接回答用中文正文（不用 JSON），需要推荐课程或引用文档时在末尾另起
+//   一行写「【推荐课程】course-xxx, course-yyy」或「【引用文档】<key>」。
+//   （长中文答案放 JSON 字符串里常因未转义的换行/引号解析失败，之前会把
+//   原始 JSON 直接显示给用户；正文+标记行避免了这个问题。）
+// 服务端执行工具、把结果喂回 LLM，最多 3 轮工具调用；最后的 courses /
+// sources 只认工具实际返回过的内容（seen 集），防模型编造卡片。
 //
 // Jev 不再做硬路由（不再有“与课程无关就直接回查不到”）；课程语义匹配由
 // LLM 读工具结果完成。LLM 不可用时降级为关键词匹配 + 模板回答。
@@ -122,13 +125,53 @@ function chatSystemPrompt(input: ChatInput): string {
     toolDescriptions(input.tools),
     '',
     '调用规则：',
-    '1. 每轮只输出一个 JSON，不要解释文字。调工具：{"action":"tool","tool":"<工具名>","args":{...}}；直接回答：{"action":"answer","answer":"……","courses":["course-xxx"],"docRefs":["<key>"]}。',
-    '2. 推荐课程时，只推工具返回过的课；courses 里只填 search_courses 返回过的 slug，最多 2 门。课程链接由服务端从正文读取，你不要自己拼链接。',
-    '3. 文档问题只按工具返回的原文回答；docRefs 里只填 search_docs / search_kb 返回过的 key。原文写“待填”“速览”或“细则以正式制度原文为准”时，如实说明，不要自己补一个流程。',
-    '4. 问候、闲聊、与课程无关的问题，正常接话，不用拒绝，也不用硬推课。',
-    '5. 不知道就直说不知道，不要编造。',
+    '1. 调工具时只输出一个 JSON，不要解释文字：{"action":"tool","tool":"<工具名>","args":{...}}。',
+    '2. 直接回答时用中文正文，不要用 JSON、不要用代码块；需要推荐课程或引用文档时，在回答末尾另起一行写「【推荐课程】course-xxx, course-yyy」或「【引用文档】<key1>, <key2>」，只填工具返回过的 slug/key，最多 2 个。',
+    '3. 推荐课程时，只推工具返回过的课；课程链接由服务端从正文读取，你不要自己拼链接。',
+    '4. 文档问题只按工具返回的原文回答；原文写“待填”“速览”或“细则以正式制度原文为准”时，如实说明，不要自己补一个流程。',
+    '5. 问候、闲聊、与课程无关的问题，正常接话，不用拒绝，也不用硬推课。',
+    '6. 不知道就直说不知道，不要编造。',
     ...assistantContextLines(input.role, input.statusSummaries),
   ].join('\n');
+}
+
+/**
+ * 从正文回答里抽出末尾的推荐/引用标记行（【推荐课程】slug1, slug2 /
+ * 【引用文档】key1, key2），返回去掉标记行的正文与标记内容。
+ * 标记行不显示给用户，服务端按 seen 集校验后生成卡片。
+ */
+function extractMarkers(text: string): {
+  text: string;
+  courses: string[];
+  docRefs: string[];
+} {
+  const courses: string[] = [];
+  const docRefs: string[] = [];
+  const kept: string[] = [];
+  for (const line of text.split('\n')) {
+    const cm = line.match(/【推荐课程】\s*(.+)/);
+    if (cm) {
+      courses.push(
+        ...cm[1]
+          .split(/[,，、]/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      );
+      continue;
+    }
+    const dm = line.match(/【引用文档】\s*(.+)/);
+    if (dm) {
+      docRefs.push(
+        ...dm[1]
+          .split(/[,，、]/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      );
+      continue;
+    }
+    kept.push(line);
+  }
+  return { text: kept.join('\n').trim(), courses, docRefs };
 }
 
 interface LlmJson {
@@ -404,6 +447,7 @@ export async function runAssistantChat(input: ChatInput): Promise<ChatResult> {
   const seenDocs = new Map<string, ChatDocHit>();
   let toolRounds = 0;
   let iterations = 0;
+  let formatRetries = 0;
   let finalAnswer: string | null = null;
   let finalCourses: string[] = [];
   let finalDocRefs: string[] = [];
@@ -415,27 +459,13 @@ export async function runAssistantChat(input: ChatInput): Promise<ChatResult> {
     const raw = await callChatLLM({ baseUrl, apiKey, messages });
     if (!raw) return fallbackChat(input);
     const parsed = parseLlmJson(raw);
-    // 模型直接回了 prose（没按 JSON）：当作最终回答。
-    if (!parsed) {
-      finalAnswer = raw;
-      break;
-    }
-    if (parsed.action === 'answer') {
-      finalAnswer = String(parsed.answer ?? '').trim() || raw;
-      finalCourses = Array.isArray(parsed.courses)
-        ? parsed.courses.filter((s): s is string => typeof s === 'string')
-        : [];
-      finalDocRefs = Array.isArray(parsed.docRefs)
-        ? parsed.docRefs.filter((s): s is string => typeof s === 'string')
-        : [];
-      break;
-    }
-    if (parsed.action === 'tool' && typeof parsed.tool === 'string') {
+    if (parsed && parsed.action === 'tool' && typeof parsed.tool === 'string') {
       if (toolRounds >= CHAT_MAX_TOOL_ROUNDS) {
         messages.push({ role: 'assistant', content: raw });
         messages.push({
           role: 'user',
-          content: '工具调用已达上限，请直接根据已有信息回答，不要再调工具。',
+          content:
+            '工具调用已达上限，请直接用中文正文回答，不要再调工具，也不要输出 JSON。',
         });
         continue;
       }
@@ -450,8 +480,52 @@ export async function runAssistantChat(input: ChatInput): Promise<ChatResult> {
       });
       continue;
     }
-    // 既不是 answer 也不是合法 tool：当作最终回答。
-    finalAnswer = raw;
+    if (parsed && parsed.action === 'answer') {
+      // 兼容旧格式的 JSON 回答（提示词已改成正文+标记行，模型偶尔仍回 JSON）。
+      finalAnswer = String(parsed.answer ?? '').trim() || raw;
+      finalCourses = Array.isArray(parsed.courses)
+        ? parsed.courses.filter((s): s is string => typeof s === 'string')
+        : [];
+      finalDocRefs = Array.isArray(parsed.docRefs)
+        ? parsed.docRefs.filter((s): s is string => typeof s === 'string')
+        : [];
+      break;
+    }
+    if (!parsed && raw.trim().startsWith('{')) {
+      // 看着像 JSON 但解析失败（长中文答案里常有未转义的换行/引号）：
+      // 绝不把原始 JSON 显示给用户；让模型用正文重答一次，重答仍失败
+      // 则走关键词降级。
+      if (formatRetries < 1) {
+        formatRetries += 1;
+        messages.push({ role: 'assistant', content: raw });
+        messages.push({
+          role: 'user',
+          content:
+            '你刚才的回复格式不对。请直接用中文正文回答，不要输出 JSON，也不要输出代码块；需要推荐课程或引用文档时，在回答末尾另起一行写「【推荐课程】课程slug1, 课程slug2」或「【引用文档】引用key1, 引用key2」。',
+        });
+        continue;
+      }
+      return fallbackChat(input);
+    }
+    if (parsed) {
+      // 合法 JSON 但 action 未知：同上，用正文重答一次。
+      if (formatRetries < 1) {
+        formatRetries += 1;
+        messages.push({ role: 'assistant', content: raw });
+        messages.push({
+          role: 'user',
+          content:
+            '请直接用中文正文回答，不要输出 JSON；需要推荐课程或引用文档时，在回答末尾另起一行写「【推荐课程】课程slug1, 课程slug2」或「【引用文档】引用key1, 引用key2」。',
+        });
+        continue;
+      }
+      return fallbackChat(input);
+    }
+    // 正文回答：抽出末尾的推荐/引用标记行，剩余正文显示给用户。
+    const marked = extractMarkers(raw);
+    finalAnswer = marked.text;
+    finalCourses = marked.courses;
+    finalDocRefs = marked.docRefs;
     break;
   }
 

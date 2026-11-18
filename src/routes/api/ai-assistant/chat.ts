@@ -117,9 +117,11 @@ async function POST({ request }: { request: Request }) {
     });
     if (!session?.user) return respErr('Unauthorized', { status: 401 });
 
+    // 对话是连续发送的：每人限流放宽到 2 秒（旧推荐接口是 10 秒）。
+    // 页面在等回答时已禁用发送按钮，这道限流只防误触连发与刷接口。
     const limited = enforceMinIntervalRateLimit(request, {
-      intervalMs: 10_000,
-      keyPrefix: 'ai-assistant',
+      intervalMs: 2_000,
+      keyPrefix: 'ai-assistant-chat',
       extraKey: session.user.id,
     });
     if (limited) return limited;

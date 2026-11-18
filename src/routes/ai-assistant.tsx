@@ -52,6 +52,29 @@ const TOPIC_KEYS = [
   'ai_assistant.topic_newcomer',
 ] as const;
 
+/** 对话历史只存本机浏览器（刷新不丢；换设备不带走）。 */
+const CHAT_STORAGE_KEY = 'ai-assistant-chat-v1';
+
+function loadStoredMessages(): ChatMessage[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (m): m is ChatMessage =>
+          !!m &&
+          (m.role === 'user' || m.role === 'assistant') &&
+          typeof m.text === 'string'
+      )
+      .slice(-30);
+  } catch {
+    return [];
+  }
+}
+
 export const Route = createFileRoute('/ai-assistant')({
   loader: async () => {
     const locale = getLocale();
@@ -140,6 +163,27 @@ function AiAssistantPage() {
   const idRef = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // 刷新后恢复本机保存的对话（只在客户端跑，避免服务端渲染不一致）。
+  useEffect(() => {
+    const stored = loadStoredMessages();
+    if (stored.length > 0) {
+      idRef.current = stored.reduce((max, m) => Math.max(max, m.id || 0), 0);
+      setMessages(stored);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(
+        CHAT_STORAGE_KEY,
+        JSON.stringify(messages.slice(-30))
+      );
+    } catch {
+      // 存储满或被禁时静默跳过，不影响对话。
+    }
+  }, [messages]);
+
   const mutation = useMutation({
     mutationFn: (vars: {
       query: string;
@@ -209,9 +253,25 @@ function AiAssistantPage() {
             </div>
           ) : (
             <>
-              <p className="text-muted-foreground mb-4 text-center text-xs">
-                {m['ai_assistant.signed_in']()}
-              </p>
+              <div className="mb-4 flex items-center justify-center gap-3 text-xs">
+                <span className="text-muted-foreground">
+                  {m['ai_assistant.signed_in']()}
+                </span>
+                {messages.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={mutation.isPending}
+                    onClick={() => {
+                      setMessages([]);
+                      if (typeof window !== 'undefined')
+                        window.localStorage.removeItem(CHAT_STORAGE_KEY);
+                    }}
+                    className="text-muted-foreground hover:text-primary underline disabled:opacity-50"
+                  >
+                    {m['ai_assistant.clear']()}
+                  </button>
+                )}
+              </div>
 
               <div className="space-y-4">
                 {messages.map((msg) =>

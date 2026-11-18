@@ -989,6 +989,7 @@
   "ai_assistant.description": "想聊什么都可以：问课程、问制度、问带教进度，或者随便聊聊。",
   "ai_assistant.chat_placeholder": "想聊什么都可以，问课程、制度、带教都行…",
   "ai_assistant.send": "发送",
+  "ai_assistant.clear": "清空对话",
   "ai_assistant.thinking": "正在想…",
   "ai_assistant.placeholder": "例如：领导力、医学检验、销售…",
   "ai_assistant.ask": "推荐课程",
