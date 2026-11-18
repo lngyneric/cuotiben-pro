@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   flexRender,
   getCoreRowModel,
@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/table';
 
 export interface Column<T> {
-  header: string;
+  header: ReactNode;
   cell: (row: T) => React.ReactNode;
   className?: string;
 }

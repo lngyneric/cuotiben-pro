@@ -51,6 +51,7 @@ export const handlers: Record<
   posts_create: posts.POST,
   posts_update: posts.PUT,
   posts_delete: posts.DELETE,
+  posts_batch_status: posts.batchStatus,
   invite_codes_list: invite_codes.GET,
   invite_codes_create: invite_codes.POST,
   invite_codes_delete: invite_codes.DELETE,

@@ -29,6 +29,7 @@ import { RichTextEditor } from '@/components/rich-text-editor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -101,6 +102,7 @@ function PostsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [deletingPost, setDeletingPost] = useState<Post | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
@@ -110,6 +112,12 @@ function PostsPage() {
   useEffect(() => {
     setPage(1);
   }, [tab, debouncedSearch]);
+
+  // Selection is scoped to the current page — changing page, tab or search
+  // resets it so the toolbar never acts on rows the user can no longer see.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [page, tab, debouncedSearch]);
 
   const categoriesQuery = useQuery({
     queryKey: ['admin-categories', 'options'],
@@ -183,6 +191,22 @@ function PostsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const batchStatusMutation = useMutation({
+    mutationFn: (status: 'published' | 'draft') =>
+      apiPost<{ updated: number }>('/api/admin/posts/batch-status', {
+        ids: [...selectedIds],
+        status,
+      }),
+    onSuccess: (data) => {
+      toast.success(
+        m['admin.posts.batch_updated']({ count: data?.updated ?? 0 })
+      );
+      setSelectedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ['admin-posts'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   function openEdit(p: Post) {
     editForm.reset({
       slug: p.slug,
@@ -206,7 +230,46 @@ function PostsPage() {
     return 'outline' as const;
   };
 
+  const pageItems = listQuery.data?.items ?? [];
+  const pageIds = pageItems.map((p) => p.id);
+  const allSelected =
+    pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  const someSelected = pageIds.some((id) => selectedIds.has(id));
+
+  function toggleOne(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleAll(checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) pageIds.forEach((id) => next.add(id));
+      else pageIds.forEach((id) => next.delete(id));
+      return next;
+    });
+  }
+
   const columns: Column<Post>[] = [
+    {
+      header: (
+        <Checkbox
+          checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+          onCheckedChange={(v) => toggleAll(v === true)}
+        />
+      ),
+      className: 'w-[40px]',
+      cell: (p) => (
+        <Checkbox
+          checked={selectedIds.has(p.id)}
+          onCheckedChange={(v) => toggleOne(p.id, v === true)}
+        />
+      ),
+    },
     {
       header: m['admin.posts.title_col'](),
       cell: (p) => <span className="font-medium">{p.title}</span>,
@@ -434,6 +497,39 @@ function PostsPage() {
             onSearchChange={setSearch}
             onRefresh={() => listQuery.refetch()}
             loading={listQuery.isFetching || listQuery.isPending}
+            toolbar={
+              selectedIds.size > 0 ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground text-sm">
+                    {m['admin.posts.batch_selected']({
+                      count: selectedIds.size,
+                    })}
+                  </span>
+                  <Button
+                    size="sm"
+                    disabled={batchStatusMutation.isPending}
+                    onClick={() => batchStatusMutation.mutate('published')}
+                  >
+                    {m['admin.posts.batch_publish']()}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={batchStatusMutation.isPending}
+                    onClick={() => batchStatusMutation.mutate('draft')}
+                  >
+                    {m['admin.posts.batch_draft']()}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setSelectedIds(new Set())}
+                  >
+                    {m['admin.posts.clear_selection']()}
+                  </Button>
+                </div>
+              ) : undefined
+            }
           />
         </CardContent>
       </Card>

@@ -319,6 +319,19 @@ export const adminOperations: AdminOperation[] = [
     remove
   ),
   op(
+    'posts_batch_status',
+    'Set the status of multiple database posts at once (published or draft).',
+    'posts.write',
+    'POST',
+    'posts/batch-status',
+    z
+      .object({
+        ids: z.array(id).min(1).max(100),
+        status: z.enum(['published', 'draft']),
+      })
+      .strict()
+  ),
+  op(
     'invite_codes_list',
     'List invite codes and their usage.',
     'invite_codes.read',

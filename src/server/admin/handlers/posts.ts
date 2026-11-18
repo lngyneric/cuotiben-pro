@@ -106,3 +106,17 @@ export async function DELETE({ request, actor }: AdminHandlerContext) {
     return respErr(error.message || 'Internal error');
   }
 }
+
+export async function batchStatus({ request, actor }: AdminHandlerContext) {
+  try {
+    const { ids, status } = await request.json();
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100)
+      return respErr('ids must be a non-empty array of at most 100');
+    if (status !== 'published' && status !== 'draft')
+      return respErr('status must be published or draft');
+    const updated = await postsService.updateStatusMany(ids, status);
+    return respData({ updated });
+  } catch (error: any) {
+    return respErr(error.message || 'Internal error');
+  }
+}

@@ -1,4 +1,4 @@
-import { and, count, desc, eq, like, or, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, like, or, type SQL } from 'drizzle-orm';
 
 import { db } from '@/core/db';
 import { post } from '@/config/db/schema';
@@ -190,4 +190,16 @@ export async function remove(id: string) {
     .update(post)
     .set({ status: PostStatus.ARCHIVED })
     .where(eq(post.id, id));
+}
+
+export async function updateStatusMany(
+  ids: string[],
+  status: PostStatus.DRAFT | PostStatus.PUBLISHED
+) {
+  const rows = await db()
+    .update(post)
+    .set({ status })
+    .where(inArray(post.id, ids))
+    .returning({ id: post.id });
+  return rows.length;
 }
