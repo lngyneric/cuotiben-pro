@@ -38,8 +38,9 @@ import type { AssistantRole, StatusSummary } from './mcp';
  * 角色与状态上下文：角色决定回答角度（销售/应用/客服）；状态只用于给
  * 建议作依据（如零跑课先推入门课），不向用户罗列状态明细。状态行由调用
  * 方按权限过滤后传入，本模块不判权限、不读库。
+ * 对话式助手（chat.ts）复用同一份上下文。
  */
-function assistantContextLines(
+export function assistantContextLines(
   role: AssistantRole | undefined,
   statusSummaries: StatusSummary[] | undefined
 ): string[] {

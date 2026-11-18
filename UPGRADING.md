@@ -46,6 +46,37 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-18: Conversational AI assistant (Dayuan-style chat + system agent tools)
+
+### Action required
+
+- [ ] **Create the read-only assistant agent**: run
+      `pnpm admin:token create-agent --name="AI 学习助手" --roles=course-advisor`
+      (or the equivalent insert) so `POST /api/ai-assistant/chat` can call
+      the registry through `executeAdmin`. Without it the chat still works,
+      but course/category reads fall back to the public published list.
+      No API key is needed for this agent (in-process only); do not issue
+      one unless the agent is later exposed over MCP/REST.
+
+### New, no action needed
+
+- `/ai-assistant` is now a multi-turn chat (messages + history, last 10
+  turns sent per request). The LLM decides when to call tools (search
+  courses, read a course, list categories, my mentoring status, search
+  docs, search the knowledge base for admins) and answers in free-form
+  Chinese; greetings and off-topic questions no longer return "not found".
+- New endpoint `POST /api/ai-assistant/chat`. The old
+  `POST /api/ai-assistant/recommend` is unchanged and still works.
+- Course/category reads go through the system agent framework
+  (`executeAdmin`, operation registry, `admin_execution` audit) with the
+  read-only agent; the Jev hard "off-topic" rejection is removed from the
+  chat path (Jev stays in the recommend path). The LLM now does the
+  semantic matching from tool results.
+- New i18n keys: `ai_assistant.chat_placeholder`, `ai_assistant.send`,
+  `ai_assistant.thinking`; `ai_assistant.description` is now conversational.
+
+---
+
 ## 2026-11-18: AI assistant MCP (DB-table reads + sysmex-kb + roles)
 
 ### Action required
