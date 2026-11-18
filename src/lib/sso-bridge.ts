@@ -18,6 +18,19 @@ const SSO_BRIDGED_KEY = 'sso-bridged-at';
 const SSO_BRIDGE_MIN_INTERVAL_MS = 10 * 60 * 1000;
 
 /**
+ * Clear the bridge loop guard so the next sign-in can hop through ai-shifu
+ * again even if one ran within the last 10 minutes (re-verification after a
+ * sync failure). Called from the sign-in success handler before bridging.
+ */
+export function clearSsoBridgeGuard(): void {
+  try {
+    sessionStorage.removeItem(SSO_BRIDGED_KEY);
+  } catch {
+    // Storage unavailable — the guard just stays as it was.
+  }
+}
+
+/**
  * Attempt the ai-shifu bridge hop for `next` (the wiki page the user was
  * heading to, an internal path such as `/settings`). Returns true if the
  * browser was sent to ai-shifu (the caller must not navigate anywhere

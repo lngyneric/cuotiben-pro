@@ -8,8 +8,9 @@ import { Link, useRouter } from '@/core/i18n/navigation';
 import { envConfigs } from '@/config';
 import { apiPost } from '@/lib/api-client';
 import { withAppBase } from '@/lib/base-path';
+import { clearSyncFailure, markLoginJustSucceeded } from '@/lib/login-sync';
 import { resolveAfterAuthUrl, safeInternalPath } from '@/lib/redirect';
-import { bridgeToAiShifu } from '@/lib/sso-bridge';
+import { bridgeToAiShifu, clearSsoBridgeGuard } from '@/lib/sso-bridge';
 import { m } from '@/paraglide/messages.js';
 import { localizeHref } from '@/paraglide/runtime.js';
 import { usePublicConfig } from '@/hooks/use-public-config';
@@ -51,9 +52,15 @@ function SignInPage() {
 
   // Already signed in (visited /sign-in directly, or a stale callbackUrl looped
   // back here) → go home. The auth pages never gate themselves, so this can't loop.
+  // Except with reauth=1 (the homepage bounced here over a sync failure):
+  // stay put so the user re-enters their employee number and password.
   useEffect(() => {
     if (sessionPending || navigatingRef.current) return;
     if (session?.user) {
+      const reauth =
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('reauth') === '1';
+      if (reauth) return;
       navigatingRef.current = true;
       router.push('/');
     }
@@ -65,7 +72,7 @@ function SignInPage() {
   const afterLoginUrl = resolveAfterAuthUrl({
     redirect: redirectParam,
     callbackUrl,
-    fallback: '/settings',
+    fallback: '/',
   });
 
   // Carry callbackUrl/redirect across to sign-up so the destination survives the switch.
@@ -118,6 +125,13 @@ function SignInPage() {
       // user is logged into ai-shifu too; if the bridge is unavailable the
       // call returns false and we fall back to the normal destination.
       navigatingRef.current = true;
+      // Fresh verification: clear the bridge 10-minute guard and the
+      // homepage sync-failure record so the bridge gets another chance,
+      // and mark the login so the homepage can show the success banner
+      // whether the bridge hops or we go straight home.
+      clearSsoBridgeGuard();
+      clearSyncFailure();
+      markLoginJustSucceeded();
       const destination = withAppBase(localizeHref(afterLoginUrl));
       const bridged = await bridgeToAiShifu(destination);
       if (!bridged) {
@@ -164,6 +178,7 @@ function SignInPage() {
           // cookie — a client push would let the guard read a stale (logged-out)
           // session store and bounce straight back to /sign-in.
           navigatingRef.current = true;
+          markLoginJustSucceeded();
           window.location.assign(withAppBase(localizeHref(afterLoginUrl)));
         }
       } catch (err: any) {
