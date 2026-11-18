@@ -696,6 +696,53 @@ export const userEvent = table(
 export type UserEvent = typeof userEvent.$inferSelect;
 export type NewUserEvent = typeof userEvent.$inferInsert;
 
+// Learner status summary: derived plan-vs-actual snapshot, rebuilt hourly by
+// the sync job (see user-status-summary-spec.md). Never the source of truth —
+// every fact lives in its home system (WeCom smart table for mentoring nodes,
+// ai-shifu MySQL for course progress, wiki user_event for recent activity).
+// One row per learner; id is the employee number when known, else
+// `wecom:<WeCom user id>`. Rows whose identity could not be resolved are
+// still written with the `unresolved_identity` flag and reported by the sync
+// job, never silently dropped.
+export const userStatusSummary = table(
+  'user_status_summary',
+  {
+    id: text('id').primaryKey(),
+    employeeNo: text('employee_no'),
+    wecomUserId: text('wecom_user_id'),
+    wikiUserId: text('wiki_user_id'),
+    aishifuUserBid: text('aishifu_user_bid'),
+    name: text('name').notNull(),
+    department: text('department'),
+    positionName: text('position_name'),
+    mentorLeadId: text('mentor_lead_id'),
+    mentorLeadName: text('mentor_lead_name'),
+    mentors: text('mentors'), // JSON: {lead, keyAccount, exempt, departmentHead} with WeCom ids + names
+    planType: text('plan_type'),
+    planStartDate: text('plan_start_date'), // ISO date
+    planEndDate: text('plan_end_date'), // ISO date
+    expectedDate: text('expected_date'), // ISO date
+    plan: text('plan'), // JSON: {nodes: [{node, expected}]}
+    actual: text('actual'), // JSON: {status, result, nodeRatings, confirmations, scores, courses, lastActivityAt}
+    flags: text('flags'), // JSON array: overdue | pending_confirm | no_course_activity | no_wiki_account | unresolved_identity
+    planVersion: text('plan_version').notNull().default('v1'),
+    sourceWatermarks: text('source_watermarks'), // JSON: {smartsheetEditedAt, aishifuMaxUpdatedAt, wikiMaxEventAt}
+    computedAt: timestamp('computed_at').notNull(),
+    updatedAt: timestamp('updated_at')
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => [
+    index('idx_user_status_employee').on(t.employeeNo),
+    index('idx_user_status_wecom').on(t.wecomUserId),
+    index('idx_user_status_mentor').on(t.mentorLeadId),
+    index('idx_user_status_department').on(t.department),
+  ]
+);
+
+export type UserStatusSummary = typeof userStatusSummary.$inferSelect;
+export type NewUserStatusSummary = typeof userStatusSummary.$inferInsert;
+
 // ─── Cuotiben (错题本) ───────────────────────────────────────────────────────
 
 export const cuotibenCard = table(

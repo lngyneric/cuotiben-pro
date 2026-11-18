@@ -46,6 +46,24 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-18: Learner status summary table
+
+### Action required
+
+- [ ] **Schema**: one new table, `user_status_summary` (plan-vs-actual
+      snapshot, one row per learner). Port it into `schema.ts` from the
+      template for your dialect and apply it (steps 3–4). Nothing existing
+      changes.
+
+### New, no action needed
+
+- The table is a **derived snapshot**, rebuilt hourly by an external sync job
+  (`sync-user-status.py`): mentoring nodes from the WeCom smart table,
+  course progress from ai-shifu MySQL, recent activity from `user_event`.
+  It is never the source of truth and can be rebuilt from the sources at any
+  time. No new permission codes; the sync writes directly to the wiki
+  database.
+
 ## 2026-10-17: Per-project session cookies in dev
 
 Browsers share cookies across ports, so several projects running `pnpm dev`
