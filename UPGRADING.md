@@ -46,6 +46,35 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-19: Blog split-view reader (display-mode toggle)
+
+### Action required
+
+None. Pure frontend change; no schema, permission, or env change.
+
+### New, no action needed
+
+- `/blog` now has a display-mode toggle (Cards / Split) above the search
+  box. The choice is stored in the browser's localStorage
+  (`blog-view-mode`) and restored on revisit; default is Cards, so the
+  existing grid view is unchanged unless the user switches.
+- Split view mirrors the `/html` two-column layout: left column is a
+  category nav (name + article count); the active category expands to
+  show its article titles for jumping straight to one. Right column
+  shows the selected article's full text (title, date, author,
+  categories, image, Markdown/MDX body) fetched on demand via
+  `getBlogPostFn`, with Previous / Next buttons to move through the
+  articles of the current category and a "第 X 篇 / 共 Y 篇" position
+  indicator. Switching category or changing the search resets to the
+  first article of that category. Members-only articles still show the
+  sign-in prompt instead of the body.
+- New i18n keys: `blog.view_grid`, `blog.view_split`,
+  `blog.prev_article`, `blog.next_article`, `blog.article_position`,
+  `blog.select_article`, `blog.loading_article`, `blog.login_to_read`,
+  `blog.sign_in`.
+
+---
+
 ## 2026-11-19: Categories & keywords for blog posts and HTML articles
 
 ### Action required

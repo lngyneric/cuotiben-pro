@@ -1,6 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
+import { MDXProvider } from '@mdx-js/react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
+import { Link } from '@/core/i18n/navigation';
 import { localizedAbsoluteUrl } from '@/core/i18n/urls';
 import { envConfigs } from '@/config';
 import { cn } from '@/lib/utils';
@@ -9,8 +13,10 @@ import { getLocale, locales } from '@/paraglide/runtime.js';
 import { Footer } from '@/blocks/footer';
 import { Header } from '@/blocks/header';
 import { BlogCard } from '@/components/blog-card';
-import { formatPostDate, type BlogPost } from '@/content/posts';
-import { getBlogPostsFn } from '@/content/posts/server';
+import { MarkdownContent } from '@/components/markdown-content';
+import { mdxComponents } from '@/components/mdx-components';
+import { formatPostDate, loadLocalPost, type BlogPost } from '@/content/posts';
+import { getBlogPostFn, getBlogPostsFn } from '@/content/posts/server';
 
 export const Route = createFileRoute('/blog/')({
   loader: async () => {
@@ -44,23 +50,56 @@ export const Route = createFileRoute('/blog/')({
   component: BlogPage,
 });
 
+type ViewMode = 'grid' | 'split';
+
+/** 分屏/卡片展示方式只存本机浏览器（刷新不丢；换设备不带走）。 */
+const VIEW_MODE_KEY = 'blog-view-mode';
+
 function BlogPage() {
   const { locale, posts } = Route.useLoaderData();
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>(
     m['blog.all_categories']()
   );
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  // 刷新后恢复本机保存的展示方式（只在客户端跑，避免服务端渲染不一致）。
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = window.localStorage.getItem(VIEW_MODE_KEY);
+      if (stored === 'grid' || stored === 'split') setViewMode(stored);
+    } catch {
+      // 存储不可用时静默跳过，保持默认卡片模式。
+    }
+  }, []);
+
+  const setViewModeAndPersist = (mode: ViewMode) => {
+    setViewMode(mode);
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      // 存储满或被禁时静默跳过，不影响切换。
+    }
+  };
 
   // 分类：数据库文章的 categories（逗号分隔）展开去重；无分类的文章归“未分类”。
   const categories = useMemo(() => {
-    const set = new Set<string>();
+    const counts = new Map<string, number>();
     for (const p of posts) {
       const cats = (p.categories ?? []).length
         ? (p.categories as string[])
         : ['未分类'];
-      for (const c of cats) set.add(c);
+      for (const c of cats) counts.set(c, (counts.get(c) ?? 0) + 1);
     }
-    return [m['blog.all_categories'](), ...Array.from(set).sort()];
+    return [
+      { name: m['blog.all_categories'](), count: posts.length },
+      ...Array.from(counts.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([name, count]) => ({ name, count })),
+    ];
   }, [posts]);
 
   const filtered = useMemo(() => {
@@ -83,6 +122,30 @@ function BlogPage() {
     });
   }, [posts, search, activeCategory]);
 
+  // 换分类或改搜索时回到该分类的第一篇。
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [activeCategory, search]);
+
+  const safeIndex = Math.min(selectedIndex, Math.max(filtered.length - 1, 0));
+  const selected = filtered[safeIndex];
+
+  const detailQuery = useQuery({
+    queryKey: ['blog-post-detail', selected?.slug, locale],
+    queryFn: () => getBlogPostFn({ data: { slug: selected!.slug, locale } }),
+    enabled: viewMode === 'split' && !!selected,
+  });
+
+  const detail = detailQuery.data ?? null;
+  const LocalContent =
+    detail?.source === 'local'
+      ? (loadLocalPost(detail.slug, locale)?.default ?? null)
+      : null;
+
+  const goPrev = () => setSelectedIndex((i) => Math.max(i - 1, 0));
+  const goNext = () =>
+    setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1));
+
   return (
     <div className="bg-background text-foreground flex min-h-screen flex-col">
       <Header />
@@ -97,8 +160,31 @@ function BlogPage() {
             </p>
           </div>
 
-          {/* 搜索 + 分类筛选 */}
-          <div className="mx-auto mb-6 flex max-w-3xl flex-col gap-3">
+          {/* 展示方式切换：卡片网格 / 分屏阅读 */}
+          <div className="mb-4 flex justify-center">
+            <div className="border-border bg-card inline-flex rounded-full border p-1">
+              {(['grid', 'split'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setViewModeAndPersist(mode)}
+                  className={cn(
+                    'rounded-full px-4 py-1 text-xs font-medium',
+                    viewMode === mode
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-primary'
+                  )}
+                >
+                  {mode === 'grid'
+                    ? m['blog.view_grid']()
+                    : m['blog.view_split']()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 搜索（两种模式共用） */}
+          <div className="mx-auto mb-6 max-w-3xl">
             <input
               type="search"
               value={search}
@@ -106,42 +192,207 @@ function BlogPage() {
               placeholder={m['blog.search_placeholder']()}
               className="border-border bg-card w-full rounded-full border px-4 py-2 text-sm"
             />
-            <div className="flex flex-wrap justify-center gap-1.5">
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  className={cn(
-                    'rounded-full border px-2.5 py-1 text-xs',
-                    activeCategory === cat
-                      ? 'border-primary text-primary font-medium'
-                      : 'border-border text-muted-foreground'
-                  )}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
+            {viewMode === 'grid' && (
+              <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+                {categories.map((cat) => (
+                  <button
+                    key={cat.name}
+                    onClick={() => setActiveCategory(cat.name)}
+                    className={cn(
+                      'rounded-full border px-2.5 py-1 text-xs',
+                      activeCategory === cat.name
+                        ? 'border-primary text-primary font-medium'
+                        : 'border-border text-muted-foreground'
+                    )}
+                  >
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {filtered.length === 0 ? (
-            <p className="text-muted-foreground py-16 text-center text-sm">
-              {m['blog.no_posts']()}
-            </p>
+          {viewMode === 'grid' ? (
+            filtered.length === 0 ? (
+              <p className="text-muted-foreground py-16 text-center text-sm">
+                {m['blog.no_posts']()}
+              </p>
+            ) : (
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {filtered.map((post: BlogPost) => (
+                  <BlogCard
+                    key={post.slug}
+                    href={`/blog/${post.slug}`}
+                    title={post.title}
+                    description={post.description}
+                    image={post.image}
+                    date={formatPostDate(post.createdAt, locale)}
+                    authorName={post.authorName}
+                    authorImage={post.authorImage}
+                  />
+                ))}
+              </div>
+            )
           ) : (
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {filtered.map((post: BlogPost) => (
-                <BlogCard
-                  key={post.slug}
-                  href={`/blog/${post.slug}`}
-                  title={post.title}
-                  description={post.description}
-                  image={post.image}
-                  date={formatPostDate(post.createdAt, locale)}
-                  authorName={post.authorName}
-                  authorImage={post.authorImage}
-                />
-              ))}
+            /* 分屏阅读：左栏分类导航，右栏文章全文 */
+            <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
+              {/* 左：分类导航（选中分类下展开文章标题） */}
+              <div className="bg-card border-border max-h-[70vh] overflow-y-auto rounded-lg border p-4">
+                <ul className="space-y-1">
+                  {categories.map((cat) => (
+                    <li key={cat.name}>
+                      <button
+                        type="button"
+                        onClick={() => setActiveCategory(cat.name)}
+                        className={cn(
+                          'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm',
+                          activeCategory === cat.name
+                            ? 'bg-primary text-primary-foreground font-medium'
+                            : 'text-foreground hover:bg-muted'
+                        )}
+                      >
+                        <span className="truncate">{cat.name}</span>
+                        <span
+                          className={cn(
+                            'ml-2 shrink-0 text-xs',
+                            activeCategory === cat.name
+                              ? 'text-primary-foreground/80'
+                              : 'text-muted-foreground'
+                          )}
+                        >
+                          {cat.count}
+                        </span>
+                      </button>
+                      {activeCategory === cat.name && filtered.length > 0 && (
+                        <ul className="mt-1 space-y-0.5 border-l pl-3">
+                          {filtered.map((post, idx) => (
+                            <li key={post.slug}>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedIndex(idx)}
+                                className={cn(
+                                  'block w-full truncate rounded px-2 py-1.5 text-left text-xs',
+                                  idx === safeIndex
+                                    ? 'text-primary font-medium'
+                                    : 'text-muted-foreground hover:text-primary'
+                                )}
+                              >
+                                {post.title}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* 右：文章全文 */}
+              <div className="bg-card border-border flex h-[70vh] flex-col overflow-hidden rounded-lg border">
+                {!selected ? (
+                  <div className="text-muted-foreground flex h-full items-center justify-center">
+                    <p className="text-sm">{m['blog.no_posts']()}</p>
+                  </div>
+                ) : detailQuery.isPending ? (
+                  <div className="text-muted-foreground flex h-full items-center justify-center">
+                    <p className="text-sm">{m['blog.loading_article']()}</p>
+                  </div>
+                ) : !detail ? (
+                  <div className="text-muted-foreground flex h-full items-center justify-center">
+                    <p className="text-sm">{m['blog.no_posts']()}</p>
+                  </div>
+                ) : detail.requiresAuth ? (
+                  <div className="mx-auto max-w-md px-6 py-16 text-center">
+                    <h2 className="text-foreground text-2xl font-semibold tracking-tight">
+                      {detail.title}
+                    </h2>
+                    {detail.description && (
+                      <p className="text-muted-foreground mt-3">
+                        {detail.description}
+                      </p>
+                    )}
+                    <p className="text-muted-foreground mt-6 text-sm">
+                      {m['blog.login_to_read']()}
+                    </p>
+                    <Link
+                      href={`/sign-in?callbackUrl=${encodeURIComponent(`/blog/${detail.slug}`)}`}
+                      className="bg-primary text-primary-foreground mt-6 inline-block min-h-[48px] rounded-lg px-8 py-3 font-medium"
+                    >
+                      {m['blog.sign_in']()}
+                    </Link>
+                  </div>
+                ) : (
+                  <>
+                    <div className="border-border border-b px-6 py-5">
+                      <h2 className="text-foreground text-2xl font-semibold tracking-tight">
+                        {detail.title}
+                      </h2>
+                      <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-3 text-xs">
+                        <span>{formatPostDate(detail.createdAt, locale)}</span>
+                        {detail.authorName && <span>{detail.authorName}</span>}
+                        {(detail.categories ?? []).map((c) => (
+                          <span
+                            key={c}
+                            className="border-border rounded-full border px-2 py-0.5"
+                          >
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                      {detail.description && (
+                        <p className="text-muted-foreground mt-3 text-sm">
+                          {detail.description}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex-1 overflow-y-auto px-6 py-6">
+                      {detail.image && (
+                        <img
+                          src={detail.image}
+                          alt={detail.title}
+                          className="border-border mb-6 w-full rounded-2xl border object-cover"
+                        />
+                      )}
+                      {LocalContent ? (
+                        <div className="text-foreground/90 text-[15px] leading-7">
+                          <MDXProvider components={mdxComponents}>
+                            <LocalContent />
+                          </MDXProvider>
+                        </div>
+                      ) : (
+                        <MarkdownContent content={detail.content || ''} />
+                      )}
+                    </div>
+                    <div className="border-border flex items-center justify-between border-t px-6 py-3">
+                      <button
+                        type="button"
+                        onClick={goPrev}
+                        disabled={safeIndex <= 0}
+                        className="text-primary inline-flex items-center gap-1 text-sm font-medium disabled:opacity-40"
+                      >
+                        <ChevronLeft className="size-4" />
+                        {m['blog.prev_article']()}
+                      </button>
+                      <span className="text-muted-foreground text-xs">
+                        {m['blog.article_position']({
+                          current: safeIndex + 1,
+                          total: filtered.length,
+                        })}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={goNext}
+                        disabled={safeIndex >= filtered.length - 1}
+                        className="text-primary inline-flex items-center gap-1 text-sm font-medium disabled:opacity-40"
+                      >
+                        {m['blog.next_article']()}
+                        <ChevronRight className="size-4" />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
