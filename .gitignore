@@ -66,3 +66,4 @@ package-lock.json
 
 # Runtime image uploads (no-storage local fallback)
 /public/uploads/
+__pycache__/
