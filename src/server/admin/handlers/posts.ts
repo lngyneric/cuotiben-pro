@@ -44,6 +44,7 @@ export async function POST({ request, actor }: AdminHandlerContext) {
       image,
       content,
       categories,
+      tags,
       authorName,
       status,
     } = await request.json();
@@ -56,6 +57,7 @@ export async function POST({ request, actor }: AdminHandlerContext) {
       image,
       content,
       categories,
+      tags,
       authorName,
       status,
     });
@@ -75,6 +77,7 @@ export async function PUT({ request, actor }: AdminHandlerContext) {
       image,
       content,
       categories,
+      tags,
       authorName,
       status,
     } = await request.json();
@@ -86,6 +89,7 @@ export async function PUT({ request, actor }: AdminHandlerContext) {
       image,
       content,
       categories,
+      tags,
       authorName,
       status,
     });

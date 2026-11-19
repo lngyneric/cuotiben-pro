@@ -916,6 +916,9 @@ export const blogHtmlFile = table(
     title: text('title').notNull().default(''),
     description: text('description').notNull().default(''),
     category: text('category').notNull().default('未分类'),
+    // 关键词：逗号分隔多值，与 post.categories 的写法一致；由上传者或
+    // 管理员填写，供 AI 助手检索打分（见 ai-assistant/service.ts）。
+    keywords: text('keywords').notNull().default(''),
     // all = 全体已注册可见（默认）；self = 仅上传者本人和管理员可见。
     visibility: text('visibility').notNull().default('all'),
     uploaderId: text('uploader_id').references(() => user.id),

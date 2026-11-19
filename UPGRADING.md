@@ -46,6 +46,57 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-19: Categories & keywords for blog posts and HTML articles
+
+### Action required
+
+- [ ] **Add the `keywords` column to the production database** (SQLite):
+      back up `blog.db` first, then run
+      `ALTER TABLE blog_html_file ADD COLUMN keywords TEXT NOT NULL DEFAULT '';`
+      Blog posts reuse the existing `post.tags` column — no schema change
+      there. The `blog_html_file.keywords` column is in the SQLite schema
+      template (`src/config/db/schema.sqlite.ts`); the postgres/mysql
+      templates do not have the `blog_html_file` table and are untouched.
+- [ ] **Rebuild the doc index once**: the fingerprint now includes
+      keywords, so the first `loadDocIndex()` after deploy rebuilds
+      `data/doc-index.json` automatically. No manual step; only expect one
+      slower first assistant query.
+- [ ] **Reclassify the onboarding HTML article**: the existing
+      《入社培训 · 新人第一周（HTML 版）》 is still `未分类`; change it
+      to `新人入学` in the `/html` list (or by updating
+      `blog_html_file.category` directly).
+
+### Schema / migration note (deviation from the AGENTS.md workflow)
+
+This project does not use drizzle-kit migrations in production: there is
+no `__drizzle_migrations` table and no `drizzle/` directory — the live
+database was seeded from `blog-init.db` and is altered by hand. So this
+change ships **no drizzle migration file**; the production step above is
+the manual `ALTER TABLE`, and `blog-init.db` must be regenerated from the
+updated template so a fresh deploy carries the column. If the project
+later adopts drizzle-kit migrations, generate one for this column then.
+
+### New, no action needed
+
+- HTML upload/edit categories now come from the taxonomy dictionary
+  (`type='category'`, `published`) via `GET /api/blog/html-categories`;
+  the old hard-coded `G8学习 / 错题解析 / 工具 / 未分类` list is gone
+  from the UI and the API validation. Legacy values already stored on
+  articles are kept and still shown in the per-item dropdown.
+- Keywords (comma-separated, same convention as categories) can be set
+  on blog posts (`post.tags`, admin post editor, below the category
+  field) and on HTML articles (`blog_html_file.keywords`, upload form and
+  per-item inline input, saved on blur). R2 stores them in
+  `customMetadata.keywords`, so both storage backends keep the same API
+  contract.
+- AI assistant scoring now includes keywords at the same weight as
+  categories (title 3 → categories & keywords 2 → description 1).
+  Keyword-only doc hits (2 points) stay below the 3-point doc fallback
+  threshold (`DOC_KEYWORD_MIN_SCORE`); course ranking has no separate
+  threshold. LLM prompts (recommend + Jev) also receive the keywords.
+- New i18n keys: `admin.posts.keywords_field`,
+  `admin.posts.keywords_placeholder`.
+
 ## 2026-11-18: Conversational AI assistant (Dayuan-style chat + system agent tools)
 
 ### Action required

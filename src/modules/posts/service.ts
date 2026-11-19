@@ -28,6 +28,7 @@ export type PublishedArticleItem = Pick<
   | 'description'
   | 'image'
   | 'categories'
+  | 'tags'
   | 'authorName'
   | 'authorImage'
   | 'createdAt'
@@ -68,6 +69,7 @@ export async function list(params: {
       description: post.description,
       image: post.image,
       categories: post.categories,
+      tags: post.tags,
       authorName: post.authorName,
       status: post.status,
       createdAt: post.createdAt,
@@ -94,6 +96,7 @@ export async function listPublishedArticles(
       description: post.description,
       image: post.image,
       categories: post.categories,
+      tags: post.tags,
       authorName: post.authorName,
       authorImage: post.authorImage,
       createdAt: post.createdAt,
@@ -142,6 +145,7 @@ export async function create(data: {
   image?: string;
   content?: string;
   categories?: string;
+  tags?: string;
   authorName?: string;
   status?: string;
 }) {
@@ -155,6 +159,7 @@ export async function create(data: {
     image: data.image || '',
     content: data.content || '',
     categories: data.categories || '',
+    tags: data.tags || '',
     authorName: data.authorName || '',
     status: data.status || PostStatus.DRAFT,
   };
@@ -171,6 +176,7 @@ export async function update(
     image?: string;
     content?: string;
     categories?: string;
+    tags?: string;
     authorName?: string;
     status?: string;
   }

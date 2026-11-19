@@ -6,8 +6,9 @@
 // 所以索引以 data/doc-index.json 落盘（local 后端），内存里再缓存一份。
 //
 // 新鲜度不靠 hook 上传/删除路由：每次加载先拿 listBlogHtml() 的
-// (key, sha256, visibility) 指纹比对，指纹变了就重建——上传、删除、
-// 覆盖重传都会变指纹，索引自动跟上；新上传的文件同样进索引。
+// (key, sha256, visibility, keywords) 指纹比对，指纹变了就重建——上传、
+// 删除、覆盖重传、改分类/关键词都会变指纹，索引自动跟上；新上传的
+// 文件同样进索引。
 // R2 后端（Cloudflare Workers）没有本地磁盘：跳过落盘，只用内存缓存。
 // 索引只收 visibility 不是 self 的文件（self 只对上传者本人和管理员
 // 开放，不能进共享索引）；public/all 都是登录用户可见，助手本来就
@@ -24,7 +25,7 @@ import {
 } from '@/modules/blog-html/storage';
 
 import { buildDocSections, type DocSection } from './doc-sections';
-import type { DocCandidate } from './service';
+import { splitKeywordList, type DocCandidate } from './service';
 
 export type { DocSection } from './doc-sections';
 
@@ -37,10 +38,15 @@ export interface DocIndexFile {
 }
 
 export function computeDocFingerprint(
-  items: { key: string; sha256: string; visibility: string }[]
+  items: {
+    key: string;
+    sha256: string;
+    visibility: string;
+    keywords?: string;
+  }[]
 ): string {
   return items
-    .map((i) => `${i.key}|${i.sha256}|${i.visibility}`)
+    .map((i) => `${i.key}|${i.sha256}|${i.visibility}|${i.keywords ?? ''}`)
     .sort()
     .join('\n');
 }
@@ -112,10 +118,13 @@ export async function loadDocIndex(): Promise<DocSection[]> {
   for (const item of visible) {
     const got = await getBlogHtml(item.key).catch(() => null);
     if (!got) continue;
+    // 关键词挂到该文件的每个 section 上，供文档打分用；改关键词会变
+    // 指纹，下次加载自动重建。
+    const keywords = splitKeywordList(got.meta.keywords);
     sections.push(
       ...buildDocSections([
         { key: item.key, title: item.title || item.key, content: got.content },
-      ])
+      ]).map((s) => ({ ...s, keywords }))
     );
   }
   cached = { fingerprint, sections };

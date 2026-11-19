@@ -41,6 +41,8 @@ export interface ChatCourseBrief {
   slug: string;
   title: string;
   categories: string[];
+  /** 管理员填的关键词（post.tags 拆出），LLM 读工具结果时作匹配参考。 */
+  keywords?: string[];
   description: string;
 }
 
@@ -281,6 +283,7 @@ async function runTool(
               slug: c.slug,
               title: c.title,
               categories: c.categories,
+              keywords: c.keywords ?? [],
               description: c.description.slice(0, 120),
             }))
           ),
@@ -298,6 +301,7 @@ async function runTool(
           slug: r.slug,
           title: r.title,
           categories: r.categories,
+          keywords: r.keywords ?? [],
           description: r.description,
         });
         return {
@@ -305,6 +309,7 @@ async function runTool(
             slug: r.slug,
             title: r.title,
             categories: r.categories,
+            keywords: r.keywords ?? [],
             description: r.description.slice(0, 300),
             link: r.link,
             type: r.type,

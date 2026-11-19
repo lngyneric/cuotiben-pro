@@ -18,6 +18,8 @@ const postFields = {
   image: short.optional(),
   content: z.string().max(1_000_000).optional(),
   categories: short.optional(),
+  // 关键词：逗号分隔多值文本，存 post.tags，供 AI 助手检索打分。
+  tags: short.optional(),
   authorName: short.optional(),
   status: postStatus.optional(),
 };

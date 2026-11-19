@@ -1333,5 +1333,7 @@
   "admin.settings.tips.user_theme_enabled": "Adds a theme color picker to the user menu. A user's choice is saved in their browser and overrides the site theme color. Font, size and sidebar always follow the settings above.",
   "common.themes.classic": "Classic",
   "admin.settings.fields.appearance_enabled": "Enable appearance settings",
-  "admin.settings.tips.appearance_enabled": "Off: the site uses the styles defined in code (globals.css). On: the settings below take over colors, font, size, sidebar and light/dark."
+  "admin.settings.tips.appearance_enabled": "Off: the site uses the styles defined in code (globals.css). On: the settings below take over colors, font, size, sidebar and light/dark.",
+  "admin.posts.keywords_field": "Keywords",
+  "admin.posts.keywords_placeholder": "Keywords, comma separated"
 }

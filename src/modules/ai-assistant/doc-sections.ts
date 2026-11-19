@@ -15,6 +15,8 @@ export interface DocSection extends ParsedSection {
   /** 所属 HTML 文件的 key（如 html/xxx.html）与标题。 */
   docKey: string;
   docTitle: string;
+  /** 所属 HTML 文件的关键词（blog_html_file.keywords 拆出）。 */
+  keywords?: string[];
 }
 
 /** 把一批 HTML 文件（含 key、标题、正文）解析成 section 条目。 */

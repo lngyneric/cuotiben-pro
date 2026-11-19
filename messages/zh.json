@@ -1333,5 +1333,7 @@
   "admin.settings.tips.user_theme_enabled": "在用户菜单中加入主题色选择。用户的选择保存在其浏览器中，并覆盖站点主题色。字体、字号和侧边栏始终以上方设置为准。",
   "common.themes.classic": "经典",
   "admin.settings.fields.appearance_enabled": "启用外观设置",
-  "admin.settings.tips.appearance_enabled": "关闭：站点使用代码中定义的样式（globals.css）。开启：由下方设置接管配色、字体、字号、侧边栏和明暗模式。"
+  "admin.settings.tips.appearance_enabled": "关闭：站点使用代码中定义的样式（globals.css）。开启：由下方设置接管配色、字体、字号、侧边栏和明暗模式。",
+  "admin.posts.keywords_field": "关键词",
+  "admin.posts.keywords_placeholder": "关键词，逗号分隔，如：请假，考勤"
 }

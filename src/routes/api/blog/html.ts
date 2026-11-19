@@ -14,13 +14,21 @@ import {
   listBlogHtml,
   putBlogHtml,
   updateBlogHtmlCategory,
+  updateBlogHtmlKeywords,
   updateBlogHtmlVisibility,
   type BlogHtmlVisibility,
 } from '@/modules/blog-html/storage';
+import * as taxonomyService from '@/modules/taxonomy/service';
 import { respData, respErr } from '@/lib/resp';
 
-// 已知分类（与 docs/blog-html-spec.md 对齐）
-export const BLOG_CATEGORIES = ['G8学习', '错题解析', '工具', '未分类'];
+// HTML 分类的唯一来源：taxonomy 字典（type='category' 且已发布）+
+// 遗留默认值“未分类”。上传/编辑页的下拉框与这里的校验用同一份名单。
+const UNCATEGORIZED = '未分类';
+
+async function allowedHtmlCategories(): Promise<string[]> {
+  const items = await taxonomyService.getAll('category');
+  return [UNCATEGORIZED, ...items.map((c) => c.title)];
+}
 
 // 按标题/摘要/正文关键词自动打标
 function autoCategorize(
@@ -97,10 +105,24 @@ async function POST({ request }: { request: Request }) {
     const title = titleMatch?.[1]?.trim() || file.name.replace('.html', '');
     const description = descMatch?.[1]?.trim() || '';
 
-    // 分类：优先用表单提交的 category，否则按内容自动打标
+    // 分类：优先用表单提交的 category（下拉框，只接受字典值），否则按
+    // 内容自动打标。自动打标的旧规则（G8学习/错题解析/工具）不在字典里，
+    // 是遗留行为：这类文章之后在列表里改一次分类即归入字典。
     const manualCategory = (formData.get('category') as string)?.trim();
-    const category =
-      manualCategory || autoCategorize(title, description, content);
+    let category: string;
+    if (manualCategory) {
+      const allowed = await allowedHtmlCategories();
+      if (!allowed.includes(manualCategory)) {
+        return respErr('Invalid category');
+      }
+      category = manualCategory;
+    } else {
+      category = autoCategorize(title, description, content);
+    }
+
+    // 关键词：逗号分隔自由文本，可空；随元数据一起存（本地 SQLite 列 /
+    // R2 customMetadata），供 AI 助手检索打分。
+    const keywords = (formData.get('keywords') as string)?.trim() || '';
 
     // 可见范围：public（共享公开，无需登录）/ all（全体已注册可见，默认）
     // 或 self（仅自己和管理员可见）
@@ -117,6 +139,7 @@ async function POST({ request }: { request: Request }) {
       title,
       description,
       category,
+      keywords,
       visibility,
       uploaderId: authed.user.id,
       uploaderEmployeeNo: employeeNoOf(authed.user),
@@ -150,22 +173,26 @@ export const Route = createFileRoute('/api/blog/html')({
   },
 });
 
-// PATCH /api/blog/html — 修改分类和/或可见范围（仅上传者本人或管理员）
-// Body: { key, category?: string, visibility?: 'all' | 'self' | 'public' }
+// PATCH /api/blog/html — 修改分类、关键词和/或可见范围（仅上传者本人或管理员）
+// Body: { key, category?: string, keywords?: string, visibility?: 'all' | 'self' | 'public' }
 async function PATCH({ request }: { request: Request }) {
   try {
     const authed = await requireViewer(request);
     if (!authed) return respErr('Unauthorized', { status: 401 });
 
     const body = await request.json();
-    const { key, category, visibility } = body as {
+    const { key, category, keywords, visibility } = body as {
       key: string;
       category?: string;
+      keywords?: string;
       visibility?: string;
     };
     if (!key || !key.startsWith('html/')) return respErr('Invalid key');
-    if (category !== undefined && !BLOG_CATEGORIES.includes(category)) {
-      return respErr('Invalid category');
+    if (category !== undefined) {
+      const allowed = await allowedHtmlCategories();
+      if (!allowed.includes(category)) {
+        return respErr('Invalid category');
+      }
     }
     const nextVisibility: BlogHtmlVisibility | undefined =
       visibility === undefined
@@ -180,7 +207,11 @@ async function PATCH({ request }: { request: Request }) {
     if (visibility !== undefined && nextVisibility === undefined) {
       return respErr('Invalid visibility');
     }
-    if (category === undefined && nextVisibility === undefined) {
+    if (
+      category === undefined &&
+      keywords === undefined &&
+      nextVisibility === undefined
+    ) {
       return respErr('Nothing to update');
     }
 
@@ -193,12 +224,17 @@ async function PATCH({ request }: { request: Request }) {
     if (category !== undefined) {
       await updateBlogHtmlCategory(key, category);
     }
+    if (keywords !== undefined) {
+      await updateBlogHtmlKeywords(key, String(keywords).trim());
+    }
     if (nextVisibility !== undefined) {
       await updateBlogHtmlVisibility(key, nextVisibility);
     }
     return respData({
       ok: true,
       category: category ?? got.meta.category,
+      keywords:
+        keywords !== undefined ? String(keywords).trim() : got.meta.keywords,
       visibility: nextVisibility ?? got.meta.visibility,
     });
   } catch (error: any) {

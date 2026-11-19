@@ -124,6 +124,22 @@ test('docKeywordScoreList：“如何请假”命中 p04；“领导力”不误
   assert.deepEqual(docKeywordScoreList(docSections, '今天天气'), []);
 });
 
+test('docKeywordScoreList：文件关键词 +2；仅关键词命中不进 3 分门槛', () => {
+  // “报销”在任何 section 的标题/文档标题/正文里都不出现
+  assert.deepEqual(docKeywordScoreList(docSections, '报销'), []);
+  const withKeywords = docSections.map((s) => ({
+    ...s,
+    keywords: ['报销'],
+  }));
+  const scored = docKeywordScoreList(withKeywords, '报销');
+  assert.equal(scored.length, 9); // 9 个 section 都有该文件的关键词
+  assert.ok(scored.every((s) => s.score === 2)); // 仅关键词命中，各 +2
+  // 低于 DOC_KEYWORD_MIN_SCORE（3 分）：无 Jev 的文档兜底不把它当命中
+  assert.ok(scored.every((s) => s.score < 3));
+  // 缺 keywords 字段的旧索引不因新字段报错
+  assert.deepEqual(docKeywordScoreList(docSections, '报销'), []);
+});
+
 test('callJevRouting：意图加 doc_info，文档候选并行打分', async () => {
   let sentPayload: any;
   const stub = {

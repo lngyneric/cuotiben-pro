@@ -10,7 +10,9 @@
 //
 // Routes (`src/routes/api/blog/html*.ts`) talk to this module only, never to
 // R2 or the disk directly, so the API contract (key/title/description/
-// category/size/uploaded/url) is identical on both backends.
+// category/keywords/size/uploaded/url) is identical on both backends.
+// category 取值受 taxonomy 字典约束（见 routes/api/blog/html.ts）；
+// keywords 是逗号分隔的自由文本关键词。
 //
 // NOTE on imports: the local backend needs `node:fs`/`node:path`, which do
 // not exist on Cloudflare Workers. They are therefore loaded with dynamic
@@ -33,6 +35,8 @@ export interface BlogHtmlMeta {
   title: string;
   description: string;
   category: string;
+  /** 逗号分隔的关键词（可为空）；R2 侧存在 customMetadata.keywords。 */
+  keywords: string;
   visibility: BlogHtmlVisibility;
   uploaderId: string | null;
   uploaderEmployeeNo: string;
@@ -89,6 +93,7 @@ async function r2List(): Promise<BlogHtmlItem[]> {
       let title = o.key.replace('html/', '').replace('.html', '');
       let description = '';
       let category = '未分类';
+      let keywords = '';
       // Objects uploaded before visibility/uploader tracking carry none of
       // these keys; they default to "all visible, no owner" (legacy).
       let visibility: BlogHtmlVisibility = 'all';
@@ -101,6 +106,8 @@ async function r2List(): Promise<BlogHtmlItem[]> {
           description = head.customMetadata.description;
         if (head?.customMetadata?.category)
           category = head.customMetadata.category;
+        if (head?.customMetadata?.keywords)
+          keywords = head.customMetadata.keywords;
         if (head?.customMetadata?.visibility === 'self') visibility = 'self';
         if (head?.customMetadata?.uploader_id)
           uploaderId = head.customMetadata.uploader_id;
@@ -114,6 +121,7 @@ async function r2List(): Promise<BlogHtmlItem[]> {
         title,
         description,
         category,
+        keywords,
         visibility,
         uploaderId,
         uploaderEmployeeNo,
@@ -145,6 +153,7 @@ async function r2Get(
       title: meta.title || '',
       description: meta.description || '',
       category: meta.category || '未分类',
+      keywords: meta.keywords || '',
       visibility: normalizeVisibility(meta.visibility),
       uploaderId: meta.uploader_id || null,
       uploaderEmployeeNo: meta.uploader_employee_no || '',
@@ -162,6 +171,7 @@ async function r2Put(
     title: string;
     description: string;
     category: string;
+    keywords?: string;
     visibility?: BlogHtmlVisibility;
     uploaderId?: string | null;
     uploaderEmployeeNo?: string;
@@ -175,6 +185,7 @@ async function r2Put(
       title: meta.title,
       description: meta.description,
       category: meta.category,
+      keywords: meta.keywords ?? '',
       // New uploads carry ownership so the same visibility/owner rules can
       // apply on R2 too; old objects simply lack these keys (see r2List).
       visibility: meta.visibility ?? 'all',
@@ -244,6 +255,7 @@ function rowToMeta(row: any): BlogHtmlMeta {
     title: row.title ?? '',
     description: row.description ?? '',
     category: row.category ?? '未分类',
+    keywords: row.keywords ?? '',
     visibility: normalizeVisibility(row.visibility),
     uploaderId: row.uploaderId ?? null,
     uploaderEmployeeNo: row.uploaderEmployeeNo ?? '',
@@ -289,6 +301,7 @@ async function localPut(
     title: string;
     description: string;
     category: string;
+    keywords?: string;
     visibility: BlogHtmlVisibility;
     uploaderId: string | null;
     uploaderEmployeeNo: string;
@@ -312,6 +325,7 @@ async function localPut(
         title: meta.title,
         description: meta.description,
         category: meta.category,
+        keywords: meta.keywords ?? '',
         visibility: meta.visibility,
         uploaderId: meta.uploaderId,
         uploaderEmployeeNo: meta.uploaderEmployeeNo,
@@ -324,6 +338,7 @@ async function localPut(
           title: meta.title,
           description: meta.description,
           category: meta.category,
+          keywords: meta.keywords ?? '',
           visibility: meta.visibility,
           uploaderId: meta.uploaderId,
           uploaderEmployeeNo: meta.uploaderEmployeeNo,
@@ -357,6 +372,20 @@ async function localUpdateCategory(
   const rows = await db()
     .update(table)
     .set({ category, updatedAt: new Date() })
+    .where(eq(table.key, key))
+    .returning({ key: table.key });
+  if (!rows || rows.length === 0) throw new Error('Not found');
+}
+
+async function localUpdateKeywords(
+  key: string,
+  keywords: string
+): Promise<void> {
+  requireSqlite();
+  const table = await localTable();
+  const rows = await db()
+    .update(table)
+    .set({ keywords, updatedAt: new Date() })
     .where(eq(table.key, key))
     .returning({ key: table.key });
   if (!rows || rows.length === 0) throw new Error('Not found');
@@ -396,6 +425,7 @@ export async function putBlogHtml(
     title: string;
     description: string;
     category: string;
+    keywords?: string;
     visibility: BlogHtmlVisibility;
     uploaderId: string | null;
     uploaderEmployeeNo: string;
@@ -432,6 +462,7 @@ export async function updateBlogHtmlCategory(
       title: got.meta.title,
       description: got.meta.description,
       category,
+      keywords: got.meta.keywords,
       visibility: got.meta.visibility,
       uploaderId: got.meta.uploaderId,
       uploaderEmployeeNo: got.meta.uploaderEmployeeNo,
@@ -439,6 +470,28 @@ export async function updateBlogHtmlCategory(
     return;
   }
   await localUpdateCategory(key, category);
+}
+
+export async function updateBlogHtmlKeywords(
+  key: string,
+  keywords: string
+): Promise<void> {
+  assertSafeBlogKey(key);
+  if (getBlogStorageBackend() === 'r2') {
+    const got = await r2Get(key);
+    if (!got) throw new Error('Not found');
+    await r2Put(key, got.content, {
+      title: got.meta.title,
+      description: got.meta.description,
+      category: got.meta.category,
+      keywords,
+      visibility: got.meta.visibility,
+      uploaderId: got.meta.uploaderId,
+      uploaderEmployeeNo: got.meta.uploaderEmployeeNo,
+    });
+    return;
+  }
+  await localUpdateKeywords(key, keywords);
 }
 
 export async function updateBlogHtmlVisibility(
@@ -453,6 +506,7 @@ export async function updateBlogHtmlVisibility(
       title: got.meta.title,
       description: got.meta.description,
       category: got.meta.category,
+      keywords: got.meta.keywords,
       visibility,
       uploaderId: got.meta.uploaderId,
       uploaderEmployeeNo: got.meta.uploaderEmployeeNo,

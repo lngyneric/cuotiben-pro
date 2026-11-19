@@ -71,6 +71,8 @@ export interface CourseCatalogItem {
   title: string;
   description: string;
   categories: string[];
+  /** 管理员填的关键词（post.tags 拆出）；缺省表示未填，打分时跳过。 */
+  keywords?: string[];
 }
 
 export type CourseType = 'video' | 'text';
@@ -125,6 +127,18 @@ function tokenize(query: string): string[] {
   return terms;
 }
 
+/**
+ * 关键词字段拆多值：逗号 / 中文逗号 / 顿号 / 分号分隔，去空去空格。
+ * blog（post.tags）与 html（blog_html_file.keywords）共用这一个口径，
+ * 目录构建（chat.ts / recommend.ts）与文档索引（doc-index.ts）都调它。
+ */
+export function splitKeywordList(raw: string | null | undefined): string[] {
+  return String(raw ?? '')
+    .split(/[,，、；;]+/)
+    .map((k) => k.trim())
+    .filter(Boolean);
+}
+
 const CJK_RE = /[\u4e00-\u9fff]/;
 const CJK_BIGRAM_RE = /^[\u4e00-\u9fff]{2}$/;
 
@@ -156,12 +170,17 @@ export interface KeywordScore {
 }
 
 /**
- * 关键词打分（标题 3 分 → 分类 2 分 → 简介 1 分），按分数降序。
+ * 关键词打分（标题 3 分 → 分类与关键词 2 分 → 简介 1 分），按分数降序。
  * 只返回分数 > 0 的课。keywordRecommend 与 Jev 候选粗筛共用这一份。
  * 匹配分两层：①词族（原词 + 中文 2 字 gram）任一成员被标题 / 分类 /
- * 简介包含即命中该字段；②分类反向包含——原词包含分类词（分类 ≥2 字）
- * 也算分类命中，如“我学领导力”命中分类“领导力”。同一词族在同一
- * 字段上只计一次分。
+ * 关键词 / 简介包含即命中该字段；②分类与关键词反向包含——原词包含
+ * 分类词或关键词（≥2 字）也算命中，如“我学领导力”命中分类“领导力”。
+ * 同一词族在同一字段上只计一次分。关键词是管理员手填的显式标注，
+ * 与分类同级（2 分）：它不像标题那样直接决定主题，但比简介里偶然
+ * 出现更可信。仅关键词命中得 2 分，低于文档关键词兜底的 3 分门槛
+ * （DOC_KEYWORD_MIN_SCORE），须另有标题/分类/简介命中才进文档链路；
+ * 课程链路无独立门槛，靠排序沉底；Jev 候选粗筛只要求分 > 0，关键词
+ * 命中的课仍能进 Jev 打分。
  */
 export function keywordScoreList(
   catalog: CourseCatalogItem[],
@@ -174,19 +193,20 @@ export function keywordScoreList(
       const title = course.title.toLowerCase();
       const description = course.description.toLowerCase();
       const categories = course.categories.map((c) => c.toLowerCase());
+      const keywords = (course.keywords ?? []).map((k) => k.toLowerCase());
       let score = 0;
       for (const term of terms) {
         const family = termFamily(term);
         const hit = (text: string) => family.some((t) => text.includes(t));
+        const reverseHit = (words: string[]) =>
+          words.some(
+            (w) =>
+              family.some((t) => w.includes(t)) ||
+              (w.length >= 2 && term.includes(w))
+          );
         if (hit(title)) score += 3;
-        if (
-          categories.some(
-            (c) =>
-              family.some((t) => c.includes(t)) ||
-              (c.length >= 2 && term.includes(c))
-          )
-        )
-          score += 2;
+        if (reverseHit(categories)) score += 2;
+        if (reverseHit(keywords)) score += 2;
         if (hit(description)) score += 1;
       }
       return { slug: course.slug, score };
@@ -197,7 +217,7 @@ export function keywordScoreList(
 
 /**
  * 关键词匹配（大圆流程的兜底做法，也是 LLM 未配置时的推荐方式）。
- * 匹配依据按优先级：标题（3 分）→ 分类（2 分）→ 简介（1 分）。
+ * 匹配依据按优先级：标题（3 分）→ 分类与关键词（2 分）→ 简介（1 分）。
  */
 export function keywordRecommend(
   catalog: CourseCatalogItem[],
@@ -236,18 +256,18 @@ export async function callRecommendLLM({
   const catalogText = catalog
     .map(
       (c) =>
-        `${c.slug} | ${c.title} | ${c.categories.join(',')} | ${c.description.slice(0, 120)}`
+        `${c.slug} | ${c.title} | ${c.categories.join(',')} | ${(c.keywords ?? []).join(',')} | ${c.description.slice(0, 120)}`
     )
     .join('\n');
   const systemPrompt = [
     '你是企业大学 wiki 的 AI 学习助手，按以下规则推荐课程：',
     '1. 只从下面给出的课程目录里选，最多 2 门；目录里没有的课绝不编造。',
-    '2. 匹配依据按优先级：标题 → 分类 → 简介。',
+    '2. 匹配依据按优先级：标题 → 分类与关键词 → 简介。',
     '3. 只输出 JSON，不要任何解释文字，格式：{"slugs": ["course-xxx", "..."]}。没有匹配的课时输出 {"slugs": []}。',
     '4. 不要输出思考过程，直接给出 JSON。',
     '5. 如果给了带教状态，优先推荐能补上状态缺口的课（如零跑课先推入门课）；不要在答案里罗列状态明细。',
     ...assistantContextLines(role, statusSummaries),
-    '课程目录（slug | 标题 | 分类 | 简介）：',
+    '课程目录（slug | 标题 | 分类 | 关键词 | 简介）：',
     catalogText,
   ].join('\n');
 
@@ -336,6 +356,8 @@ export interface JevCandidate {
  * 文档候选：一个已上传 HTML 文件里的一个 section。
  * links 可选：Jev 打分不用，文档回答的 prompt 会带上，方便 LLM 引用
  * 正式制度原文等相关链接。
+ * keywords 可选：所属 HTML 文件的关键词（blog_html_file.keywords
+ * 拆出），打分时与文档标题（当分类）同级。
  */
 export interface DocCandidate {
   docKey: string;
@@ -344,6 +366,7 @@ export interface DocCandidate {
   sectionTitle: string;
   text: string;
   links?: { text: string; href: string }[];
+  keywords?: string[];
 }
 
 export interface JevRouting {
@@ -595,6 +618,7 @@ export async function callJevRouting(
       type: 'noul',
       instructions:
         `《${c.title}》（分类：${c.categories.join('、') || '未分类'}；` +
+        `关键词：${(c.keywords ?? []).join('、') || '无'}；` +
         `简介：${c.description.slice(0, 80)}）是否与用户想学的内容相关？`,
     };
   }
@@ -603,19 +627,20 @@ export async function callJevRouting(
       type: 'noul',
       instructions:
         `《${d.docTitle}》第 ${d.sectionId} 节「${d.sectionTitle}」` +
-        `（内容：${d.text.slice(0, 120)}）是否能回答用户的问题？`,
+        `（关键词：${(d.keywords ?? []).join('、') || '无'}；` +
+        `内容：${d.text.slice(0, 120)}）是否能回答用户的问题？`,
     };
   }
   const doc = candidates
     .map(
       (c, i) =>
-        `${i + 1}. ${c.slug} | ${c.title} | ${c.categories.join(',')} | ${c.description.slice(0, 120)}`
+        `${i + 1}. ${c.slug} | ${c.title} | ${c.categories.join(',')} | ${(c.keywords ?? []).join(',')} | ${c.description.slice(0, 120)}`
     )
     .join('\n');
   const docList = docCandidates
     .map(
       (d, j) =>
-        `D${j + 1}. ${d.docKey}#${d.sectionId} | ${d.docTitle} | ${d.sectionTitle} | ${d.text.slice(0, 120)}`
+        `D${j + 1}. ${d.docKey}#${d.sectionId} | ${d.docTitle} | ${d.sectionTitle} | ${(d.keywords ?? []).join(',')} | ${d.text.slice(0, 120)}`
     )
     .join('\n');
   const stateDoc = [doc, docList].filter((s) => s.length > 0).join('\n');
@@ -728,9 +753,9 @@ export function isDocIntent(routing: JevRouting | null): boolean {
 }
 
 /**
- * 文档 section 的关键词打分：复用课程那套标题 3 分 / 分类 2 分 /
- * 简介 1 分（含反向分类与中文 2 字 gram），section 标题当标题、
- * 文档标题当分类、section 全文当简介。
+ * 文档 section 的关键词打分：复用课程那套标题 3 分 / 分类与关键词
+ * 2 分 / 简介 1 分（含反向分类与中文 2 字 gram），section 标题当标题、
+ * 文档标题当分类、所属文件的关键词当关键词、section 全文当简介。
  */
 export function docKeywordScoreList(
   sections: DocCandidate[],
@@ -742,6 +767,7 @@ export function docKeywordScoreList(
       title: s.sectionTitle,
       description: s.text,
       categories: [s.docTitle],
+      keywords: s.keywords ?? [],
     })),
     query
   );

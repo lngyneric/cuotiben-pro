@@ -18,6 +18,7 @@ import {
   AI_ASSISTANT_QUERY_MAX_LENGTH,
   parseCourseLink,
   runAssistantQuery,
+  splitKeywordList,
   type CourseCatalogItem,
   type DocCandidate,
 } from '@/modules/ai-assistant/service';
@@ -130,6 +131,7 @@ async function POST({ request }: { request: Request }) {
             ?.split(',')
             .map((c) => c.trim())
             .filter(Boolean) ?? [],
+        keywords: splitKeywordList(r.tags),
       }));
 
     // 文档索引读不到（读库/读盘失败）时按空索引处理，不阻塞课程链路。

@@ -56,6 +56,7 @@ interface Post {
   description: string | null;
   image: string | null;
   categories: string | null;
+  tags: string | null;
   authorName: string | null;
   status: string;
   createdAt: string;
@@ -78,6 +79,7 @@ const postSchema = z.object({
   description: z.string(),
   content: z.string(),
   categories: z.string(),
+  tags: z.string(),
   authorName: z.string(),
   status: z.string(),
 });
@@ -88,6 +90,7 @@ const emptyForm: PostForm = {
   description: '',
   content: '',
   categories: '',
+  tags: '',
   authorName: '',
   status: 'draft',
 };
@@ -214,6 +217,7 @@ function PostsPage() {
       description: p.description || '',
       content: '',
       categories: p.categories || '',
+      tags: p.tags || '',
       authorName: p.authorName || '',
       status: p.status,
     });
@@ -378,6 +382,15 @@ function PostsPage() {
                 </SelectContent>
               </Select>
             </div>
+          )}
+        </form.Field>
+        <form.Field name="tags">
+          {(field) => (
+            <TextField
+              field={field}
+              label={m['admin.posts.keywords_field']()}
+              placeholder={m['admin.posts.keywords_placeholder']()}
+            />
           )}
         </form.Field>
         <form.Field name="status">

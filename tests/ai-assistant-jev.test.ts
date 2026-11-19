@@ -9,6 +9,7 @@ const {
   jevShortlist,
   keywordRecommend,
   keywordScoreList,
+  splitKeywordList,
 } = await import('@/modules/ai-assistant/service');
 
 const catalog = [
@@ -106,6 +107,80 @@ test('keywordScoreList：单关键词“领导力”回归（分值不变）', (
     scored.map((s) => s.score),
     [3, 3, 3]
   );
+});
+
+// 关键词字段（post.tags 拆出）：与分类同级 2 分；缺字段时向后兼容。
+const keywordCatalog = [
+  {
+    slug: 'course-onboarding',
+    title: '新人入职第一周',
+    description: '入职报到与第一周安排。',
+    categories: ['新人入学'],
+    keywords: ['请假', '考勤'],
+  },
+  {
+    slug: 'course-leave-policy',
+    title: '请假制度详解',
+    description: '各类假期的天数与审批。',
+    categories: ['请假制度'],
+    keywords: ['请假'],
+  },
+  {
+    slug: 'course-no-keywords',
+    title: '新人入职第一周',
+    description: '入职报到与第一周安排。',
+    categories: ['新人入学'],
+  },
+];
+
+test('keywordScoreList：关键词命中 +2，与分类同级；仅关键词命中能捞出标题/分类/简介都 miss 的课', () => {
+  // “请假”在 course-onboarding 的标题/分类/简介里都不出现
+  const scored = keywordScoreList(keywordCatalog, '请假');
+  assert.deepEqual(
+    scored.map((s) => s.slug),
+    ['course-leave-policy', 'course-onboarding']
+  );
+  assert.equal(scored[0].score, 3 + 2 + 2); // 标题 + 分类 + 关键词（简介 miss）
+  assert.equal(scored[1].score, 2); // 仅关键词命中
+  // 缺 keywords 字段的课不因新字段报错，也不被捞出
+  assert.ok(!scored.map((s) => s.slug).includes('course-no-keywords'));
+  // 回归：旧夹具（无 keywords 字段）分值不变
+  assert.equal(keywordScoreList(catalog, '领导力')[0].score, 3);
+});
+
+test('keywordScoreList：关键词与分类同时命中叠加（各 +2）', () => {
+  const scored = keywordScoreList(keywordCatalog, '考勤');
+  assert.deepEqual(
+    scored.map((s) => s.slug),
+    ['course-onboarding']
+  );
+  assert.equal(scored[0].score, 2); // 仅关键词命中（分类“新人入学”不含考勤）
+  // 分类与关键词都含“请假”时叠加：分类 2 + 关键词 2（标题/简介均 miss）
+  const both = keywordScoreList(
+    [
+      {
+        slug: 'course-both',
+        title: '考勤制度',
+        description: '打卡与排班说明。',
+        categories: ['请假制度'],
+        keywords: ['请假'],
+      },
+    ],
+    '请假'
+  );
+  assert.equal(both[0].score, 4); // 分类 2 + 关键词 2（标题/简介均 miss）
+});
+
+test('splitKeywordList：逗号/中文逗号/顿号/分号分隔，去空去空格', () => {
+  assert.deepEqual(splitKeywordList('请假，考勤、报销； 入职'), [
+    '请假',
+    '考勤',
+    '报销',
+    '入职',
+  ]);
+  assert.deepEqual(splitKeywordList(''), []);
+  assert.deepEqual(splitKeywordList(null), []);
+  assert.deepEqual(splitKeywordList(undefined), []);
 });
 
 test('keywordScoreList：无关问句“怎么请假”筛不出候选', () => {

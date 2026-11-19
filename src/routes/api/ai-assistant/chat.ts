@@ -27,6 +27,7 @@ import {
   docKeywordScoreList,
   keywordScoreList,
   parseCourseLink,
+  splitKeywordList,
   type CourseCatalogItem,
   type RecommendedCourse,
 } from '@/modules/ai-assistant/service';
@@ -97,6 +98,7 @@ function toCatalogItem(row: any): CourseCatalogItem | null {
         .split(',')
         .map((c: string) => c.trim())
         .filter(Boolean) ?? [],
+    keywords: splitKeywordList(row?.tags),
   };
 }
 
@@ -273,6 +275,7 @@ async function POST({ request }: { request: Request }) {
             slug: c.slug,
             title: c.title,
             categories: c.categories,
+            keywords: c.keywords ?? [],
             description: c.description.slice(0, 120),
           }));
         return briefs;

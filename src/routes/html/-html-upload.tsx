@@ -17,10 +17,23 @@ interface HtmlItem {
   title: string;
   description: string;
   category: string;
+  keywords: string;
   visibility?: string;
   size: number;
   uploaded: string;
   url: string;
+}
+
+/** 分类字典（taxonomy 里已发布的分类标题），上传与改分类共用。 */
+function useHtmlCategories(): string[] {
+  const { data } = useQuery({
+    queryKey: ['blog-html-categories'],
+    queryFn: () =>
+      apiGet<{ items: { title: string; slug: string }[] }>(
+        '/api/blog/html-categories'
+      ),
+  });
+  return (data?.items ?? []).map((c) => c.title);
 }
 
 type ViewMode = 'category' | 'timeline';
@@ -38,6 +51,7 @@ export function HtmlList({
   const [viewMode, setViewMode] = useState<ViewMode>('category');
   const [activeCategory, setActiveCategory] = useState<string>('全部');
   const queryClient = useQueryClient();
+  const dictCategories = useHtmlCategories();
 
   const { data, isLoading } = useQuery({
     queryKey: ['blog-html-list'],
@@ -134,9 +148,11 @@ export function HtmlList({
             }}
             onClick={(e) => e.stopPropagation()}
             className="bg-muted rounded border-0 px-1.5 py-0.5 text-xs"
-            title="点击修改分类"
+            title="点击修改分类（取自分类字典）"
           >
-            {['G8学习', '错题解析', '工具', '未分类'].map((c) => (
+            {Array.from(
+              new Set(['未分类', ...dictCategories, item.category || '未分类'])
+            ).map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
@@ -186,6 +202,25 @@ export function HtmlList({
           <Trash2 className="size-3.5" />
         </button>
       </div>
+      <input
+        type="text"
+        defaultValue={item.keywords || ''}
+        placeholder="关键词（逗号分隔，失焦后保存）"
+        onClick={(e) => e.stopPropagation()}
+        onBlur={async (e) => {
+          const keywords = e.target.value.trim();
+          if (keywords === (item.keywords || '')) return;
+          try {
+            await apiPatch('/api/blog/html', { key: item.key, keywords });
+            queryClient.invalidateQueries({ queryKey: ['blog-html-list'] });
+          } catch (err: any) {
+            alert('改关键词失败: ' + err.message);
+            e.target.value = item.keywords || '';
+          }
+        }}
+        className="bg-muted mt-2 w-full rounded border-0 px-1.5 py-0.5 text-xs"
+        title="关键词，逗号分隔；失焦后保存，供 AI 助手检索"
+      />
     </div>
   );
 
@@ -274,8 +309,10 @@ export function HtmlList({
 export function HtmlUpload() {
   const [uploading, setUploading] = useState(false);
   const [category, setCategory] = useState('');
+  const [keywords, setKeywords] = useState('');
   const [visibility, setVisibility] = useState('all');
   const queryClient = useQueryClient();
+  const dictCategories = useHtmlCategories();
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -286,6 +323,7 @@ export function HtmlUpload() {
       const formData = new FormData();
       formData.append('file', file);
       if (category.trim()) formData.append('category', category.trim());
+      if (keywords.trim()) formData.append('keywords', keywords.trim());
       formData.append('visibility', visibility);
 
       const res = await fetch(withAppBase('/api/blog/html'), {
@@ -298,6 +336,7 @@ export function HtmlUpload() {
 
       queryClient.invalidateQueries({ queryKey: ['blog-html-list'] });
       setCategory('');
+      setKeywords('');
       alert('上传成功！');
     } catch (err: any) {
       alert('上传失败: ' + err.message);
@@ -309,11 +348,25 @@ export function HtmlUpload() {
   return (
     <div className="bg-card rounded-lg border p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="text"
+        <select
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          placeholder="分类（留空自动识别）"
+          title="分类：留空按标题/内容自动识别"
+          className="border-border bg-background rounded-full border px-3 py-1.5 text-sm"
+        >
+          <option value="">分类：自动识别</option>
+          {dictCategories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <input
+          type="text"
+          value={keywords}
+          onChange={(e) => setKeywords(e.target.value)}
+          placeholder="关键词（逗号分隔，可选）"
+          title="关键词，逗号分隔；供 AI 助手检索"
           className="border-border bg-background rounded-full border px-3 py-1.5 text-sm"
         />
         <select
@@ -340,7 +393,8 @@ export function HtmlUpload() {
       </div>
       <p className="text-muted-foreground mt-2 text-xs">
         上传 tools/publish.py 生成的单文件
-        HTML；分类留空时按标题/内容自动识别，也可以上传后在列表里直接改
+        HTML；分类从字典里选，留空时按标题/内容自动识别；关键词逗号分隔，
+        上传后也可在列表里改分类与关键词
       </p>
     </div>
   );
