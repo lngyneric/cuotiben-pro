@@ -66,7 +66,7 @@
 - **Domain**：`title`、`color`、`description`
 - **KnowledgeNode**：`title`、`difficulty`（1–3）、`estimatedHours`、`keyTopics`、`instruments`、`parameters`、`clinicalApps`、`regulations`、`salesKpi`、`sourcePpt`、`audience`
 - **Course**：`title`、`shifuBid`、`slug`、`status`（已发布／草稿／未入库／未知）、`lessonCount`、`keywords`
-- **DocSection**：`title`、`docKey`、`sectionId`、`docTitle`、`category`、`keywords`、`url`（`/html/<key>#<sectionId>`）
+- **DocSection**：`title`、`docKey`、`sectionId`、`docTitle`、`category`、`keywords`、`url`（`/api/blog/html/<url 编码后的 key>#<sectionId>`，与 blogHtmlUrl 同口径；key 本身带 `html/` 前缀，禁止再拼 `/html/`，页面经 withAppBase 补 `/wiki` 前缀；2026-11-19 曾因拼 `/html/<key>` 产出 `/html/html/…` 坏链而修）
 - **RoleView**：`role`（销售／应用／客服）、`note`
 - **LearningPath**：`title`、`estimatedTotalHours`
 - `SharePointSource`：`siteUrl`、`driveId`、`extractionStatus`（未抽取／元数据已抽／全文已抽）、`itemCount`、`lastSeen`

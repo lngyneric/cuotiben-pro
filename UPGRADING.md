@@ -46,6 +46,26 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-19: Graph doc links — fix broken HTML document URLs
+
+### Action required
+
+- None (data + code fix only, no schema or config change).
+
+### What changed
+
+- Graph page “related docs” links (e.g. 通识基础 → 入社培训 · 新人第一周)
+  pointed at `/html/html/<key>#<section>`, which 404s: the doc key itself
+  starts with `html/`, and `/html/<key>` is not a viewer route. Links now
+  follow the same rule as `blogHtmlUrl`: `/api/blog/html/<url-encoded key>`
+  - `#<sectionId>`, with the app base path (`/wiki`) prepended by
+    `withAppBase`. The page builds the URL from `docKey` + `sectionId` at
+    render time instead of trusting the static `url` in `graph.json`.
+- Fixed the 9 `DocSection` `url` values in `src/content/graph/graph.json`
+  and the root cause in `scripts/export_wiki_graph_inputs.py` (it prepended
+  `/html/` to a key that already starts with `html/`), plus the DocSection
+  `url` description in `docs/wiki-graph-ontology.md`.
+
 ## 2026-11-19: Knowledge graph — visual view, stage axis, people axis, live course links
 
 ### Action required

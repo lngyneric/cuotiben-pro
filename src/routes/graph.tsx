@@ -7,6 +7,7 @@ import { Link } from '@/core/i18n/navigation';
 import { localizedAbsoluteUrl } from '@/core/i18n/urls';
 import { envConfigs } from '@/config';
 import { apiGet } from '@/lib/api-client';
+import { withAppBase } from '@/lib/base-path';
 import { cn } from '@/lib/utils';
 import { m } from '@/paraglide/messages.js';
 import { getLocale, locales } from '@/paraglide/runtime.js';
@@ -832,9 +833,16 @@ function GraphPage() {
 function DocRow({ doc, live }: { doc: GraphNode; live: Set<string> }) {
   const key = `${doc.data.docKey}#${doc.data.sectionId}`;
   const isLive = live.size === 0 ? true : live.has(key);
+  // 文档链接不直接用 graph.json 里的静态 url（它曾被写成 /html/html/…
+  // 的双前缀坏链）：按 blogHtmlUrl 的同一口径现算——/api/blog/html/
+  // + 编码后的 key + #sectionId，再经 withAppBase 补 /wiki 前缀。
+  const href =
+    doc.data.docKey && doc.data.sectionId
+      ? `${withAppBase(`/api/blog/html/${encodeURIComponent(doc.data.docKey)}`)}#${doc.data.sectionId}`
+      : doc.data.url || '#';
   return (
     <a
-      href={doc.data.url || '#'}
+      href={href}
       target="_blank"
       rel="noreferrer"
       className="border-border flex items-center justify-between gap-2 rounded-xl border px-4 py-3 text-sm"

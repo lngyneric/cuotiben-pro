@@ -21,6 +21,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from urllib.parse import quote
 
 
 def main():
@@ -65,7 +66,11 @@ def main():
                 "keywords": kws or meta.get("keywords", ""),
                 "sectionId": s.get("sectionId", ""),
                 "sectionTitle": s.get("sectionTitle", ""),
-                "url": f"/html/{key}#{s.get('sectionId', '')}" if key else "",
+                # 文档链接与 blogHtmlUrl 同口径：/api/blog/html/ + 编码后的
+                # key + #sectionId。key 本身带 html/ 前缀，绝不能再拼
+                # /html/（曾因此产出 /html/html/… 的双前缀坏链）；base
+                # 路径（/wiki）由页面 withAppBase 补，这里只给相对路径。
+                "url": f"/api/blog/html/{quote(key, safe='')}#{s.get('sectionId', '')}" if key else "",
             }
         )
     with open(args.out, "w", encoding="utf-8") as f:
