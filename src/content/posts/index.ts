@@ -55,6 +55,12 @@ export type BlogPostDetail = BlogPost & {
   content?: string;
   /** 成员专属且当前未登录：只返回元信息，不返回正文 */
   requiresAuth?: boolean;
+  /** Database row id — set for database posts (preview publish action) */
+  id?: string;
+  /** Database status — set for database posts */
+  status?: string;
+  /** 管理员正在预览一篇未发布文章（正文仅管理员可见） */
+  isDraftPreview?: boolean;
 };
 
 // Eagerly bundle the local MDX posts (small markdown files), mirroring the

@@ -25,6 +25,24 @@ async function hasSessionUser(): Promise<boolean> {
   }
 }
 
+/** 当前请求用户是否有 admin.* 权限（草稿预览门禁） */
+async function isAdminUser(): Promise<boolean> {
+  try {
+    const { getRequestHeaders } = await import('@tanstack/react-start/server');
+    const { getAuth } = await import('@/core/auth');
+    const session = await getAuth().api.getSession({
+      headers: getRequestHeaders(),
+    });
+    if (!session?.user) return false;
+    const { getUserPermissionCodes } = await import('@/modules/rbac/service');
+    const { matchPermission } = await import('@/core/auth/rbac');
+    const codes = await getUserPermissionCodes(session.user.id);
+    return matchPermission('admin.*', codes);
+  } catch {
+    return false;
+  }
+}
+
 async function getDbPosts(): Promise<BlogPost[]> {
   try {
     const { listPublishedArticles } = await import('@/modules/posts/service');
@@ -89,6 +107,29 @@ export const getBlogPostFn = createServerFn()
           source: 'db',
           content: row.content || '',
         };
+      }
+      // 管理员草稿预览：已发布查不到时，管理员可读未发布文章原文，
+      // 用于发布前确认内容；非管理员仍走下面的本地文章回落（最终 404）。
+      if (await isAdminUser()) {
+        const { findBySlug, PostStatus } =
+          await import('@/modules/posts/service');
+        const draft = await findBySlug(data.slug);
+        if (draft && draft.status !== PostStatus.PUBLISHED) {
+          return {
+            id: draft.id,
+            slug: draft.slug,
+            title: draft.title || draft.slug,
+            description: draft.description || '',
+            image: draft.image || undefined,
+            createdAt: new Date(draft.createdAt).toISOString(),
+            authorName: draft.authorName || undefined,
+            authorImage: draft.authorImage || undefined,
+            source: 'db',
+            content: draft.content || '',
+            status: draft.status,
+            isDraftPreview: true,
+          };
+        }
       }
     } catch {
       // Database not configured/reachable — fall through to local posts.

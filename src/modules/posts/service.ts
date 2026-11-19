@@ -1,4 +1,14 @@
-import { and, count, desc, eq, inArray, like, or, type SQL } from 'drizzle-orm';
+import {
+  and,
+  count,
+  desc,
+  eq,
+  inArray,
+  like,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 
 import { db } from '@/core/db';
 import { post } from '@/config/db/schema';
@@ -120,10 +130,27 @@ export async function findPublishedBySlug(
     .from(post)
     .where(
       and(
-        eq(post.slug, slug.toLowerCase()),
+        // 大小写不敏感：外部写入（如抽取同步）可能带大写 slug，
+        // 仅转输入小写会在大小写敏感比对下查不到而 404。
+        eq(sql`lower(${post.slug})`, slug.toLowerCase()),
         eq(post.status, PostStatus.PUBLISHED)
       )
     )
+    .limit(1);
+  return result;
+}
+
+/**
+ * Single post by slug regardless of status — admin draft preview only.
+ * Callers must check the viewer's admin permission first; never expose
+ * unpublished content to anonymous visitors.
+ */
+export async function findBySlug(slug: string): Promise<Post | undefined> {
+  const [result] = await db()
+    .select()
+    .from(post)
+    // 大小写不敏感（同 findPublishedBySlug）：外部写入可能带大写 slug。
+    .where(eq(sql`lower(${post.slug})`, slug.toLowerCase()))
     .limit(1);
   return result;
 }
