@@ -1,0 +1,369 @@
+{
+  "classes": [
+    {
+      "definition": "TREE 的 13 个检验／商务领域",
+      "id": "Domain",
+      "label": "领域",
+      "subclasses": []
+    },
+    {
+      "definition": "TREE 的知识节点（原样保留难度、学时、仪器、参数、关键主题）",
+      "id": "KnowledgeNode",
+      "label": "知识节点",
+      "subclasses": []
+    },
+    {
+      "definition": "节点下的课程，shifu_bid 对 wiki post（course-<bid>）",
+      "id": "Course",
+      "label": "课程",
+      "subclasses": []
+    },
+    {
+      "definition": "doc-index.json 里的文档章节（已上传 HTML 文档的 section）",
+      "id": "DocSection",
+      "label": "文档章节",
+      "subclasses": []
+    },
+    {
+      "definition": "同一张图的三种剪裁（销售／应用／客服），不复制节点",
+      "id": "RoleView",
+      "label": "角色视图",
+      "subclasses": ["销售", "应用", "客服"]
+    },
+    {
+      "definition": "TREE learning_paths 的带教路径（阶段轴第二批用；首批只记节点归属）",
+      "id": "LearningPath",
+      "label": "带教路径",
+      "subclasses": []
+    },
+    {
+      "definition": "SharePoint 抽取的锚点：站点与文档库；首批只含已验证的 ZLSW 站点＋Documents 库，全文抽取状态一律记“未抽取”",
+      "id": "SharePointSource",
+      "label": "SharePoint 源",
+      "subclasses": ["站点", "文档库"]
+    }
+  ],
+  "data_properties": [
+    {
+      "class": "Domain",
+      "id": "color",
+      "label": "领域颜色",
+      "source": "TREE domains[].color",
+      "type": "文本"
+    },
+    {
+      "class": "Domain",
+      "id": "description",
+      "label": "领域描述",
+      "source": "TREE domains[].description",
+      "type": "文本"
+    },
+    {
+      "class": "KnowledgeNode",
+      "id": "difficulty",
+      "label": "难度",
+      "source": "TREE nodes[].difficulty",
+      "type": "整数 1–3"
+    },
+    {
+      "class": "KnowledgeNode",
+      "id": "estimatedHours",
+      "label": "预计学时",
+      "source": "TREE nodes[].estimated_hours",
+      "type": "整数（小时）"
+    },
+    {
+      "class": "KnowledgeNode",
+      "id": "keyTopics",
+      "label": "关键主题",
+      "source": "TREE nodes[].metadata.key_topics",
+      "type": "文本列表"
+    },
+    {
+      "class": "KnowledgeNode",
+      "id": "instruments",
+      "label": "仪器型号",
+      "source": "TREE nodes[].metadata.instrument_models",
+      "type": "文本列表"
+    },
+    {
+      "class": "KnowledgeNode",
+      "id": "parameters",
+      "label": "检测参数",
+      "source": "TREE nodes[].metadata.test_parameters",
+      "type": "文本列表"
+    },
+    {
+      "class": "KnowledgeNode",
+      "id": "clinicalApps",
+      "label": "临床应用",
+      "source": "TREE nodes[].metadata.clinical_apps",
+      "type": "文本列表"
+    },
+    {
+      "class": "KnowledgeNode",
+      "id": "regulations",
+      "label": "法规",
+      "source": "TREE nodes[].metadata.regulations",
+      "type": "文本列表"
+    },
+    {
+      "class": "KnowledgeNode",
+      "id": "salesKpi",
+      "label": "销售 KPI",
+      "source": "TREE nodes[].metadata.sales_kpi",
+      "type": "文本"
+    },
+    {
+      "class": "KnowledgeNode",
+      "id": "sourcePpt",
+      "label": "来源 PPT",
+      "source": "TREE nodes[].metadata.source_ppt",
+      "type": "文本"
+    },
+    {
+      "class": "Course",
+      "id": "shifuBid",
+      "label": "ai-shifu 课程 bid",
+      "source": "TREE courses[].shifu_bid",
+      "type": "文本"
+    },
+    {
+      "class": "Course",
+      "id": "slug",
+      "label": "wiki 文章 slug",
+      "source": "course-<bid>",
+      "type": "文本"
+    },
+    {
+      "class": "Course",
+      "id": "status",
+      "label": "入库状态",
+      "source": "post 表 status；无输入文件时记“未知”",
+      "type": "枚举：已发布／草稿／未入库／未知"
+    },
+    {
+      "class": "Course",
+      "id": "lessonCount",
+      "label": "课节数",
+      "source": "TREE courses[].lesson_count",
+      "type": "整数"
+    },
+    {
+      "class": "DocSection",
+      "id": "docKey",
+      "label": "文档 key",
+      "source": "doc-index.json sections[].docKey",
+      "type": "文本"
+    },
+    {
+      "class": "DocSection",
+      "id": "sectionId",
+      "label": "章节 id",
+      "source": "doc-index.json sections[].sectionId",
+      "type": "文本"
+    },
+    {
+      "class": "DocSection",
+      "id": "category",
+      "label": "文档分类",
+      "source": "blog_html_file.category",
+      "type": "文本"
+    },
+    {
+      "class": "DocSection",
+      "id": "keywords",
+      "label": "关键词",
+      "source": "doc-index.json sections[].keywords",
+      "type": "文本（逗号分隔）"
+    },
+    {
+      "class": "DocSection",
+      "id": "url",
+      "label": "访问链接",
+      "source": "/html/<key>#<sectionId>",
+      "type": "文本"
+    },
+    {
+      "class": "RoleView",
+      "id": "role",
+      "label": "角色",
+      "source": "派生（第 3 节定义）",
+      "type": "枚举：销售／应用／客服"
+    },
+    {
+      "class": "SharePointSource",
+      "id": "siteUrl",
+      "label": "站点 URL",
+      "source": "MCP get_site_info 实测",
+      "type": "文本"
+    },
+    {
+      "class": "SharePointSource",
+      "id": "extractionStatus",
+      "label": "抽取状态",
+      "source": "实测状态，不许把“候选”写成“已抽”",
+      "type": "枚举：未抽取／元数据已抽／全文已抽"
+    }
+  ],
+  "date": "2026-11-19",
+  "note": "类、属性、规则沿用入社培训本体框架的写法；规则编号用 G1–G9，与入社培训的 R1–R10 区分。全文见 docs/wiki-graph-ontology.md。",
+  "object_properties": [
+    {
+      "domain": "Domain",
+      "example": "通识基础 —包含节点→ 六大检验系统总览",
+      "id": "domainHasNode",
+      "inverse": "属于领域",
+      "label": "领域包含节点",
+      "range": "KnowledgeNode"
+    },
+    {
+      "domain": "KnowledgeNode",
+      "example": "血液检验基础 —挂课程→ 血液检验基础——从血细胞到智能流水线",
+      "id": "nodeHasCourse",
+      "inverse": "属于节点",
+      "label": "节点挂课程",
+      "range": "Course"
+    },
+    {
+      "domain": "KnowledgeNode",
+      "example": "六大检验系统总览 —挂文档→ 入职前准备（新人入学类挂领域级，见 domainHasDoc）",
+      "id": "nodeHasDoc",
+      "inverse": "挂在节点下",
+      "label": "节点挂文档",
+      "range": "DocSection"
+    },
+    {
+      "domain": "Domain",
+      "example": "通识基础 —挂文档→ 00 开始这里：第一周导航（分类=新人入学）",
+      "id": "domainHasDoc",
+      "inverse": "挂在领域下",
+      "label": "领域挂文档",
+      "range": "DocSection"
+    },
+    {
+      "domain": "KnowledgeNode",
+      "example": "凝血检验基础 —先修→ 血液检验基础",
+      "id": "nodePrerequisite",
+      "inverse": "是……的先修",
+      "label": "先修",
+      "range": "KnowledgeNode"
+    },
+    {
+      "domain": "KnowledgeNode",
+      "example": "血液检验基础 —进阶→ 血液形态学",
+      "id": "nodeExtends",
+      "inverse": "进阶自",
+      "label": "进阶",
+      "range": "KnowledgeNode"
+    },
+    {
+      "domain": "KnowledgeNode",
+      "example": "血液质控 —并行→ 生化检验基础（质控体系通用）",
+      "id": "nodeParallel",
+      "inverse": "并行",
+      "label": "并行",
+      "range": "KnowledgeNode"
+    },
+    {
+      "domain": "RoleView",
+      "example": "销售 —看领域→ 产品定位与卖点",
+      "id": "roleIncludesDomain",
+      "inverse": "被角色看",
+      "label": "角色看领域",
+      "range": "Domain"
+    },
+    {
+      "domain": "RoleView",
+      "example": "销售 —看节点→ 客户分级与决策链",
+      "id": "roleIncludesNode",
+      "inverse": "被角色看",
+      "label": "角色看节点",
+      "range": "KnowledgeNode"
+    },
+    {
+      "domain": "LearningPath",
+      "example": "新销售入职路径 —含节点→ 六大检验系统总览",
+      "id": "pathIncludesNode",
+      "inverse": "属于路径",
+      "label": "路径含节点",
+      "range": "KnowledgeNode"
+    },
+    {
+      "domain": "SharePointSource",
+      "example": "ZLSW —含文档库→ Documents",
+      "id": "siteHasLibrary",
+      "inverse": "属于站点",
+      "label": "站点含文档库",
+      "range": "SharePointSource"
+    },
+    {
+      "domain": "SharePointSource",
+      "example": "（抽取第 2 阶段产物）某产品文档 —候选挂→ 血液检验基础",
+      "id": "spCandidateFor",
+      "inverse": "抽取候选",
+      "label": "抽取候选",
+      "range": "KnowledgeNode"
+    }
+  ],
+  "ontology": "Wiki 知识图谱本体",
+  "rules": [
+    {
+      "id": "G1",
+      "on_violation": "列出孤儿节点，先补领域归属再发布",
+      "rule": "每个节点必须属于恰好一个领域；领域不存在即校验不过",
+      "source": "TREE domains 展开"
+    },
+    {
+      "id": "G2",
+      "on_violation": "标“未入库”进清单，不静默丢掉",
+      "rule": "每个课程 shifu_bid 必须映射到一个 wiki post slug，或明确标“未入库”",
+      "source": "post 表 slug course-<bid>"
+    },
+    {
+      "id": "G3",
+      "on_violation": "列出悬空边，先修数据再发布",
+      "rule": "每条边的两端节点必须存在；悬空边即校验不过",
+      "source": "graph.json 边表"
+    },
+    {
+      "id": "G4",
+      "on_violation": "角色视图缺节点先补定义，不要空视图上线",
+      "rule": "角色视图只引用已存在的领域／节点；三档（销售／应用／客服）齐全且非空",
+      "source": "docs/wiki-graph-ontology.md 第 3 节"
+    },
+    {
+      "id": "G5",
+      "on_violation": "进未匹配清单，不删除、不猜",
+      "rule": "文档 section 必须挂到领域或节点；匹配不上标“未匹配”",
+      "source": "4.2 文档挂接规则"
+    },
+    {
+      "id": "G6",
+      "on_violation": "去重后再生成",
+      "rule": "同一 shifu_bid 全图只出现一次",
+      "source": "TREE courses 去重"
+    },
+    {
+      "id": "G7",
+      "on_violation": "改 id 后重生成",
+      "rule": "节点 id 全局唯一",
+      "source": "graph.json 节点表"
+    },
+    {
+      "id": "G8",
+      "on_violation": "补生成时间与 TREE 版本再发布",
+      "rule": "图谱必须带 generatedAt 与 treeVersion",
+      "source": "build_wiki_graph.py"
+    },
+    {
+      "id": "G9",
+      "on_violation": "改回实测状态再发布",
+      "rule": "SharePoint 候选只记实测到的元数据；未抽取全文的不得标“全文已抽”",
+      "source": "docs/wiki-graph-ontology.md 第 5 节"
+    }
+  ],
+  "scope": "IVD 检验医学知识体系（TREE 骨架）＋ wiki 课程与文档；首批领域轴＋角色剪裁",
+  "source_document": "TREE v1.0.1（2026-09-21 生成）＋ docs/wiki-graph-ontology.md",
+  "version": "1.0"
+}

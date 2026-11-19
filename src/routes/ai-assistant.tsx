@@ -217,6 +217,19 @@ function AiAssistantPage() {
     mutation.mutate({ query: trimmed, history });
   };
 
+  // 图谱页带节点过来（/ai-assistant?q=请介绍一下「节点名」）：登录后自动发
+  // 一次；发完把 q 从地址里去掉，刷新不再重发。
+  const qSentRef = useRef(false);
+  useEffect(() => {
+    if (qSentRef.current || sessionPending || !session?.user) return;
+    const q = new URLSearchParams(window.location.search).get('q');
+    if (!q?.trim()) return;
+    qSentRef.current = true;
+    window.history.replaceState(null, '', window.location.pathname);
+    send(q.trim());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionPending, session]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, mutation.isPending]);

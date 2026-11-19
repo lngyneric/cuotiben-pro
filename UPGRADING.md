@@ -54,6 +54,13 @@ None. Pure frontend change; no schema, permission, or env change.
 
 ### New, no action needed
 
+- Knowledge graph page (`/wiki/graph`, role filter sales/application/service,
+  node → assistant via `/ai-assistant?q=`), live overlay API (`GET /api/graph`),
+  and ontology sources in `src/content/graph/` (`ivd-tree.json`, `schema.json`,
+  `graph.json`; built by `scripts/extract_ivd_tree.py` +
+  `scripts/build_wiki_graph.py`, checked by `scripts/validate_wiki_graph.py`).
+  See `docs/wiki-graph-ontology.md` (includes the SharePoint extraction plan).
+
 - `/cuotiben` (记事本) is now for the corporate university, so the
   school-subject categories are gone from the UI: no more subject filter
   chips on the page (only the all / pending / done status filter

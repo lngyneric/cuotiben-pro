@@ -1,0 +1,2662 @@
+{
+  "ontology": "Wiki 知识图谱本体",
+  "version": "1.0",
+  "date": "2026-11-19",
+  "scope": "IVD 检验医学知识体系（TREE 骨架）＋ wiki 课程与文档；首批领域轴＋角色剪裁",
+  "source": "build_wiki_graph.py（依据：src/content/graph/ivd-tree.json、wiki-graph-inputs.json、docs/wiki-graph-ontology.md）",
+  "generatedAt": "2026-11-19T06:34:28Z",
+  "treeVersion": "1.0.1",
+  "counts": {
+    "nodes": 81,
+    "edges": 261,
+    "domains": 13,
+    "knowledgeNodes": 39,
+    "courses": 9,
+    "docs": 9,
+    "unmatchedCourses": 0,
+    "unmatchedDocs": 0,
+    "note": "边数含先修／进阶／并行／跨领域／角色／路径／文档挂接的展开计数。"
+  },
+  "unmatchedCourses": [],
+  "unmatchedDocs": [],
+  "nodes": [
+    {
+      "id": "domain:general",
+      "label": "通识基础",
+      "class": "Domain",
+      "data": {
+        "title": "通识基础",
+        "color": "#6b7280",
+        "description": "检验医学通用基础，六大系统概览"
+      }
+    },
+    {
+      "id": "node:six-systems-overview",
+      "label": "六大检验系统总览",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "六大检验系统总览",
+        "difficulty": 1,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": [],
+        "parameters": [],
+        "clinicalApps": ["检验科日常流程"],
+        "regulations": ["ISO 15189 概述"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "general"
+      }
+    },
+    {
+      "id": "domain:hematology",
+      "label": "血液检验",
+      "class": "Domain",
+      "data": {
+        "title": "血液检验",
+        "color": "#ef4444",
+        "description": "血细胞分析、血涂片形态学、血红蛋白检测"
+      }
+    },
+    {
+      "id": "node:hematology-basics",
+      "label": "血液学基础",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "血液学基础",
+        "difficulty": 1,
+        "estimatedHours": 3,
+        "keyTopics": [],
+        "instruments": ["XN-1000", "XN-2000", "XN-9000"],
+        "parameters": ["WBC", "RBC", "HGB", "HCT", "PLT", "MCV", "RET"],
+        "clinicalApps": ["贫血诊断", "感染判断", "白血病筛查"],
+        "regulations": ["ISO 15189:2022"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "hematology"
+      }
+    },
+    {
+      "id": "node:hematology-cbc",
+      "label": "CBC 全血细胞计数",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "CBC 全血细胞计数",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": ["XN-1000", "XN-2000"],
+        "parameters": ["CBC", "DIFF", "RET", "NRBC"],
+        "clinicalApps": ["化疗监测", "术后评估"],
+        "regulations": ["CLIA", "CAP"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "hematology"
+      }
+    },
+    {
+      "id": "node:hematology-morphology",
+      "label": "血细胞形态学",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "血细胞形态学",
+        "difficulty": 3,
+        "estimatedHours": 4,
+        "keyTopics": [],
+        "instruments": ["DI-60", "XN-9000 形态学模块"],
+        "parameters": ["血涂片", "异常细胞识别"],
+        "clinicalApps": ["白血病分型", "MDS 诊断"],
+        "regulations": ["WHO 分类标准"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "hematology"
+      }
+    },
+    {
+      "id": "node:hematology-qc",
+      "label": "血液质控与校准",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "血液质控与校准",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": ["XN 全系列"],
+        "parameters": ["质控品", "校准品", "L-J 图"],
+        "clinicalApps": ["室内质控", "室间质评"],
+        "regulations": ["ISO 15189:2022", "WS/T 641"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "hematology"
+      }
+    },
+    {
+      "id": "domain:urinalysis",
+      "label": "尿液检验",
+      "class": "Domain",
+      "data": {
+        "title": "尿液检验",
+        "color": "#f59e0b",
+        "description": "尿液干化学、尿沉渣分析、尿液有形成分"
+      }
+    },
+    {
+      "id": "node:urinalysis-basics",
+      "label": "尿液检验基础",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "尿液检验基础",
+        "difficulty": 1,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": ["UC-3500", "UF-5000", "UX-2000"],
+        "parameters": [
+          "PRO",
+          "GLU",
+          "BIL",
+          "URO",
+          "KET",
+          "NIT",
+          "LEU",
+          "SG",
+          "pH",
+          "BLD"
+        ],
+        "clinicalApps": ["UTI 筛查", "肾病监测", "糖尿病管理"],
+        "regulations": ["ISO 15189"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "urinalysis"
+      }
+    },
+    {
+      "id": "node:urinalysis-sediment",
+      "label": "尿沉渣有形成分分析",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "尿沉渣有形成分分析",
+        "difficulty": 2,
+        "estimatedHours": 3,
+        "keyTopics": [],
+        "instruments": ["UF-5000", "UF-4000"],
+        "parameters": ["RBC", "WBC", "CAST", "BACT", "EC", "SRC"],
+        "clinicalApps": ["肾小球疾病", "尿路感染分型"],
+        "regulations": ["JCCLS", "CLSI"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "urinalysis"
+      }
+    },
+    {
+      "id": "node:urinalysis-biochem",
+      "label": "尿液生化与干化学",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "尿液生化与干化学",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": ["UC-3500"],
+        "parameters": ["干化学试纸条", "反射率检测"],
+        "clinicalApps": ["代谢性疾病筛查"],
+        "regulations": ["CLSI"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "urinalysis"
+      }
+    },
+    {
+      "id": "domain:coagulation",
+      "label": "凝血检验",
+      "class": "Domain",
+      "data": {
+        "title": "凝血检验",
+        "color": "#8b5cf6",
+        "description": "凝血功能检测、血小板功能、血栓与止血"
+      }
+    },
+    {
+      "id": "node:coagulation-basics",
+      "label": "凝血检验基础",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "凝血检验基础",
+        "difficulty": 2,
+        "estimatedHours": 3,
+        "keyTopics": [],
+        "instruments": ["CS-2500", "CS-5100", "CN-6000"],
+        "parameters": ["PT", "APTT", "FIB", "TT", "D-Dimer", "FDP", "AT"],
+        "clinicalApps": ["术前凝血筛查", "DIC 诊断", "抗凝监测"],
+        "regulations": ["ISTH", "CLSI H47"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "coagulation"
+      }
+    },
+    {
+      "id": "node:coagulation-special",
+      "label": "特殊凝血项目",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "特殊凝血项目",
+        "difficulty": 3,
+        "estimatedHours": 3,
+        "keyTopics": [],
+        "instruments": ["CS-5100", "CN-6000"],
+        "parameters": ["凝血因子 VIII/IX", "vWF", "LA", "PC/PS"],
+        "clinicalApps": ["血友病诊断", "易栓症筛查"],
+        "regulations": ["ISTH-SSC"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "coagulation"
+      }
+    },
+    {
+      "id": "node:coagulation-monitoring",
+      "label": "抗凝治疗监测",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "抗凝治疗监测",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": ["CS-2500", "CS-5100"],
+        "parameters": ["INR", "APTT ratio", "抗 Xa"],
+        "clinicalApps": ["华法林监测", "肝素监测", "DOAC 监测"],
+        "regulations": ["ACCP 指南"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "coagulation"
+      }
+    },
+    {
+      "id": "domain:immunoassay",
+      "label": "免疫检验",
+      "class": "Domain",
+      "data": {
+        "title": "免疫检验",
+        "color": "#10b981",
+        "description": "免疫分析技术、肿瘤标志物、感染免疫、自身免疫"
+      }
+    },
+    {
+      "id": "node:immunoassay-basics",
+      "label": "免疫检验基础",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "免疫检验基础",
+        "difficulty": 2,
+        "estimatedHours": 3,
+        "keyTopics": [],
+        "instruments": ["HISCL-5000", "HISCL-800"],
+        "parameters": ["化学发光", "ELISA", "免疫比浊"],
+        "clinicalApps": ["感染筛查", "肿瘤标志物", "激素检测"],
+        "regulations": ["ISO 15189"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "immunoassay"
+      }
+    },
+    {
+      "id": "node:immunoassay-tumor",
+      "label": "肿瘤标志物检测",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "肿瘤标志物检测",
+        "difficulty": 3,
+        "estimatedHours": 3,
+        "keyTopics": [],
+        "instruments": ["HISCL-5000", "HISCL-800"],
+        "parameters": ["AFP", "CEA", "CA19-9", "CA125", "PSA", "CYFRA"],
+        "clinicalApps": ["肝癌筛查", "结直肠癌监测", "卵巢癌诊断"],
+        "regulations": ["NCCN 指南"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "immunoassay"
+      }
+    },
+    {
+      "id": "node:immunoassay-infection",
+      "label": "感染免疫检测",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "感染免疫检测",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": ["HISCL 系列"],
+        "parameters": ["HBV", "HCV", "HIV", "TP", "HBsAg", "HBsAb"],
+        "clinicalApps": ["术前八项", "传染病筛查"],
+        "regulations": ["CDC 指南", "WHO 标准"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "immunoassay"
+      }
+    },
+    {
+      "id": "node:immunoassay-autoimmune",
+      "label": "自身免疫检测",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "自身免疫检测",
+        "difficulty": 3,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": ["HISCL-5000"],
+        "parameters": ["ANA", "anti-dsDNA", "RF", "anti-CCP"],
+        "clinicalApps": ["SLE 诊断", "类风湿关节炎"],
+        "regulations": ["ACR/EULAR 分类标准"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "immunoassay"
+      }
+    },
+    {
+      "id": "domain:biochemistry",
+      "label": "生化检验",
+      "class": "Domain",
+      "data": {
+        "title": "生化检验",
+        "color": "#3b82f6",
+        "description": "临床化学分析、肝功能、肾功能、血脂、电解质"
+      }
+    },
+    {
+      "id": "node:biochemistry-basics",
+      "label": "生化检验基础",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "生化检验基础",
+        "difficulty": 2,
+        "estimatedHours": 3,
+        "keyTopics": [],
+        "instruments": ["JCA-BioMajesty 系列", "BM-6010/C"],
+        "parameters": ["ALT", "AST", "ALP", "GGT", "TBil", "TP", "ALB"],
+        "clinicalApps": ["肝功能评估", "肾病筛查", "代谢综合征"],
+        "regulations": ["ISO 15189", "IFCC"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "biochemistry"
+      }
+    },
+    {
+      "id": "node:biochemistry-liver",
+      "label": "肝功能检测组合",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "肝功能检测组合",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": ["JCA-BioMajesty"],
+        "parameters": ["ALT", "AST", "ALP", "GGT", "TBil", "DBil", "TBA"],
+        "clinicalApps": ["肝炎分型", "肝硬化评估", "药物性肝损"],
+        "regulations": ["AASLD 指南"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "biochemistry"
+      }
+    },
+    {
+      "id": "node:biochemistry-renal",
+      "label": "肾功能检测",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "肾功能检测",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": ["JCA-BioMajesty"],
+        "parameters": ["Cr", "BUN", "UA", "CysC", "eGFR"],
+        "clinicalApps": ["CKD 分期", "透析监测"],
+        "regulations": ["KDIGO 指南"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "biochemistry"
+      }
+    },
+    {
+      "id": "node:biochemistry-lipid",
+      "label": "血脂与心血管标志物",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "血脂与心血管标志物",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": ["JCA-BioMajesty"],
+        "parameters": ["TC", "TG", "HDL-C", "LDL-C", "ApoA1", "ApoB", "hs-CRP"],
+        "clinicalApps": ["ASCVD 风险评估", "降脂疗效监测"],
+        "regulations": ["ESC/EAS 指南"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "biochemistry"
+      }
+    },
+    {
+      "id": "domain:molecular",
+      "label": "分子/生科检验",
+      "class": "Domain",
+      "data": {
+        "title": "分子/生科检验",
+        "color": "#ec4899",
+        "description": "分子诊断、PCR技术、基因检测、NGS"
+      }
+    },
+    {
+      "id": "node:molecular-basics",
+      "label": "分子检验基础",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "分子检验基础",
+        "difficulty": 2,
+        "estimatedHours": 3,
+        "keyTopics": [],
+        "instruments": ["RD-100i", "GeneXpert 兼容"],
+        "parameters": ["核酸提取", "PCR 扩增", "荧光检测"],
+        "clinicalApps": ["病原体检测", "药物基因组学", "肿瘤基因分型"],
+        "regulations": ["ISO 15189", "CAP/CLIA", "FDA LDT"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "molecular"
+      }
+    },
+    {
+      "id": "node:molecular-pcr",
+      "label": "实时荧光定量 PCR",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "实时荧光定量 PCR",
+        "difficulty": 3,
+        "estimatedHours": 3,
+        "keyTopics": [],
+        "instruments": ["RD-100i"],
+        "parameters": ["qPCR", "RT-PCR", "Ct 值", "熔解曲线"],
+        "clinicalApps": ["COVID-19 检测", "HBV/HCV 病毒载量"],
+        "regulations": ["MIQE 指南"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "molecular"
+      }
+    },
+    {
+      "id": "node:molecular-ngs",
+      "label": "NGS 二代测序",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "NGS 二代测序",
+        "difficulty": 4,
+        "estimatedHours": 5,
+        "keyTopics": [],
+        "instruments": ["第三方 NGS 平台"],
+        "parameters": ["文库构建", "生物信息分析", "变异解读"],
+        "clinicalApps": ["肿瘤全景基因检测", "遗传病诊断", "液体活检"],
+        "regulations": ["CAP/CLIA NGS 指南", "ACMG 变异解读标准"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "molecular"
+      }
+    },
+    {
+      "id": "node:molecular-poct",
+      "label": "POCT 即时分子检测",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "POCT 即时分子检测",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": ["GeneXpert", "FilmArray 兼容"],
+        "parameters": ["快速分子检测", "多重 PCR"],
+        "clinicalApps": ["急诊病原体快速诊断", "基层医疗"],
+        "regulations": ["CLIA-waived"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "molecular"
+      }
+    },
+    {
+      "id": "domain:molecular_poct",
+      "label": "分子POCT",
+      "class": "Domain",
+      "data": {
+        "title": "分子POCT",
+        "color": "#06b6d4",
+        "description": "即时核酸诊断·全感染类检测 (知微生物合作)"
+      }
+    },
+    {
+      "id": "node:molecular-poct-basics",
+      "label": "分子POCT基础",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "分子POCT基础",
+        "difficulty": 2,
+        "estimatedHours": 3,
+        "keyTopics": [],
+        "instruments": ["知微 全自动核酸POCT系统"],
+        "parameters": ["全感染类·即时核酸诊断"],
+        "clinicalApps": ["急诊感染快速筛查", "发热门诊", "基层医疗"],
+        "regulations": ["NMPA注册"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "molecular_poct"
+      }
+    },
+    {
+      "id": "node:molecular-poct-infection",
+      "label": "感染类分子POCT应用",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "感染类分子POCT应用",
+        "difficulty": 2,
+        "estimatedHours": 3,
+        "keyTopics": [],
+        "instruments": ["知微 分子POCT"],
+        "parameters": ["呼吸道·血流·泌尿·中枢感染panel"],
+        "clinicalApps": ["脓毒症快速诊断", "脑膜炎病原体筛查"],
+        "regulations": ["CLIA-waived级别"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "molecular_poct"
+      }
+    },
+    {
+      "id": "domain:flow_cytometry_cn",
+      "label": "国产临床流式",
+      "class": "Domain",
+      "data": {
+        "title": "国产临床流式",
+        "color": "#14b8a6",
+        "description": "旷博生物国产流式细胞仪 (希森美康独家代理)"
+      }
+    },
+    {
+      "id": "node:flow-clinical-cn",
+      "label": "临床流式细胞术应用",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "临床流式细胞术应用",
+        "difficulty": 3,
+        "estimatedHours": 4,
+        "keyTopics": [],
+        "instruments": ["旷博 临床流式分析仪"],
+        "parameters": ["淋巴细胞亚群", "白血病免疫分型", "CD4/CD8"],
+        "clinicalApps": ["血液病免疫分型", "HIV/AIDS 监测", "移植免疫"],
+        "regulations": ["NMPA·CLSI H42"],
+        "salesKpi": "",
+        "sourcePpt": "",
+        "audience": "",
+        "domainId": "flow_cytometry_cn"
+      }
+    },
+    {
+      "id": "domain:market_landscape",
+      "label": "市场格局",
+      "class": "Domain",
+      "data": {
+        "title": "市场格局",
+        "color": "#f97316",
+        "description": "IVD市场分析·竞品格局·政策环境·经销商管理"
+      }
+    },
+    {
+      "id": "node:ivd-market-overview",
+      "label": "中国IVD市场概览",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "中国IVD市场概览",
+        "difficulty": 1,
+        "estimatedHours": 2,
+        "keyTopics": [
+          "IVD市场规模~1200亿·年增15%",
+          "化学发光最大赛道~300亿",
+          "集采政策·DRG/DIP",
+          "国产替代率"
+        ],
+        "instruments": [],
+        "parameters": [],
+        "clinicalApps": [],
+        "regulations": [],
+        "salesKpi": "掌握IVD市场规模和增长点，能向客户讲行业趋势",
+        "sourcePpt": "",
+        "audience": "销售·市场·经销商",
+        "domainId": "market_landscape"
+      }
+    },
+    {
+      "id": "node:ivd-policy-landscape",
+      "label": "IVD政策与准入",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "IVD政策与准入",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [
+          "集采(安徽/江西/福建)影响",
+          "DRG/DIP支付改革",
+          "LDT政策·区域检验中心",
+          "国产优先·进口替代期限"
+        ],
+        "instruments": [],
+        "parameters": [],
+        "clinicalApps": [],
+        "regulations": [],
+        "salesKpi": "能解读集采政策对客户采购决策的影响",
+        "sourcePpt": "",
+        "audience": "销售·市场·政府事务",
+        "domainId": "market_landscape"
+      }
+    },
+    {
+      "id": "node:competitor-landscape",
+      "label": "竞品应对全景",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "竞品应对全景",
+        "difficulty": 2,
+        "estimatedHours": 3,
+        "keyTopics": [
+          "血液:Beckman/迈瑞/帝迈/迈克",
+          "凝血:Stago/Werfen",
+          "尿液:爱威/迪瑞/优利特",
+          "免疫:罗氏/雅培/贝克曼·安图/新产业",
+          "生化:贝克曼/日立/迈瑞",
+          "流式:BD/贝克曼"
+        ],
+        "instruments": [],
+        "parameters": [],
+        "clinicalApps": [],
+        "regulations": [],
+        "salesKpi": "各产品线Top3竞品·竞品技术缺陷·反制话术",
+        "sourcePpt": "",
+        "audience": "销售·市场",
+        "domainId": "market_landscape"
+      }
+    },
+    {
+      "id": "domain:sales_strategy",
+      "label": "销售策略",
+      "class": "Domain",
+      "data": {
+        "title": "销售策略",
+        "color": "#dc2626",
+        "description": "销售方法论·客户画像·报价策略·经销商管理"
+      }
+    },
+    {
+      "id": "node:customer-segmentation",
+      "label": "客户分级与决策链",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "客户分级与决策链",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [
+          "三级vs二级vs基层决策链",
+          "检验科主任·设备科·院长·医保办",
+          "KOL\\关键决策人识别",
+          "6-18个月采购周期"
+        ],
+        "instruments": [],
+        "parameters": [],
+        "clinicalApps": [],
+        "regulations": [],
+        "salesKpi": "能画出目标医院决策链·识别3个关键人",
+        "sourcePpt": "",
+        "audience": "销售·区域经理",
+        "domainId": "sales_strategy"
+      }
+    },
+    {
+      "id": "node:pricing-strategy",
+      "label": "报价与竞标策略",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "报价与竞标策略",
+        "difficulty": 3,
+        "estimatedHours": 2,
+        "keyTopics": [
+          "试剂打包·托管·租赁模式",
+          "耗占比谈判·最低消费",
+          "集采中标价vs非集采定价",
+          "融资租赁·低首付·分期"
+        ],
+        "instruments": [],
+        "parameters": [],
+        "clinicalApps": [],
+        "regulations": [],
+        "salesKpi": "能根据客户类型给出3套报价方案",
+        "sourcePpt": "",
+        "audience": "销售·商务",
+        "domainId": "sales_strategy"
+      }
+    },
+    {
+      "id": "node:dealer-management",
+      "label": "经销商管理与渠道",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "经销商管理与渠道",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [
+          "华鑫线vs直销线划分",
+          "授权管理(先到先得)",
+          "经销商考核·签约任务",
+          "跨区窜货管控"
+        ],
+        "instruments": [],
+        "parameters": [],
+        "clinicalApps": [],
+        "regulations": [],
+        "salesKpi": "理解华鑫/直销双渠道体系·经销商选择标准",
+        "sourcePpt": "",
+        "audience": "渠道经理·销售",
+        "domainId": "sales_strategy"
+      }
+    },
+    {
+      "id": "domain:product_positioning",
+      "label": "产品定位与卖点",
+      "class": "Domain",
+      "data": {
+        "title": "产品定位与卖点",
+        "color": "#8b5cf6",
+        "description": "各产品线核心卖点·竞争优势·目标市场·典型配置"
+      }
+    },
+    {
+      "id": "node:hematology-selling",
+      "label": "血液产品卖点与竞品应对",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "血液产品卖点与竞品应对",
+        "difficulty": 2,
+        "estimatedHours": 3,
+        "keyTopics": [],
+        "instruments": ["XN全系", "XR-9000", "DI-60"],
+        "parameters": [],
+        "clinicalApps": [],
+        "regulations": [],
+        "salesKpi": "每机型能说3个核心卖点+1个竞品弱点",
+        "sourcePpt": "",
+        "audience": "血液产品销售",
+        "domainId": "product_positioning"
+      }
+    },
+    {
+      "id": "node:coagulation-selling",
+      "label": "凝血产品卖点与竞品应对",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "凝血产品卖点与竞品应对",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": ["CS-5100", "CN-6000"],
+        "parameters": [],
+        "clinicalApps": [],
+        "regulations": [],
+        "salesKpi": "能讲止血与血栓完整方案·区分常规凝血vs特殊凝血",
+        "sourcePpt": "",
+        "audience": "凝血产品销售",
+        "domainId": "product_positioning"
+      }
+    },
+    {
+      "id": "node:urinalysis-selling",
+      "label": "尿液产品卖点与竞品应对",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "尿液产品卖点与竞品应对",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [],
+        "instruments": ["UF-5000", "UC-3500", "UN-9000"],
+        "parameters": [],
+        "clinicalApps": [],
+        "regulations": [],
+        "salesKpi": "能讲流式vs图像法5大差异·UF-5000 8大优势",
+        "sourcePpt": "",
+        "audience": "尿液产品销售",
+        "domainId": "product_positioning"
+      }
+    },
+    {
+      "id": "node:immunoassay-selling",
+      "label": "免疫产品卖点与竞品应对",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "免疫产品卖点与竞品应对",
+        "difficulty": 2,
+        "estimatedHours": 3,
+        "keyTopics": [],
+        "instruments": ["HISCL-5000", "HISCL-800"],
+        "parameters": [],
+        "clinicalApps": [],
+        "regulations": [],
+        "salesKpi": "HISCL技术5大优势·泽成国产化价值",
+        "sourcePpt": "",
+        "audience": "免疫产品销售",
+        "domainId": "product_positioning"
+      }
+    },
+    {
+      "id": "node:full-lab-selling",
+      "label": "整体实验室方案销售",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "整体实验室方案销售",
+        "difficulty": 3,
+        "estimatedHours": 3,
+        "keyTopics": [
+          "流水线=锁定效应(5-8年试剂消耗)",
+          "生免流水线(HISCL+KunLun+FlexLab)",
+          "智慧实验室(SNCS+Laboman+XR无人值守)",
+          "全产品解决方案→真TLA",
+          "融资租赁·托管·整体报价"
+        ],
+        "instruments": [],
+        "parameters": [],
+        "clinicalApps": [],
+        "regulations": [],
+        "salesKpi": "能设计流水线配置方案·计算TCO/ROI·讲清楚\"锁定效应\"价值",
+        "sourcePpt": "",
+        "audience": "大客户经理·区域总监",
+        "domainId": "product_positioning"
+      }
+    },
+    {
+      "id": "domain:business_skills",
+      "label": "商务能力",
+      "class": "Domain",
+      "data": {
+        "title": "商务能力",
+        "color": "#65a30d",
+        "description": "销售软技能·商务礼仪·客户KPI·情景销售"
+      }
+    },
+    {
+      "id": "node:customer-kpi-sales",
+      "label": "客户KPI情景销售",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "客户KPI情景销售",
+        "difficulty": 2,
+        "estimatedHours": 2,
+        "keyTopics": [
+          "检验科KPI:TAT·成本/测试·设备开机率",
+          "院长KPI:收入增长·学科建设·评级",
+          "医保办KPI:耗占比·DRG合规·结余",
+          "情景式提问:你科室现在的XX指标是多少？"
+        ],
+        "instruments": [],
+        "parameters": [],
+        "clinicalApps": [],
+        "regulations": [],
+        "salesKpi": "",
+        "sourcePpt": "聚焦客户KPI，精准助力全情景销售20260428.pptx",
+        "audience": "全体销售",
+        "domainId": "business_skills"
+      }
+    },
+    {
+      "id": "node:business-etiquette",
+      "label": "商务礼仪与沟通",
+      "class": "KnowledgeNode",
+      "data": {
+        "title": "商务礼仪与沟通",
+        "difficulty": 1,
+        "estimatedHours": 2,
+        "keyTopics": [
+          "医院拜访礼仪·着装·称呼",
+          "电话/微信沟通规范",
+          "商务宴请·学术会议陪同",
+          "送礼合规红线"
+        ],
+        "instruments": [],
+        "parameters": [],
+        "clinicalApps": [],
+        "regulations": [],
+        "salesKpi": "",
+        "sourcePpt": "商务礼仪-20260428-何其华.pptx",
+        "audience": "全体销售·新人",
+        "domainId": "business_skills"
+      }
+    },
+    {
+      "id": "course:8d44186a261d40488862714f28439f92",
+      "label": "医学检验六大系统通识——从样本到报告的全流程认知",
+      "class": "Course",
+      "data": {
+        "title": "医学检验六大系统通识——从样本到报告的全流程认知",
+        "shifuBid": "8d44186a261d40488862714f28439f92",
+        "slug": "course-8d44186a261d40488862714f28439f92",
+        "status": "已发布",
+        "postTitle": "医学检验六大系统通识——从样本到报告的全流程认知",
+        "lessonCount": 12,
+        "keywords": ""
+      }
+    },
+    {
+      "id": "course:2f9b477f894e483bb19ba378c32c8b06",
+      "label": "血液检验基础——从血细胞到智能流水线",
+      "class": "Course",
+      "data": {
+        "title": "血液检验基础——从血细胞到智能流水线",
+        "shifuBid": "2f9b477f894e483bb19ba378c32c8b06",
+        "slug": "course-2f9b477f894e483bb19ba378c32c8b06",
+        "status": "已发布",
+        "postTitle": "血液检验基础——从血细胞到智能流水线",
+        "lessonCount": 28,
+        "keywords": ""
+      }
+    },
+    {
+      "id": "course:d9f7b137e33f4005bf66cf7e01c44202",
+      "label": "医学检验学术基础课程",
+      "class": "Course",
+      "data": {
+        "title": "医学检验学术基础课程",
+        "shifuBid": "d9f7b137e33f4005bf66cf7e01c44202",
+        "slug": "course-d9f7b137e33f4005bf66cf7e01c44202",
+        "status": "已发布",
+        "postTitle": "医学检验学术基础课程",
+        "lessonCount": 42,
+        "keywords": "医学检验,学术基础,血液,尿液,凝血,免疫,生化,生科,IVD"
+      }
+    },
+    {
+      "id": "course:80cc7925937b4c45849a807888641ea3",
+      "label": "尿液检验基础——从干化学到智能流水线",
+      "class": "Course",
+      "data": {
+        "title": "尿液检验基础——从干化学到智能流水线",
+        "shifuBid": "80cc7925937b4c45849a807888641ea3",
+        "slug": "course-80cc7925937b4c45849a807888641ea3",
+        "status": "已发布",
+        "postTitle": "尿液检验基础——从干化学到智能流水线",
+        "lessonCount": 20,
+        "keywords": ""
+      }
+    },
+    {
+      "id": "course:429afc4400fe43a4a26293cfa15ce271",
+      "label": "凝血检验基础——凝血瀑布与止血平衡",
+      "class": "Course",
+      "data": {
+        "title": "凝血检验基础——凝血瀑布与止血平衡",
+        "shifuBid": "429afc4400fe43a4a26293cfa15ce271",
+        "slug": "course-429afc4400fe43a4a26293cfa15ce271",
+        "status": "已发布",
+        "postTitle": "凝血检验基础——凝血瀑布与止血平衡",
+        "lessonCount": 20,
+        "keywords": ""
+      }
+    },
+    {
+      "id": "course:2a737a2bd5a74c399f76b0c6aca00537",
+      "label": "免疫检验基础——从抗原抗体到高敏化学发光",
+      "class": "Course",
+      "data": {
+        "title": "免疫检验基础——从抗原抗体到高敏化学发光",
+        "shifuBid": "2a737a2bd5a74c399f76b0c6aca00537",
+        "slug": "course-2a737a2bd5a74c399f76b0c6aca00537",
+        "status": "已发布",
+        "postTitle": "免疫检验基础——从抗原抗体到高敏化学发光",
+        "lessonCount": 24,
+        "keywords": ""
+      }
+    },
+    {
+      "id": "course:ea3c109a41be4439aa37f40348a75833",
+      "label": "生化检验基础——朗伯比尔定律与精准测量",
+      "class": "Course",
+      "data": {
+        "title": "生化检验基础——朗伯比尔定律与精准测量",
+        "shifuBid": "ea3c109a41be4439aa37f40348a75833",
+        "slug": "course-ea3c109a41be4439aa37f40348a75833",
+        "status": "已发布",
+        "postTitle": "生化检验基础——朗伯比尔定律与精准测量",
+        "lessonCount": 20,
+        "keywords": ""
+      }
+    },
+    {
+      "id": "course:56e78150e601494582dfe13066419307",
+      "label": "生科检验基础——流式细胞术与动物血液分析",
+      "class": "Course",
+      "data": {
+        "title": "生科检验基础——流式细胞术与动物血液分析",
+        "shifuBid": "56e78150e601494582dfe13066419307",
+        "slug": "course-56e78150e601494582dfe13066419307",
+        "status": "已发布",
+        "postTitle": "生科检验基础——流式细胞术与动物血液分析",
+        "lessonCount": 16,
+        "keywords": ""
+      }
+    },
+    {
+      "id": "course:010b3b96fbe34cd6963203ab1896a702",
+      "label": "华鑫产品线产品培训",
+      "class": "Course",
+      "data": {
+        "title": "华鑫产品线产品培训",
+        "shifuBid": "010b3b96fbe34cd6963203ab1896a702",
+        "slug": "course-010b3b96fbe34cd6963203ab1896a702",
+        "status": "已发布",
+        "postTitle": "华鑫产品线产品培训",
+        "lessonCount": 9,
+        "keywords": ""
+      }
+    },
+    {
+      "id": "role:sales",
+      "label": "销售",
+      "class": "RoleView",
+      "data": {
+        "role": "销售",
+        "note": "4 个商务域全部节点（恰好等于 metadata.view == 'sales' 的 13 个节点）"
+      }
+    },
+    {
+      "id": "role:application",
+      "label": "应用",
+      "class": "RoleView",
+      "data": {
+        "role": "应用",
+        "note": "9 个检验技术域全部节点（26 个技术节点）"
+      }
+    },
+    {
+      "id": "role:service",
+      "label": "客服",
+      "class": "RoleView",
+      "data": {
+        "role": "客服",
+        "note": "服务工程师路径节点（TREE 无专属客服节点，以此路径充当客服视图）"
+      }
+    },
+    {
+      "id": "path:lab_technician",
+      "label": "检验技师路径",
+      "class": "LearningPath",
+      "data": {
+        "title": "检验技师路径",
+        "estimatedTotalHours": 19
+      }
+    },
+    {
+      "id": "path:service_engineer",
+      "label": "服务工程师路径",
+      "class": "LearningPath",
+      "data": {
+        "title": "服务工程师路径",
+        "estimatedTotalHours": 22
+      }
+    },
+    {
+      "id": "path:pathologist",
+      "label": "病理/临床医师路径",
+      "class": "LearningPath",
+      "data": {
+        "title": "病理/临床医师路径",
+        "estimatedTotalHours": 21
+      }
+    },
+    {
+      "id": "path:clinical_flow",
+      "label": "流式临床应用路径",
+      "class": "LearningPath",
+      "data": {
+        "title": "流式临床应用路径",
+        "estimatedTotalHours": 12
+      }
+    },
+    {
+      "id": "path:sales_newbie",
+      "label": "新销售入职路径",
+      "class": "LearningPath",
+      "data": {
+        "title": "新销售入职路径",
+        "estimatedTotalHours": 14
+      }
+    },
+    {
+      "id": "path:sales_senior",
+      "label": "资深销售进阶路径",
+      "class": "LearningPath",
+      "data": {
+        "title": "资深销售进阶路径",
+        "estimatedTotalHours": 18
+      }
+    },
+    {
+      "id": "doc:html/1794373776709-____-_____-___.html#p00",
+      "label": "开始这里：第一周导航",
+      "class": "DocSection",
+      "data": {
+        "title": "开始这里：第一周导航",
+        "docKey": "html/1794373776709-____-_____-___.html",
+        "sectionId": "p00",
+        "docTitle": "入社培训 · 新人第一周（HTML 版）",
+        "category": "新人入学",
+        "keywords": "请假，考勤，报到",
+        "url": "/html/html/1794373776709-____-_____-___.html#p00"
+      }
+    },
+    {
+      "id": "doc:html/1794373776709-____-_____-___.html#p01",
+      "label": "入职前准备（报到当天之前）",
+      "class": "DocSection",
+      "data": {
+        "title": "入职前准备（报到当天之前）",
+        "docKey": "html/1794373776709-____-_____-___.html",
+        "sectionId": "p01",
+        "docTitle": "入社培训 · 新人第一周（HTML 版）",
+        "category": "新人入学",
+        "keywords": "请假，考勤，报到",
+        "url": "/html/html/1794373776709-____-_____-___.html#p01"
+      }
+    },
+    {
+      "id": "doc:html/1794373776709-____-_____-___.html#p02",
+      "label": "第一天：报到与安顿",
+      "class": "DocSection",
+      "data": {
+        "title": "第一天：报到与安顿",
+        "docKey": "html/1794373776709-____-_____-___.html",
+        "sectionId": "p02",
+        "docTitle": "入社培训 · 新人第一周（HTML 版）",
+        "category": "新人入学",
+        "keywords": "请假，考勤，报到",
+        "url": "/html/html/1794373776709-____-_____-___.html#p02"
+      }
+    },
+    {
+      "id": "doc:html/1794373776709-____-_____-___.html#p03",
+      "label": "常用系统与账号",
+      "class": "DocSection",
+      "data": {
+        "title": "常用系统与账号",
+        "docKey": "html/1794373776709-____-_____-___.html",
+        "sectionId": "p03",
+        "docTitle": "入社培训 · 新人第一周（HTML 版）",
+        "category": "新人入学",
+        "keywords": "请假，考勤，报到",
+        "url": "/html/html/1794373776709-____-_____-___.html#p03"
+      }
+    },
+    {
+      "id": "doc:html/1794373776709-____-_____-___.html#p04",
+      "label": "考勤、请假与日常制度速览",
+      "class": "DocSection",
+      "data": {
+        "title": "考勤、请假与日常制度速览",
+        "docKey": "html/1794373776709-____-_____-___.html",
+        "sectionId": "p04",
+        "docTitle": "入社培训 · 新人第一周（HTML 版）",
+        "category": "新人入学",
+        "keywords": "请假，考勤，报到",
+        "url": "/html/html/1794373776709-____-_____-___.html#p04"
+      }
+    },
+    {
+      "id": "doc:html/1794373776709-____-_____-___.html#p05",
+      "label": "第一周任务清单",
+      "class": "DocSection",
+      "data": {
+        "title": "第一周任务清单",
+        "docKey": "html/1794373776709-____-_____-___.html",
+        "sectionId": "p05",
+        "docTitle": "入社培训 · 新人第一周（HTML 版）",
+        "category": "新人入学",
+        "keywords": "请假，考勤，报到",
+        "url": "/html/html/1794373776709-____-_____-___.html#p05"
+      }
+    },
+    {
+      "id": "doc:html/1794373776709-____-_____-___.html#p06",
+      "label": "认识团队与沟通方式",
+      "class": "DocSection",
+      "data": {
+        "title": "认识团队与沟通方式",
+        "docKey": "html/1794373776709-____-_____-___.html",
+        "sectionId": "p06",
+        "docTitle": "入社培训 · 新人第一周（HTML 版）",
+        "category": "新人入学",
+        "keywords": "请假，考勤，报到",
+        "url": "/html/html/1794373776709-____-_____-___.html#p06"
+      }
+    },
+    {
+      "id": "doc:html/1794373776709-____-_____-___.html#p07",
+      "label": "常见问题 FAQ",
+      "class": "DocSection",
+      "data": {
+        "title": "常见问题 FAQ",
+        "docKey": "html/1794373776709-____-_____-___.html",
+        "sectionId": "p07",
+        "docTitle": "入社培训 · 新人第一周（HTML 版）",
+        "category": "新人入学",
+        "keywords": "请假，考勤，报到",
+        "url": "/html/html/1794373776709-____-_____-___.html#p07"
+      }
+    },
+    {
+      "id": "doc:html/1794373776709-____-_____-___.html#p08",
+      "label": "第一周结束：确认与反馈",
+      "class": "DocSection",
+      "data": {
+        "title": "第一周结束：确认与反馈",
+        "docKey": "html/1794373776709-____-_____-___.html",
+        "sectionId": "p08",
+        "docTitle": "入社培训 · 新人第一周（HTML 版）",
+        "category": "新人入学",
+        "keywords": "请假，考勤，报到",
+        "url": "/html/html/1794373776709-____-_____-___.html#p08"
+      }
+    },
+    {
+      "id": "sp:site:zlsw",
+      "label": "战略参考资料（ZLSW）",
+      "class": "SharePointSource",
+      "data": {
+        "title": "战略参考资料",
+        "siteUrl": "https://sysmexcn.sharepoint.com/sites/ZLSW",
+        "extractionStatus": "未抽取",
+        "itemCount": null,
+        "lastSeen": "2026-11-19"
+      }
+    },
+    {
+      "id": "sp:lib:zlsw-documents",
+      "label": "Documents",
+      "class": "SharePointSource",
+      "data": {
+        "title": "Documents",
+        "siteUrl": "https://sysmexcn.sharepoint.com/sites/ZLSW/Shared Documents",
+        "driveId": "b!aaVeCCCvRECTX-pDWg6h8mQilLKLXWlPrWTAUp_AIVJIDZCKhIURSr-S9OmygXh_",
+        "extractionStatus": "未抽取",
+        "itemCount": null,
+        "lastSeen": "2026-11-19"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "domain:general",
+      "property": "domainHasNode",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "domain:hematology",
+      "property": "domainHasNode",
+      "target": "node:hematology-basics"
+    },
+    {
+      "source": "domain:hematology",
+      "property": "domainHasNode",
+      "target": "node:hematology-cbc"
+    },
+    {
+      "source": "domain:hematology",
+      "property": "domainHasNode",
+      "target": "node:hematology-morphology"
+    },
+    {
+      "source": "domain:hematology",
+      "property": "domainHasNode",
+      "target": "node:hematology-qc"
+    },
+    {
+      "source": "domain:urinalysis",
+      "property": "domainHasNode",
+      "target": "node:urinalysis-basics"
+    },
+    {
+      "source": "domain:urinalysis",
+      "property": "domainHasNode",
+      "target": "node:urinalysis-sediment"
+    },
+    {
+      "source": "domain:urinalysis",
+      "property": "domainHasNode",
+      "target": "node:urinalysis-biochem"
+    },
+    {
+      "source": "domain:coagulation",
+      "property": "domainHasNode",
+      "target": "node:coagulation-basics"
+    },
+    {
+      "source": "domain:coagulation",
+      "property": "domainHasNode",
+      "target": "node:coagulation-special"
+    },
+    {
+      "source": "domain:coagulation",
+      "property": "domainHasNode",
+      "target": "node:coagulation-monitoring"
+    },
+    {
+      "source": "domain:immunoassay",
+      "property": "domainHasNode",
+      "target": "node:immunoassay-basics"
+    },
+    {
+      "source": "domain:immunoassay",
+      "property": "domainHasNode",
+      "target": "node:immunoassay-tumor"
+    },
+    {
+      "source": "domain:immunoassay",
+      "property": "domainHasNode",
+      "target": "node:immunoassay-infection"
+    },
+    {
+      "source": "domain:immunoassay",
+      "property": "domainHasNode",
+      "target": "node:immunoassay-autoimmune"
+    },
+    {
+      "source": "domain:biochemistry",
+      "property": "domainHasNode",
+      "target": "node:biochemistry-basics"
+    },
+    {
+      "source": "domain:biochemistry",
+      "property": "domainHasNode",
+      "target": "node:biochemistry-liver"
+    },
+    {
+      "source": "domain:biochemistry",
+      "property": "domainHasNode",
+      "target": "node:biochemistry-renal"
+    },
+    {
+      "source": "domain:biochemistry",
+      "property": "domainHasNode",
+      "target": "node:biochemistry-lipid"
+    },
+    {
+      "source": "domain:molecular",
+      "property": "domainHasNode",
+      "target": "node:molecular-basics"
+    },
+    {
+      "source": "domain:molecular",
+      "property": "domainHasNode",
+      "target": "node:molecular-pcr"
+    },
+    {
+      "source": "domain:molecular",
+      "property": "domainHasNode",
+      "target": "node:molecular-ngs"
+    },
+    {
+      "source": "domain:molecular",
+      "property": "domainHasNode",
+      "target": "node:molecular-poct"
+    },
+    {
+      "source": "domain:molecular_poct",
+      "property": "domainHasNode",
+      "target": "node:molecular-poct-basics"
+    },
+    {
+      "source": "domain:molecular_poct",
+      "property": "domainHasNode",
+      "target": "node:molecular-poct-infection"
+    },
+    {
+      "source": "domain:flow_cytometry_cn",
+      "property": "domainHasNode",
+      "target": "node:flow-clinical-cn"
+    },
+    {
+      "source": "domain:market_landscape",
+      "property": "domainHasNode",
+      "target": "node:ivd-market-overview"
+    },
+    {
+      "source": "domain:market_landscape",
+      "property": "domainHasNode",
+      "target": "node:ivd-policy-landscape"
+    },
+    {
+      "source": "domain:market_landscape",
+      "property": "domainHasNode",
+      "target": "node:competitor-landscape"
+    },
+    {
+      "source": "domain:sales_strategy",
+      "property": "domainHasNode",
+      "target": "node:customer-segmentation"
+    },
+    {
+      "source": "domain:sales_strategy",
+      "property": "domainHasNode",
+      "target": "node:pricing-strategy"
+    },
+    {
+      "source": "domain:sales_strategy",
+      "property": "domainHasNode",
+      "target": "node:dealer-management"
+    },
+    {
+      "source": "domain:product_positioning",
+      "property": "domainHasNode",
+      "target": "node:hematology-selling"
+    },
+    {
+      "source": "domain:product_positioning",
+      "property": "domainHasNode",
+      "target": "node:coagulation-selling"
+    },
+    {
+      "source": "domain:product_positioning",
+      "property": "domainHasNode",
+      "target": "node:urinalysis-selling"
+    },
+    {
+      "source": "domain:product_positioning",
+      "property": "domainHasNode",
+      "target": "node:immunoassay-selling"
+    },
+    {
+      "source": "domain:product_positioning",
+      "property": "domainHasNode",
+      "target": "node:full-lab-selling"
+    },
+    {
+      "source": "domain:business_skills",
+      "property": "domainHasNode",
+      "target": "node:customer-kpi-sales"
+    },
+    {
+      "source": "domain:business_skills",
+      "property": "domainHasNode",
+      "target": "node:business-etiquette"
+    },
+    {
+      "source": "node:six-systems-overview",
+      "property": "nodeHasCourse",
+      "target": "course:8d44186a261d40488862714f28439f92"
+    },
+    {
+      "source": "node:hematology-basics",
+      "property": "nodeHasCourse",
+      "target": "course:2f9b477f894e483bb19ba378c32c8b06"
+    },
+    {
+      "source": "node:hematology-basics",
+      "property": "nodeHasCourse",
+      "target": "course:d9f7b137e33f4005bf66cf7e01c44202"
+    },
+    {
+      "source": "node:urinalysis-basics",
+      "property": "nodeHasCourse",
+      "target": "course:80cc7925937b4c45849a807888641ea3"
+    },
+    {
+      "source": "node:coagulation-basics",
+      "property": "nodeHasCourse",
+      "target": "course:429afc4400fe43a4a26293cfa15ce271"
+    },
+    {
+      "source": "node:immunoassay-basics",
+      "property": "nodeHasCourse",
+      "target": "course:2a737a2bd5a74c399f76b0c6aca00537"
+    },
+    {
+      "source": "node:biochemistry-basics",
+      "property": "nodeHasCourse",
+      "target": "course:ea3c109a41be4439aa37f40348a75833"
+    },
+    {
+      "source": "node:flow-clinical-cn",
+      "property": "nodeHasCourse",
+      "target": "course:56e78150e601494582dfe13066419307"
+    },
+    {
+      "source": "node:full-lab-selling",
+      "property": "nodeHasCourse",
+      "target": "course:010b3b96fbe34cd6963203ab1896a702"
+    },
+    {
+      "source": "node:hematology-basics",
+      "property": "nodePrerequisite",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "node:hematology-basics",
+      "property": "nodeExtends",
+      "target": "node:hematology-cbc"
+    },
+    {
+      "source": "node:hematology-basics",
+      "property": "nodeExtends",
+      "target": "node:hematology-morphology"
+    },
+    {
+      "source": "node:hematology-cbc",
+      "property": "nodePrerequisite",
+      "target": "node:hematology-basics"
+    },
+    {
+      "source": "node:hematology-cbc",
+      "property": "nodeParallel",
+      "target": "node:hematology-morphology"
+    },
+    {
+      "source": "node:hematology-morphology",
+      "property": "nodePrerequisite",
+      "target": "node:hematology-basics"
+    },
+    {
+      "source": "node:hematology-morphology",
+      "property": "nodeParallel",
+      "target": "node:hematology-cbc"
+    },
+    {
+      "source": "node:hematology-qc",
+      "property": "nodePrerequisite",
+      "target": "node:hematology-basics"
+    },
+    {
+      "source": "node:urinalysis-basics",
+      "property": "nodePrerequisite",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "node:urinalysis-basics",
+      "property": "nodeExtends",
+      "target": "node:urinalysis-sediment"
+    },
+    {
+      "source": "node:urinalysis-basics",
+      "property": "nodeExtends",
+      "target": "node:urinalysis-biochem"
+    },
+    {
+      "source": "node:urinalysis-sediment",
+      "property": "nodePrerequisite",
+      "target": "node:urinalysis-basics"
+    },
+    {
+      "source": "node:urinalysis-sediment",
+      "property": "nodeParallel",
+      "target": "node:urinalysis-biochem"
+    },
+    {
+      "source": "node:urinalysis-biochem",
+      "property": "nodePrerequisite",
+      "target": "node:urinalysis-basics"
+    },
+    {
+      "source": "node:urinalysis-biochem",
+      "property": "nodeParallel",
+      "target": "node:urinalysis-sediment"
+    },
+    {
+      "source": "node:coagulation-basics",
+      "property": "nodePrerequisite",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "node:coagulation-basics",
+      "property": "nodeExtends",
+      "target": "node:coagulation-special"
+    },
+    {
+      "source": "node:coagulation-basics",
+      "property": "nodeExtends",
+      "target": "node:coagulation-monitoring"
+    },
+    {
+      "source": "node:coagulation-special",
+      "property": "nodePrerequisite",
+      "target": "node:coagulation-basics"
+    },
+    {
+      "source": "node:coagulation-special",
+      "property": "nodeParallel",
+      "target": "node:coagulation-monitoring"
+    },
+    {
+      "source": "node:coagulation-monitoring",
+      "property": "nodePrerequisite",
+      "target": "node:coagulation-basics"
+    },
+    {
+      "source": "node:coagulation-monitoring",
+      "property": "nodeParallel",
+      "target": "node:coagulation-special"
+    },
+    {
+      "source": "node:immunoassay-basics",
+      "property": "nodePrerequisite",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "node:immunoassay-basics",
+      "property": "nodeExtends",
+      "target": "node:immunoassay-tumor"
+    },
+    {
+      "source": "node:immunoassay-basics",
+      "property": "nodeExtends",
+      "target": "node:immunoassay-infection"
+    },
+    {
+      "source": "node:immunoassay-basics",
+      "property": "nodeExtends",
+      "target": "node:immunoassay-autoimmune"
+    },
+    {
+      "source": "node:immunoassay-tumor",
+      "property": "nodePrerequisite",
+      "target": "node:immunoassay-basics"
+    },
+    {
+      "source": "node:immunoassay-tumor",
+      "property": "nodeParallel",
+      "target": "node:immunoassay-infection"
+    },
+    {
+      "source": "node:immunoassay-tumor",
+      "property": "nodeParallel",
+      "target": "node:immunoassay-autoimmune"
+    },
+    {
+      "source": "node:immunoassay-infection",
+      "property": "nodePrerequisite",
+      "target": "node:immunoassay-basics"
+    },
+    {
+      "source": "node:immunoassay-infection",
+      "property": "nodeParallel",
+      "target": "node:immunoassay-tumor"
+    },
+    {
+      "source": "node:immunoassay-infection",
+      "property": "nodeParallel",
+      "target": "node:immunoassay-autoimmune"
+    },
+    {
+      "source": "node:immunoassay-autoimmune",
+      "property": "nodePrerequisite",
+      "target": "node:immunoassay-basics"
+    },
+    {
+      "source": "node:immunoassay-autoimmune",
+      "property": "nodeParallel",
+      "target": "node:immunoassay-tumor"
+    },
+    {
+      "source": "node:immunoassay-autoimmune",
+      "property": "nodeParallel",
+      "target": "node:immunoassay-infection"
+    },
+    {
+      "source": "node:biochemistry-basics",
+      "property": "nodePrerequisite",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "node:biochemistry-basics",
+      "property": "nodeExtends",
+      "target": "node:biochemistry-liver"
+    },
+    {
+      "source": "node:biochemistry-basics",
+      "property": "nodeExtends",
+      "target": "node:biochemistry-renal"
+    },
+    {
+      "source": "node:biochemistry-basics",
+      "property": "nodeExtends",
+      "target": "node:biochemistry-lipid"
+    },
+    {
+      "source": "node:biochemistry-liver",
+      "property": "nodePrerequisite",
+      "target": "node:biochemistry-basics"
+    },
+    {
+      "source": "node:biochemistry-liver",
+      "property": "nodeParallel",
+      "target": "node:biochemistry-renal"
+    },
+    {
+      "source": "node:biochemistry-liver",
+      "property": "nodeParallel",
+      "target": "node:biochemistry-lipid"
+    },
+    {
+      "source": "node:biochemistry-renal",
+      "property": "nodePrerequisite",
+      "target": "node:biochemistry-basics"
+    },
+    {
+      "source": "node:biochemistry-renal",
+      "property": "nodeParallel",
+      "target": "node:biochemistry-liver"
+    },
+    {
+      "source": "node:biochemistry-renal",
+      "property": "nodeParallel",
+      "target": "node:biochemistry-lipid"
+    },
+    {
+      "source": "node:biochemistry-lipid",
+      "property": "nodePrerequisite",
+      "target": "node:biochemistry-basics"
+    },
+    {
+      "source": "node:biochemistry-lipid",
+      "property": "nodeParallel",
+      "target": "node:biochemistry-liver"
+    },
+    {
+      "source": "node:biochemistry-lipid",
+      "property": "nodeParallel",
+      "target": "node:biochemistry-renal"
+    },
+    {
+      "source": "node:molecular-basics",
+      "property": "nodePrerequisite",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "node:molecular-basics",
+      "property": "nodeExtends",
+      "target": "node:molecular-pcr"
+    },
+    {
+      "source": "node:molecular-basics",
+      "property": "nodeExtends",
+      "target": "node:molecular-ngs"
+    },
+    {
+      "source": "node:molecular-basics",
+      "property": "nodeExtends",
+      "target": "node:molecular-poct"
+    },
+    {
+      "source": "node:molecular-pcr",
+      "property": "nodePrerequisite",
+      "target": "node:molecular-basics"
+    },
+    {
+      "source": "node:molecular-pcr",
+      "property": "nodeParallel",
+      "target": "node:molecular-ngs"
+    },
+    {
+      "source": "node:molecular-pcr",
+      "property": "nodeParallel",
+      "target": "node:molecular-poct"
+    },
+    {
+      "source": "node:molecular-ngs",
+      "property": "nodePrerequisite",
+      "target": "node:molecular-basics"
+    },
+    {
+      "source": "node:molecular-ngs",
+      "property": "nodeParallel",
+      "target": "node:molecular-pcr"
+    },
+    {
+      "source": "node:molecular-ngs",
+      "property": "nodeParallel",
+      "target": "node:molecular-poct"
+    },
+    {
+      "source": "node:molecular-poct",
+      "property": "nodePrerequisite",
+      "target": "node:molecular-basics"
+    },
+    {
+      "source": "node:molecular-poct",
+      "property": "nodeParallel",
+      "target": "node:molecular-pcr"
+    },
+    {
+      "source": "node:molecular-poct",
+      "property": "nodeParallel",
+      "target": "node:molecular-ngs"
+    },
+    {
+      "source": "node:molecular-poct-basics",
+      "property": "nodePrerequisite",
+      "target": "node:molecular-basics"
+    },
+    {
+      "source": "node:molecular-poct-basics",
+      "property": "nodeExtends",
+      "target": "node:molecular-poct-infection"
+    },
+    {
+      "source": "node:molecular-poct-infection",
+      "property": "nodePrerequisite",
+      "target": "node:molecular-poct-basics"
+    },
+    {
+      "source": "node:flow-clinical-cn",
+      "property": "nodePrerequisite",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "node:flow-clinical-cn",
+      "property": "nodeParallel",
+      "target": "node:immunoassay-basics"
+    },
+    {
+      "source": "node:ivd-market-overview",
+      "property": "nodePrerequisite",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "node:ivd-market-overview",
+      "property": "nodeExtends",
+      "target": "node:ivd-policy-landscape"
+    },
+    {
+      "source": "node:ivd-market-overview",
+      "property": "nodeExtends",
+      "target": "node:competitor-landscape"
+    },
+    {
+      "source": "node:ivd-policy-landscape",
+      "property": "nodePrerequisite",
+      "target": "node:ivd-market-overview"
+    },
+    {
+      "source": "node:ivd-policy-landscape",
+      "property": "nodeParallel",
+      "target": "node:competitor-landscape"
+    },
+    {
+      "source": "node:competitor-landscape",
+      "property": "nodePrerequisite",
+      "target": "node:ivd-market-overview"
+    },
+    {
+      "source": "node:competitor-landscape",
+      "property": "nodeParallel",
+      "target": "node:ivd-policy-landscape"
+    },
+    {
+      "source": "node:customer-segmentation",
+      "property": "nodePrerequisite",
+      "target": "node:ivd-market-overview"
+    },
+    {
+      "source": "node:customer-segmentation",
+      "property": "nodeExtends",
+      "target": "node:pricing-strategy"
+    },
+    {
+      "source": "node:customer-segmentation",
+      "property": "nodeExtends",
+      "target": "node:dealer-management"
+    },
+    {
+      "source": "node:pricing-strategy",
+      "property": "nodePrerequisite",
+      "target": "node:customer-segmentation"
+    },
+    {
+      "source": "node:pricing-strategy",
+      "property": "nodePrerequisite",
+      "target": "node:competitor-landscape"
+    },
+    {
+      "source": "node:pricing-strategy",
+      "property": "nodeParallel",
+      "target": "node:dealer-management"
+    },
+    {
+      "source": "node:dealer-management",
+      "property": "nodePrerequisite",
+      "target": "node:customer-segmentation"
+    },
+    {
+      "source": "node:dealer-management",
+      "property": "nodeParallel",
+      "target": "node:pricing-strategy"
+    },
+    {
+      "source": "node:hematology-selling",
+      "property": "nodePrerequisite",
+      "target": "node:hematology-basics"
+    },
+    {
+      "source": "node:hematology-selling",
+      "property": "nodePrerequisite",
+      "target": "node:competitor-landscape"
+    },
+    {
+      "source": "node:coagulation-selling",
+      "property": "nodePrerequisite",
+      "target": "node:coagulation-basics"
+    },
+    {
+      "source": "node:coagulation-selling",
+      "property": "nodePrerequisite",
+      "target": "node:competitor-landscape"
+    },
+    {
+      "source": "node:urinalysis-selling",
+      "property": "nodePrerequisite",
+      "target": "node:urinalysis-basics"
+    },
+    {
+      "source": "node:urinalysis-selling",
+      "property": "nodePrerequisite",
+      "target": "node:competitor-landscape"
+    },
+    {
+      "source": "node:immunoassay-selling",
+      "property": "nodePrerequisite",
+      "target": "node:immunoassay-basics"
+    },
+    {
+      "source": "node:immunoassay-selling",
+      "property": "nodePrerequisite",
+      "target": "node:competitor-landscape"
+    },
+    {
+      "source": "node:full-lab-selling",
+      "property": "nodePrerequisite",
+      "target": "node:hematology-selling"
+    },
+    {
+      "source": "node:full-lab-selling",
+      "property": "nodePrerequisite",
+      "target": "node:coagulation-selling"
+    },
+    {
+      "source": "node:full-lab-selling",
+      "property": "nodePrerequisite",
+      "target": "node:immunoassay-selling"
+    },
+    {
+      "source": "node:customer-kpi-sales",
+      "property": "nodePrerequisite",
+      "target": "node:customer-segmentation"
+    },
+    {
+      "source": "node:hematology-qc",
+      "property": "nodeParallel",
+      "target": "node:biochemistry-basics",
+      "data": {
+        "note": "质控体系通用",
+        "crossDomain": true
+      }
+    },
+    {
+      "source": "node:coagulation-basics",
+      "property": "nodePrerequisite",
+      "target": "node:hematology-basics",
+      "data": {
+        "note": "凝血以血液学为基础",
+        "crossDomain": true
+      }
+    },
+    {
+      "source": "node:immunoassay-basics",
+      "property": "nodePrerequisite",
+      "target": "node:biochemistry-basics",
+      "data": {
+        "note": "免疫比浊基于生化原理",
+        "crossDomain": true
+      }
+    },
+    {
+      "source": "node:molecular-basics",
+      "property": "nodeParallel",
+      "target": "node:immunoassay-basics",
+      "data": {
+        "note": "分子与免疫互补",
+        "crossDomain": true
+      }
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesDomain",
+      "target": "domain:business_skills"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesDomain",
+      "target": "domain:market_landscape"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesDomain",
+      "target": "domain:product_positioning"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesDomain",
+      "target": "domain:sales_strategy"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesNode",
+      "target": "node:ivd-market-overview"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesNode",
+      "target": "node:ivd-policy-landscape"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesNode",
+      "target": "node:competitor-landscape"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesNode",
+      "target": "node:customer-segmentation"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesNode",
+      "target": "node:pricing-strategy"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesNode",
+      "target": "node:dealer-management"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesNode",
+      "target": "node:hematology-selling"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesNode",
+      "target": "node:coagulation-selling"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesNode",
+      "target": "node:urinalysis-selling"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesNode",
+      "target": "node:immunoassay-selling"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesNode",
+      "target": "node:full-lab-selling"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesNode",
+      "target": "node:customer-kpi-sales"
+    },
+    {
+      "source": "role:sales",
+      "property": "roleIncludesNode",
+      "target": "node:business-etiquette"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesDomain",
+      "target": "domain:biochemistry"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesDomain",
+      "target": "domain:coagulation"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesDomain",
+      "target": "domain:flow_cytometry_cn"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesDomain",
+      "target": "domain:general"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesDomain",
+      "target": "domain:hematology"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesDomain",
+      "target": "domain:immunoassay"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesDomain",
+      "target": "domain:molecular"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesDomain",
+      "target": "domain:molecular_poct"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesDomain",
+      "target": "domain:urinalysis"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:hematology-basics"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:hematology-cbc"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:hematology-morphology"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:hematology-qc"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:urinalysis-basics"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:urinalysis-sediment"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:urinalysis-biochem"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:coagulation-basics"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:coagulation-special"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:coagulation-monitoring"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:immunoassay-basics"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:immunoassay-tumor"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:immunoassay-infection"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:immunoassay-autoimmune"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:biochemistry-basics"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:biochemistry-liver"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:biochemistry-renal"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:biochemistry-lipid"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:molecular-basics"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:molecular-pcr"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:molecular-ngs"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:molecular-poct"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:molecular-poct-basics"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:molecular-poct-infection"
+    },
+    {
+      "source": "role:application",
+      "property": "roleIncludesNode",
+      "target": "node:flow-clinical-cn"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesDomain",
+      "target": "domain:biochemistry"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesDomain",
+      "target": "domain:coagulation"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesDomain",
+      "target": "domain:general"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesDomain",
+      "target": "domain:hematology"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesDomain",
+      "target": "domain:immunoassay"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesDomain",
+      "target": "domain:molecular"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesDomain",
+      "target": "domain:urinalysis"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesNode",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesNode",
+      "target": "node:hematology-basics"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesNode",
+      "target": "node:hematology-qc"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesNode",
+      "target": "node:urinalysis-basics"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesNode",
+      "target": "node:coagulation-basics"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesNode",
+      "target": "node:immunoassay-basics"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesNode",
+      "target": "node:biochemistry-basics"
+    },
+    {
+      "source": "role:service",
+      "property": "roleIncludesNode",
+      "target": "node:molecular-basics"
+    },
+    {
+      "source": "path:lab_technician",
+      "property": "pathIncludesNode",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "path:lab_technician",
+      "property": "pathIncludesNode",
+      "target": "node:hematology-basics"
+    },
+    {
+      "source": "path:lab_technician",
+      "property": "pathIncludesNode",
+      "target": "node:urinalysis-basics"
+    },
+    {
+      "source": "path:lab_technician",
+      "property": "pathIncludesNode",
+      "target": "node:coagulation-basics"
+    },
+    {
+      "source": "path:lab_technician",
+      "property": "pathIncludesNode",
+      "target": "node:immunoassay-basics"
+    },
+    {
+      "source": "path:lab_technician",
+      "property": "pathIncludesNode",
+      "target": "node:biochemistry-basics"
+    },
+    {
+      "source": "path:lab_technician",
+      "property": "pathIncludesNode",
+      "target": "node:molecular-basics"
+    },
+    {
+      "source": "path:service_engineer",
+      "property": "pathIncludesNode",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "path:service_engineer",
+      "property": "pathIncludesNode",
+      "target": "node:hematology-basics"
+    },
+    {
+      "source": "path:service_engineer",
+      "property": "pathIncludesNode",
+      "target": "node:hematology-qc"
+    },
+    {
+      "source": "path:service_engineer",
+      "property": "pathIncludesNode",
+      "target": "node:urinalysis-basics"
+    },
+    {
+      "source": "path:service_engineer",
+      "property": "pathIncludesNode",
+      "target": "node:coagulation-basics"
+    },
+    {
+      "source": "path:service_engineer",
+      "property": "pathIncludesNode",
+      "target": "node:immunoassay-basics"
+    },
+    {
+      "source": "path:service_engineer",
+      "property": "pathIncludesNode",
+      "target": "node:biochemistry-basics"
+    },
+    {
+      "source": "path:service_engineer",
+      "property": "pathIncludesNode",
+      "target": "node:molecular-basics"
+    },
+    {
+      "source": "path:pathologist",
+      "property": "pathIncludesNode",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "path:pathologist",
+      "property": "pathIncludesNode",
+      "target": "node:hematology-basics"
+    },
+    {
+      "source": "path:pathologist",
+      "property": "pathIncludesNode",
+      "target": "node:hematology-morphology"
+    },
+    {
+      "source": "path:pathologist",
+      "property": "pathIncludesNode",
+      "target": "node:immunoassay-tumor"
+    },
+    {
+      "source": "path:pathologist",
+      "property": "pathIncludesNode",
+      "target": "node:immunoassay-autoimmune"
+    },
+    {
+      "source": "path:pathologist",
+      "property": "pathIncludesNode",
+      "target": "node:hematology-cbc"
+    },
+    {
+      "source": "path:pathologist",
+      "property": "pathIncludesNode",
+      "target": "node:coagulation-special"
+    },
+    {
+      "source": "path:clinical_flow",
+      "property": "pathIncludesNode",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "path:clinical_flow",
+      "property": "pathIncludesNode",
+      "target": "node:immunoassay-basics"
+    },
+    {
+      "source": "path:clinical_flow",
+      "property": "pathIncludesNode",
+      "target": "node:flow-clinical-cn"
+    },
+    {
+      "source": "path:clinical_flow",
+      "property": "pathIncludesNode",
+      "target": "node:hematology-morphology"
+    },
+    {
+      "source": "path:sales_newbie",
+      "property": "pathIncludesNode",
+      "target": "node:six-systems-overview"
+    },
+    {
+      "source": "path:sales_newbie",
+      "property": "pathIncludesNode",
+      "target": "node:business-etiquette"
+    },
+    {
+      "source": "path:sales_newbie",
+      "property": "pathIncludesNode",
+      "target": "node:customer-kpi-sales"
+    },
+    {
+      "source": "path:sales_newbie",
+      "property": "pathIncludesNode",
+      "target": "node:ivd-market-overview"
+    },
+    {
+      "source": "path:sales_newbie",
+      "property": "pathIncludesNode",
+      "target": "node:hematology-selling"
+    },
+    {
+      "source": "path:sales_newbie",
+      "property": "pathIncludesNode",
+      "target": "node:urinalysis-selling"
+    },
+    {
+      "source": "path:sales_senior",
+      "property": "pathIncludesNode",
+      "target": "node:customer-segmentation"
+    },
+    {
+      "source": "path:sales_senior",
+      "property": "pathIncludesNode",
+      "target": "node:pricing-strategy"
+    },
+    {
+      "source": "path:sales_senior",
+      "property": "pathIncludesNode",
+      "target": "node:dealer-management"
+    },
+    {
+      "source": "path:sales_senior",
+      "property": "pathIncludesNode",
+      "target": "node:coagulation-selling"
+    },
+    {
+      "source": "path:sales_senior",
+      "property": "pathIncludesNode",
+      "target": "node:immunoassay-selling"
+    },
+    {
+      "source": "path:sales_senior",
+      "property": "pathIncludesNode",
+      "target": "node:full-lab-selling"
+    },
+    {
+      "source": "path:sales_senior",
+      "property": "pathIncludesNode",
+      "target": "node:ivd-policy-landscape"
+    },
+    {
+      "source": "domain:general",
+      "property": "domainHasDoc",
+      "target": "doc:html/1794373776709-____-_____-___.html#p00",
+      "data": {
+        "matchReason": "分类=新人入学→通识基础"
+      }
+    },
+    {
+      "source": "domain:general",
+      "property": "domainHasDoc",
+      "target": "doc:html/1794373776709-____-_____-___.html#p01",
+      "data": {
+        "matchReason": "分类=新人入学→通识基础"
+      }
+    },
+    {
+      "source": "domain:general",
+      "property": "domainHasDoc",
+      "target": "doc:html/1794373776709-____-_____-___.html#p02",
+      "data": {
+        "matchReason": "分类=新人入学→通识基础"
+      }
+    },
+    {
+      "source": "domain:general",
+      "property": "domainHasDoc",
+      "target": "doc:html/1794373776709-____-_____-___.html#p03",
+      "data": {
+        "matchReason": "分类=新人入学→通识基础"
+      }
+    },
+    {
+      "source": "domain:general",
+      "property": "domainHasDoc",
+      "target": "doc:html/1794373776709-____-_____-___.html#p04",
+      "data": {
+        "matchReason": "分类=新人入学→通识基础"
+      }
+    },
+    {
+      "source": "domain:general",
+      "property": "domainHasDoc",
+      "target": "doc:html/1794373776709-____-_____-___.html#p05",
+      "data": {
+        "matchReason": "分类=新人入学→通识基础"
+      }
+    },
+    {
+      "source": "domain:general",
+      "property": "domainHasDoc",
+      "target": "doc:html/1794373776709-____-_____-___.html#p06",
+      "data": {
+        "matchReason": "分类=新人入学→通识基础"
+      }
+    },
+    {
+      "source": "domain:general",
+      "property": "domainHasDoc",
+      "target": "doc:html/1794373776709-____-_____-___.html#p07",
+      "data": {
+        "matchReason": "分类=新人入学→通识基础"
+      }
+    },
+    {
+      "source": "domain:general",
+      "property": "domainHasDoc",
+      "target": "doc:html/1794373776709-____-_____-___.html#p08",
+      "data": {
+        "matchReason": "分类=新人入学→通识基础"
+      }
+    },
+    {
+      "source": "sp:site:zlsw",
+      "property": "siteHasLibrary",
+      "target": "sp:lib:zlsw-documents"
+    }
+  ]
+}
