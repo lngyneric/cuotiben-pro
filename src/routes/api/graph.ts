@@ -3,7 +3,7 @@ import { like } from 'drizzle-orm';
 
 import { getAuth } from '@/core/auth';
 import { db } from '@/core/db';
-import { post } from '@/config/db/schema';
+import { graphCourseLink, post } from '@/config/db/schema';
 import { docSectionUrl, loadDocIndex } from '@/modules/ai-assistant/doc-index';
 import { respData, respErr } from '@/lib/resp';
 
@@ -12,6 +12,9 @@ import { respData, respErr } from '@/lib/resp';
  *
  * 页面静态读 src/content/graph/graph.json（骨架），再调本接口覆盖状态：
  * - courses：post 表实时 slug/title/status（已发布／草稿；不在表里即未入库）
+ * - links：graph_course_link 表，定时同步把 blog 已发布课程按关键词关联到
+ *   节点（静态 TREE 链接仍在 graph.json 里，本接口只返回动态关联；页面合并
+ *   两边去重后展示，课程总数不再是静态 9 门）
  * - docs：loadDocIndex() 实时 section 清单（有更新时页面上显示“有更新”）
  * 失败时调用方按构建时状态降级展示，不阻塞页面。
  */
@@ -29,7 +32,16 @@ async function GET({ request }: { request: Request }) {
     .from(post)
     .where(like(post.slug, 'course-%'));
 
+  const links = await db()
+    .select({
+      nodeId: graphCourseLink.nodeId,
+      courseBid: graphCourseLink.courseBid,
+      score: graphCourseLink.score,
+    })
+    .from(graphCourseLink);
+
   const sections = await loadDocIndex().catch(() => []);
+  const published = rows.filter((r) => r.status === 'published');
   return respData({
     courses: rows.map((r) => ({
       bid: r.slug.replace(/^course-/, ''),
@@ -37,6 +49,12 @@ async function GET({ request }: { request: Request }) {
       title: r.title ?? '',
       status: r.status,
     })),
+    links,
+    counts: {
+      publishedCourses: published.length,
+      linkedCourses: new Set(links.map((l) => l.courseBid)).size,
+      linkTotal: links.length,
+    },
     docs: sections.map((s) => ({
       docKey: s.docKey,
       docTitle: s.docTitle,

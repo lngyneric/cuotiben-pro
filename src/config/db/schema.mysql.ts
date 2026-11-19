@@ -670,3 +670,58 @@ export const userStatusSummary = table(
 
 export type UserStatusSummary = typeof userStatusSummary.$inferSelect;
 export type NewUserStatusSummary = typeof userStatusSummary.$inferInsert;
+
+// ─── Graph: 角色人员对应表（企微智能表快照，人员轴数据源）───────────────
+// 由主机定时脚本 sync-role-person-map.py 从学分制带教智能表「角色人员对应表」
+// 全量同步；一人一行，主键 id = wecom_user_id 或 `name:<姓名>`（无 id 时）。
+export const rolePersonMap = table(
+  'role_person_map',
+  {
+    id: varchar191('id').primaryKey(),
+    name: varchar191('name').notNull(),
+    employeeNo: varchar191('employee_no'),
+    wecomUserId: varchar191('wecom_user_id'),
+    role: varchar191('role').notNull(), // 学员 | 导师 | 两者都是
+    mentorTypes: text('mentor_types'), // JSON 数组：带教负责人 / 大客户带教 / 生免带教
+    mentees: text('mentees'), // JSON 数组：[{name, wecomUserId, employeeNo}]
+    mentors: text('mentors'), // JSON 数组：[{name, wecomUserId, employeeNo, type}]
+    updatedAt: timestamp('updated_at', { fsp: 3 })
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (t) => [
+    index('idx_role_person_wecom').on(t.wecomUserId),
+    index('idx_role_person_employee').on(t.employeeNo),
+    index('idx_role_person_role').on(t.role),
+  ]
+);
+
+export type RolePersonMap = typeof rolePersonMap.$inferSelect;
+export type NewRolePersonMap = typeof rolePersonMap.$inferInsert;
+
+// ─── Graph: 课程—节点关联（定时同步，课程总数不再是静态 9 门）────────────
+// 由主机定时脚本 sync-graph-courses.py 按关键词把 blog 已发布课程关联到图谱
+// 节点；一人一行，主键 id = `link:<nodeId>:<courseBid>`；静态 TREE 链接仍在
+// graph.json 里，本表只存动态关联，页面合并两边去重后展示。
+export const graphCourseLink = table(
+  'graph_course_link',
+  {
+    id: varchar191('id').primaryKey(),
+    nodeId: varchar191('node_id').notNull(),
+    courseBid: varchar191('course_bid').notNull(),
+    score: integer('score').notNull().default(0),
+    source: varchar191('source').notNull().default('auto'),
+    updatedAt: timestamp('updated_at', { fsp: 3 })
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (t) => [
+    index('idx_graph_link_node').on(t.nodeId),
+    index('idx_graph_link_course').on(t.courseBid),
+  ]
+);
+
+export type GraphCourseLink = typeof graphCourseLink.$inferSelect;
+export type NewGraphCourseLink = typeof graphCourseLink.$inferInsert;

@@ -46,6 +46,48 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-19: Knowledge graph — visual view, stage axis, people axis, live course links
+
+### Action required
+
+- **New tables** `role_person_map` and `graph_course_link` (three dialect
+  templates + `schema.ts`). Production: create them directly in the blog
+  database (script `~/workspace/tools/create-graph-tables.cjs`), or
+  `db:generate` + `db:migrate`.
+- **Host crons** (server `/home/sysmex/graph-sync/`, hourly):
+  `sync-graph-courses.py` at :35 (keyword-links published blog courses to
+  graph nodes → `graph_course_link`) and `sync-role-person-map.py` at :45
+  (WeCom role-person map → `role_person_map`). Both have `--dry-run` and a
+  Node loader that full-replaces the table in a transaction.
+
+### New, no action needed
+
+- Graph page (`/wiki/graph`) gains three axes: 领域 (list / visual-graph
+  toggle, persisted as `graph-view-mode`), 带教阶段 (sales/technical/lab ×
+  4 stages from `ivd-tree.json learning_paths_detail`, node → domain detail),
+  人员 (admin sees all mentors, a mentor sees only their own mentees;
+  mapping is verified against `role_person_map`, flags from
+  `user_status_summary`, rule-based course recommendation — no LLM).
+- New API `GET /api/graph/people` (session auth; admin or mentor only, else
+  403). `GET /api/graph` now also returns `links` (dynamic course links)
+  and `counts` (published/linked course totals); the page's course count is
+  live instead of the static 9 from TREE.
+- Visual graph is a dependency-free SVG force layout
+  (`src/routes/graph/-visual-graph.tsx`): drag nodes, wheel zoom, drag
+  background to pan, click a node for its detail, click a course to open it.
+- Fixed: clicking a course button at the bottom of the page no longer leaves
+  the viewport at the bottom — the detail section scrolls into view.
+
+### Known limits
+
+- Stage view skips nodes that are in `learning_paths_detail` but not in
+  `graph.json` (currently 1: `hematology-quality`); the skipped count is
+  shown at the bottom of the stage view.
+- The people recommendation is a fixed rule (pending_confirm → no course;
+  no_course_activity → first published course of stage 1; otherwise the
+  first untaken published course in path order). It does not read the
+  mentor's free-text comments.
+
 ## 2026-11-19: Notepad drops subject categories, adds CSV import
 
 ### Action required
