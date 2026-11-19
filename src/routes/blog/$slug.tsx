@@ -1,16 +1,21 @@
+import { useMutation } from '@tanstack/react-query';
 import { createFileRoute, notFound } from '@tanstack/react-router';
 import { MDXProvider } from '@mdx-js/react';
 import { ArrowLeft, Calendar } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Link } from '@/core/i18n/navigation';
 import { localizedAbsoluteUrl } from '@/core/i18n/urls';
 import { envConfigs } from '@/config';
+import { apiPost } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 import { m } from '@/paraglide/messages.js';
 import { getLocale } from '@/paraglide/runtime.js';
 import { Footer } from '@/blocks/footer';
 import { Header } from '@/blocks/header';
 import { MarkdownContent } from '@/components/markdown-content';
 import { mdxComponents } from '@/components/mdx-components';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { formatPostDate, loadLocalPost } from '@/content/posts';
 import { getBlogPostFn } from '@/content/posts/server';
 
@@ -46,6 +51,20 @@ function BlogPostPage() {
   const LocalContent =
     post.source === 'local' ? loadLocalPost(post.slug, locale)?.default : null;
 
+  // 草稿预览：管理员在文章页确认内容后直接发布
+  const publishMutation = useMutation({
+    mutationFn: () =>
+      apiPost<{ updated: number }>('/api/admin/posts/batch-status', {
+        ids: [post.id as string],
+        status: 'published',
+      }),
+    onSuccess: () => {
+      toast.success(m['blog.draft_preview_published']());
+      window.location.reload();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // 成员专属文章且未登录：不渲染正文，提示登录
   if (post.requiresAuth) {
     return (
@@ -79,6 +98,30 @@ function BlogPostPage() {
     <div className="bg-background text-foreground flex min-h-screen flex-col">
       <Header />
       <main className="flex-1 px-6 py-12 md:px-8 md:py-16">
+        {post.isDraftPreview && post.id && (
+          <div className="mx-auto mb-6 max-w-3xl rounded-md border border-amber-500/40 bg-amber-500/10 p-4">
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+              {m['blog.draft_preview_notice']()}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                disabled={publishMutation.isPending}
+                onClick={() => publishMutation.mutate()}
+              >
+                {m['blog.draft_preview_publish']()}
+              </Button>
+              <Link
+                href="/admin/posts"
+                className={cn(
+                  buttonVariants({ variant: 'outline', size: 'sm' })
+                )}
+              >
+                {m['blog.draft_preview_back_to_posts']()}
+              </Link>
+            </div>
+          </div>
+        )}
         <article className="mx-auto max-w-3xl">
           <Link
             href="/blog"

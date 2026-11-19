@@ -7,7 +7,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Eye, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
@@ -297,9 +297,18 @@ function PostsPage() {
     },
     {
       header: m['admin.posts.actions_col'](),
-      className: 'w-[80px]',
+      className: 'w-[110px]',
       cell: (p) => (
         <div className="flex gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            title={m['admin.posts.preview']()}
+            onClick={() => window.open(`/blog/${p.slug}`, '_blank')}
+          >
+            <Eye className="size-3" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
