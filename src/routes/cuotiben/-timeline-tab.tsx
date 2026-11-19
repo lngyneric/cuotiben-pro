@@ -3,11 +3,14 @@
 // 已完成/待处理徽标。点开看全文（内容、我的答案、答案、原理、笔记、图），
 // 每条带锚点 id（#note-<id>）可直达。只改页面 UI，不动 API、不动数据库。
 // 注意：路由文件按约定用 `-` 前缀拆分（colocated non-route files）
+// 主题：跟站内其它页一致，走 ShipAny 统一主题 token（bg-card/border-border/
+// bg-primary/bg-muted/text-muted-foreground 等），不用写死的 slate/blue 配色。
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiPost } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 import { m } from '@/paraglide/messages.js';
 
 import type { Card } from './-types';
@@ -67,24 +70,24 @@ export function TimelineTab({
           value={kw}
           onChange={(e) => setKw(e.target.value)}
           placeholder={m['cuotiben.search_placeholder']()}
-          className="min-h-[44px] flex-1 rounded-lg border px-3"
+          className="border-border bg-background min-h-[44px] flex-1 rounded-lg border px-3"
         />
         <button
           onClick={() => setShowAdd(!showAdd)}
-          className="min-h-[44px] shrink-0 rounded-lg bg-blue-600 px-4 text-white"
+          className="bg-primary text-primary-foreground min-h-[44px] shrink-0 rounded-lg px-4"
         >
           {m['cuotiben.btn_add']()}
         </button>
         <button
           onClick={() => setShowImport(!showImport)}
-          className="min-h-[44px] shrink-0 rounded-lg bg-slate-100 px-4 text-sm text-slate-600"
+          className="bg-muted text-muted-foreground min-h-[44px] shrink-0 rounded-lg px-4 text-sm"
         >
           {m['cuotiben.btn_import_json']()}
         </button>
       </div>
 
       {showImport && (
-        <div className="mb-3 rounded-lg border bg-white p-4">
+        <div className="border-border bg-card mb-3 rounded-2xl border p-4">
           <h3 className="mb-2 font-bold">{m['cuotiben.import_title']()}</h3>
           <input
             type="file"
@@ -103,12 +106,12 @@ export function TimelineTab({
             value={importJson}
             onChange={(e) => setImportJson(e.target.value)}
             placeholder={m['cuotiben.import_placeholder']()}
-            className="mb-2 h-32 w-full rounded-lg border p-2 font-mono text-sm"
+            className="border-border bg-background mb-2 h-32 w-full rounded-lg border p-2 font-mono text-sm"
           />
           <button
             disabled={importing || !importJson.trim()}
             onClick={doImport}
-            className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-white disabled:opacity-50"
+            className="bg-primary text-primary-foreground min-h-[44px] rounded-lg px-4 disabled:opacity-50"
           >
             {importing
               ? m['cuotiben.importing']()
@@ -127,7 +130,7 @@ export function TimelineTab({
       )}
 
       {allEmpty && filtered.length === 0 && (
-        <div className="py-10 text-center text-slate-500">
+        <div className="text-muted-foreground py-10 text-center">
           {m['cuotiben.empty_cards']()}
         </div>
       )}
@@ -141,31 +144,32 @@ export function TimelineTab({
             <div
               key={c.id}
               id={`note-${c.id}`}
-              className="rounded-xl bg-white p-4 shadow-sm"
+              className="border-border bg-card rounded-2xl border p-4"
             >
               <div className="mb-1 flex flex-wrap items-center gap-1">
-                <span className="text-xs text-slate-400">
+                <span className="text-muted-foreground text-xs">
                   {formatDate(c.createdAt)}
                 </span>
                 {c.src && (
-                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                  <span className="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 text-xs">
                     {c.src}
                   </span>
                 )}
-                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                <span className="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 text-xs">
                   {c.subject}
                 </span>
                 {c.tag && (
-                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                  <span className="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 text-xs">
                     {c.tag}
                   </span>
                 )}
                 <span
-                  className={`ml-auto rounded-full px-2 py-0.5 text-xs ${
+                  className={cn(
+                    'ml-auto rounded-full px-2 py-0.5 text-xs',
                     c.mastered
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-amber-100 text-amber-700'
-                  }`}
+                      ? 'bg-primary/10 text-primary'
+                      : 'bg-amber-500/10 text-amber-600'
+                  )}
                 >
                   {c.mastered
                     ? m['cuotiben.badge_mastered']()
@@ -191,30 +195,30 @@ export function TimelineTab({
                   <div className="whitespace-pre-wrap">{c.question}</div>
                   {c.myAnswer && (
                     <div>
-                      <span className="font-semibold text-slate-500">
+                      <span className="text-muted-foreground font-semibold">
                         {m['cuotiben.label_my_answer']()}：
                       </span>
                       <span className="whitespace-pre-wrap">{c.myAnswer}</span>
                     </div>
                   )}
-                  <div className="rounded-r-lg border-l-4 border-blue-600 bg-slate-50 p-2">
+                  <div className="border-primary bg-muted rounded-r-lg border-l-4 p-2">
                     <span className="font-semibold">
-                      ✅ {m['cuotiben.label_answer']()}：
+                      {m['cuotiben.label_answer']()}：
                     </span>
                     <span className="whitespace-pre-wrap">{c.answer}</span>
                   </div>
                   {c.principle && (
                     <div>
-                      <span className="font-semibold text-slate-500">
-                        📌 {m['cuotiben.label_principle']()}：
+                      <span className="text-muted-foreground font-semibold">
+                        {m['cuotiben.label_principle']()}：
                       </span>
                       <span className="whitespace-pre-wrap">{c.principle}</span>
                     </div>
                   )}
                   {c.note && (
                     <div>
-                      <span className="font-semibold text-slate-500">
-                        ⚠️ {m['cuotiben.label_note']()}：
+                      <span className="text-muted-foreground font-semibold">
+                        {m['cuotiben.label_note']()}：
                       </span>
                       <span className="whitespace-pre-wrap">{c.note}</span>
                     </div>
@@ -224,17 +228,18 @@ export function TimelineTab({
               <div className="mt-2 flex gap-2">
                 <button
                   onClick={() => setExpanded({ ...expanded, [c.id]: !open })}
-                  className="min-h-[40px] rounded-lg bg-slate-100 px-3 text-sm text-blue-700"
+                  className="bg-muted text-primary min-h-[40px] rounded-lg px-3 text-sm"
                 >
                   {m['cuotiben.btn_detail']()}
                 </button>
                 <button
                   onClick={() => toggleMastered(c)}
-                  className={`min-h-[40px] rounded-lg px-3 text-sm ${
+                  className={cn(
+                    'min-h-[40px] rounded-lg px-3 text-sm',
                     c.mastered
-                      ? 'bg-slate-100 text-slate-600'
-                      : 'bg-green-100 text-green-700'
-                  }`}
+                      ? 'bg-muted text-muted-foreground'
+                      : 'bg-primary/10 text-primary'
+                  )}
                 >
                   {c.mastered
                     ? m['cuotiben.btn_unmaster']()
@@ -245,7 +250,7 @@ export function TimelineTab({
                     if (window.confirm(m['cuotiben.confirm_delete']()))
                       deleteCard(c.id);
                   }}
-                  className="min-h-[40px] rounded-lg bg-red-50 px-3 text-sm text-red-600"
+                  className="bg-destructive/10 text-destructive min-h-[40px] rounded-lg px-3 text-sm"
                 >
                   {m['cuotiben.btn_delete']()}
                 </button>
@@ -254,7 +259,7 @@ export function TimelineTab({
           );
         })}
         {!allEmpty && filtered.length === 0 && (
-          <div className="py-10 text-center text-slate-500">
+          <div className="text-muted-foreground py-10 text-center">
             {m['cuotiben.empty_cards']()}
           </div>
         )}
@@ -296,11 +301,12 @@ function AddCardForm({ onDone }: { onDone: () => void }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const inputCls = 'min-h-[44px] w-full rounded-lg border px-3 py-2';
-  const labelCls = 'mb-1 block text-sm text-slate-500';
+  const inputCls =
+    'border-border bg-background min-h-[44px] w-full rounded-lg border px-3 py-2';
+  const labelCls = 'text-muted-foreground mb-1 block text-sm';
 
   return (
-    <div className="mb-3 rounded-xl bg-white p-4 shadow-sm">
+    <div className="border-border bg-card mb-3 rounded-2xl border p-4">
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className={labelCls}>{m['cuotiben.form_subject']()}</label>
@@ -393,7 +399,7 @@ function AddCardForm({ onDone }: { onDone: () => void }) {
           }
           saveMut.mutate();
         }}
-        className="mt-3 min-h-[44px] w-full rounded-lg bg-blue-600 text-white disabled:opacity-50"
+        className="bg-primary text-primary-foreground mt-3 min-h-[44px] w-full rounded-lg disabled:opacity-50"
       >
         {m['cuotiben.btn_save']()}
       </button>

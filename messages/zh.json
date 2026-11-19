@@ -1207,6 +1207,7 @@
   "admin.settings.tips.notify_webhook_url": "可对接 Grok bot、Cursor 自动化、Zapier、n8n 或自建接口。每个事件以 JSON 格式 POST，字段包括 event（payment.succeeded / ticket.created / ticket.replied）、test、text（与机器人收到的消息相同）、data（原始字段）和 sent_at。",
   "admin.settings.tips.notify_webhook_token": "可选。以「Authorization: Bearer <token>」请求头发送，填入接收方提供的 key 即可。",
   "cuotiben.title": "记事本",
+  "cuotiben.description": "按时间线记录要点与提醒，未完成的就是待处理事项。",
   "cuotiben.mastered_count": "已完成 {m}/{n}",
   "cuotiben.need_login": "请先登录后再使用记事本",
   "cuotiben.go_login": "去登录",

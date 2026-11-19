@@ -2,13 +2,18 @@
 // 下线的四个 tab（闪卡 / 学习 SRS / AI 问答 / 练一练）与今日统计已移除，
 // 答题记录（qa_log / srs / practice）不再展示，但库里的行全部保留。
 // 未掌握的条目就是待处理的提醒事项，不用答题记录算。
+// 主题：跟站内其它页一致，走 ShipAny 统一主题（Header/Footer＋主题 token，
+// 不再用写死的 slate/blue 配色与自定义蓝底 header）。
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
 import { apiDelete, apiGet, apiPut } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 import { m } from '@/paraglide/messages.js';
+import { Footer } from '@/blocks/footer';
+import { Header } from '@/blocks/header';
 
 import { TimelineTab } from './-timeline-tab';
 import { CARDS_KEY, type Card } from './-types';
@@ -89,89 +94,96 @@ function NotepadPage() {
 
   if (cardsQ.isError) {
     return (
-      <div className="mx-auto max-w-2xl p-6 text-center">
-        <p className="mb-4">{m['cuotiben.need_login']()}</p>
-        <a
-          href="/sign-in"
-          className="inline-block min-h-[48px] rounded-lg bg-blue-600 px-6 py-3 text-white"
-        >
-          {m['cuotiben.go_login']()}
-        </a>
+      <div className="bg-background text-foreground flex min-h-screen flex-col">
+        <Header />
+        <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-16 text-center">
+          <p className="mb-4">{m['cuotiben.need_login']()}</p>
+          <a
+            href="/sign-in"
+            className="bg-primary text-primary-foreground inline-block min-h-[48px] rounded-lg px-6 py-3"
+          >
+            {m['cuotiben.go_login']()}
+          </a>
+        </main>
+        <Footer />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-24">
-      <header className="sticky top-0 z-10 bg-blue-600 px-4 py-3 text-white">
-        <div className="mx-auto flex max-w-2xl items-center justify-between">
-          <span className="text-lg font-bold">📒 {m['cuotiben.title']()}</span>
-          <small className="opacity-85">
-            {cards.length
-              ? m['cuotiben.mastered_count']({
-                  m: masteredCount,
-                  n: cards.length,
-                })
-              : ''}
-          </small>
-        </div>
-      </header>
+    <div className="bg-background text-foreground flex min-h-screen flex-col">
+      <Header />
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+        <h1 className="text-2xl font-bold">{m['cuotiben.title']()}</h1>
+        <p className="text-muted-foreground mt-2 text-sm">
+          {m['cuotiben.description']()}
+          {cards.length
+            ? ` ${m['cuotiben.mastered_count']({
+                m: masteredCount,
+                n: cards.length,
+              })}`
+            : ''}
+        </p>
 
-      {/* 学科筛选 + 处理状态筛选 */}
-      <div className="sticky top-[52px] z-10 border-b bg-white px-4 py-2">
-        <div className="mx-auto flex max-w-2xl gap-2 overflow-x-auto">
-          {subjects.map((s) => (
-            <button
-              key={s}
-              onClick={() => setSubject(s)}
-              className={`min-h-[40px] shrink-0 rounded-full px-4 text-sm font-medium ${
-                subject === s
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-600'
-              }`}
-            >
-              {s === '全部' ? m['cuotiben.subject_all']() : s}
-            </button>
-          ))}
-        </div>
-        <div className="mx-auto mt-2 flex max-w-2xl gap-2">
-          {(
-            [
-              ['all', m['cuotiben.subject_all'](), cards.length],
-              ['pending', m['cuotiben.filter_pending'](), pendingCount],
-              ['done', m['cuotiben.filter_done'](), masteredCount],
-            ] as [StatusFilter, string, number][]
-          ).map(([key, label, count]) => (
-            <button
-              key={key}
-              onClick={() => setStatus(key)}
-              className={`min-h-[40px] flex-1 rounded-full px-4 text-sm font-medium ${
-                status === key
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-600'
-              }`}
-            >
-              {label} {count}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <main className="mx-auto max-w-2xl p-3">
-        {cardsQ.isLoading ? (
-          <div className="py-20 text-center text-slate-500">
-            {m['cuotiben.loading']()}
+        {/* 学科筛选 + 处理状态筛选 */}
+        <div className="mt-6">
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {subjects.map((s) => (
+              <button
+                key={s}
+                onClick={() => setSubject(s)}
+                className={cn(
+                  'min-h-[40px] shrink-0 rounded-full px-4 text-sm font-medium',
+                  subject === s
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground'
+                )}
+              >
+                {s === '全部' ? m['cuotiben.subject_all']() : s}
+              </button>
+            ))}
           </div>
-        ) : (
-          <TimelineTab
-            cards={filtered}
-            allEmpty={cards.length === 0}
-            toggleMastered={(c) => toggleMut.mutate(c)}
-            deleteCard={(id) => deleteMut.mutate(id)}
-            invalidate={invalidate}
-          />
-        )}
+          <div className="mt-2 flex gap-2">
+            {(
+              [
+                ['all', m['cuotiben.subject_all'](), cards.length],
+                ['pending', m['cuotiben.filter_pending'](), pendingCount],
+                ['done', m['cuotiben.filter_done'](), masteredCount],
+              ] as [StatusFilter, string, number][]
+            ).map(([key, label, count]) => (
+              <button
+                key={key}
+                onClick={() => setStatus(key)}
+                className={cn(
+                  'min-h-[40px] flex-1 rounded-full px-4 text-sm font-medium',
+                  status === key
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground'
+                )}
+              >
+                {label} {count}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-6">
+          {cardsQ.isLoading ? (
+            <div className="text-muted-foreground py-20 text-center">
+              {m['cuotiben.loading']()}
+            </div>
+          ) : (
+            <TimelineTab
+              cards={filtered}
+              allEmpty={cards.length === 0}
+              toggleMastered={(c) => toggleMut.mutate(c)}
+              deleteCard={(id) => deleteMut.mutate(id)}
+              invalidate={invalidate}
+            />
+          )}
+        </div>
       </main>
+      <Footer />
     </div>
   );
 }

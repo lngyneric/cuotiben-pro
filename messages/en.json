@@ -1207,6 +1207,7 @@
   "admin.settings.tips.notify_webhook_url": "Works with Grok bots, Cursor automations, Zapier, n8n or your own endpoint. Each event is POSTed as JSON with event (payment.succeeded / ticket.created / ticket.replied), test, text (the same message the bots get), data (raw fields) and sent_at.",
   "admin.settings.tips.notify_webhook_token": "Optional. Sent as \"Authorization: Bearer <token>\" — paste the key your endpoint gives you.",
   "cuotiben.title": "Notepad",
+  "cuotiben.description": "Notes and reminders on a timeline — anything unfinished is a pending item.",
   "cuotiben.mastered_count": "Done {m}/{n}",
   "cuotiben.need_login": "Please sign in to use the notepad",
   "cuotiben.go_login": "Sign in",
