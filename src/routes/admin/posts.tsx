@@ -20,6 +20,7 @@ import {
   pageQuery,
   type PageResult,
 } from '@/lib/api-client';
+import { withAppBase } from '@/lib/base-path';
 import { formatDateTime } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { m } from '@/paraglide/messages.js';
@@ -305,7 +306,9 @@ function PostsPage() {
             size="icon"
             className="size-7"
             title={m['admin.posts.preview']()}
-            onClick={() => window.open(`/blog/${p.slug}`, '_blank')}
+            onClick={() =>
+              window.open(withAppBase(`/blog/${p.slug}`), '_blank')
+            }
           >
             <Eye className="size-3" />
           </Button>

@@ -672,7 +672,8 @@ function GraphPage() {
                   if (id.startsWith('node:')) setNodeId(id);
                   else if (id.startsWith('course:')) {
                     const c = liveCourseByBid.get(id.slice('course:'.length));
-                    if (c) window.open(`/blog/${c.slug}`, '_blank');
+                    if (c)
+                      window.open(withAppBase(`/blog/${c.slug}`), '_blank');
                   } else if (id.startsWith('domain:')) {
                     setDomainId(id);
                     setNodeId(null);

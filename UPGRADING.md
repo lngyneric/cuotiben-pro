@@ -46,6 +46,26 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-20: Draft preview eye + graph course links — respect the app base path
+
+### Action required
+
+- None (code fix only, no schema or config change).
+
+### What changed
+
+- The admin posts “preview” (eye) button opened `/blog/<slug>` with a raw
+  `window.open`, which drops the `/wiki` base path and 404s. It now goes
+  through `withAppBase`, so the preview opens at `/wiki/blog/<slug>` and
+  the admin draft preview works again.
+- Same fix for the graph visual view: clicking a course node opened
+  `/blog/<slug>` raw and 404d; it now also uses `withAppBase`.
+- Rule of thumb: any `window.open` / plain `<a href>` that builds an
+  absolute path must go through `withAppBase`; TanStack `<Link>` already
+  prepends the base path, which is why the blog list cards were fine.
+
+---
+
 ## 2026-11-19: Graph doc links — fix broken HTML document URLs
 
 ### Action required
