@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { MDXProvider } from '@mdx-js/react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { Link } from '@/core/i18n/navigation';
 import { localizedAbsoluteUrl } from '@/core/i18n/urls';
@@ -63,6 +63,14 @@ function BlogPage() {
   );
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  // 左栏树：全部是根目录，分类是子目录，文章是子目录里的文件。
+  const [allExpanded, setAllExpanded] = useState(true);
+  const [expandedCats, setExpandedCats] = useState<Set<string>>(() => {
+    const firstCats = (posts[0]?.categories ?? []).length
+      ? (posts[0].categories as string[])
+      : ['未分类'];
+    return new Set([firstCats[0]]);
+  });
 
   // 刷新后恢复本机保存的展示方式（只在客户端跑，避免服务端渲染不一致）。
   useEffect(() => {
@@ -102,33 +110,80 @@ function BlogPage() {
     ];
   }, [posts]);
 
-  const filtered = useMemo(() => {
+  // 先按搜索过滤，再按分类分组（“全部”就是全部搜索结果）。
+  const searchFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return posts.filter((p: BlogPost) => {
+    if (!q) return posts;
+    return posts.filter(
+      (p: BlogPost) =>
+        p.title.toLowerCase().includes(q) ||
+        (p.description || '').toLowerCase().includes(q)
+    );
+  }, [posts, search]);
+
+  const articlesByCategory = useMemo(() => {
+    const map = new Map<string, BlogPost[]>();
+    map.set(m['blog.all_categories'](), searchFiltered);
+    for (const p of searchFiltered) {
       const cats = (p.categories ?? []).length
         ? (p.categories as string[])
         : ['未分类'];
-      if (
-        activeCategory !== m['blog.all_categories']() &&
-        !cats.includes(activeCategory)
-      ) {
-        return false;
+      for (const c of cats) {
+        const arr = map.get(c);
+        if (arr) arr.push(p);
+        else map.set(c, [p]);
       }
-      if (!q) return true;
-      return (
-        p.title.toLowerCase().includes(q) ||
-        (p.description || '').toLowerCase().includes(q)
-      );
-    });
-  }, [posts, search, activeCategory]);
+    }
+    return map;
+  }, [searchFiltered]);
 
-  // 换分类或改搜索时回到该分类的第一篇。
+  // 当前分类的文章（右栏内容与上一篇/下一篇都走它）。
+  const filtered = useMemo(
+    () => articlesByCategory.get(activeCategory) ?? [],
+    [articlesByCategory, activeCategory]
+  );
+
+  // 改搜索时回到该分类的第一篇（换分类在 selectCategory/selectArticle 里处理）。
   useEffect(() => {
     setSelectedIndex(0);
-  }, [activeCategory, search]);
+  }, [search]);
 
   const safeIndex = Math.min(selectedIndex, Math.max(filtered.length - 1, 0));
   const selected = filtered[safeIndex];
+
+  // 保证当前文章所在的分类在左栏是展开的（换文章/换分类时自动展开；
+  // 手动点箭头收起的不受影响，因为 selected 没变时这个 effect 不跑）。
+  useEffect(() => {
+    if (!selected) return;
+    const cat = (selected.categories ?? []).length
+      ? (selected.categories as string[])[0]
+      : '未分类';
+    setExpandedCats((prev) => {
+      if (prev.has(cat)) return prev;
+      const next = new Set(prev);
+      next.add(cat);
+      return next;
+    });
+  }, [selected]);
+
+  const selectCategory = (catName: string) => {
+    setActiveCategory(catName);
+    setSelectedIndex(0);
+  };
+
+  const selectArticle = (catName: string, idx: number) => {
+    setActiveCategory(catName);
+    setSelectedIndex(idx);
+  };
+
+  const toggleCat = (catName: string) => {
+    setExpandedCats((prev) => {
+      const next = new Set(prev);
+      if (next.has(catName)) next.delete(catName);
+      else next.add(catName);
+      return next;
+    });
+  };
 
   const detailQuery = useQuery({
     queryKey: ['blog-post-detail', selected?.slug, locale],
@@ -197,7 +252,7 @@ function BlogPage() {
                 {categories.map((cat) => (
                   <button
                     key={cat.name}
-                    onClick={() => setActiveCategory(cat.name)}
+                    onClick={() => selectCategory(cat.name)}
                     className={cn(
                       'rounded-full border px-2.5 py-1 text-xs',
                       activeCategory === cat.name
@@ -236,55 +291,126 @@ function BlogPage() {
           ) : (
             /* 分屏阅读：左栏分类导航，右栏文章全文 */
             <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
-              {/* 左：分类导航（选中分类下展开文章标题） */}
+              {/* 左：分类树（全部是根目录，分类是子目录，文章是子目录里的文件） */}
               <div className="bg-card border-border max-h-[70vh] overflow-y-auto rounded-lg border p-4">
                 <ul className="space-y-1">
-                  {categories.map((cat) => (
-                    <li key={cat.name}>
+                  <li>
+                    <div className="flex items-center gap-0.5">
                       <button
                         type="button"
-                        onClick={() => setActiveCategory(cat.name)}
+                        onClick={() => setAllExpanded((v) => !v)}
+                        aria-label={
+                          allExpanded
+                            ? m['blog.collapse']()
+                            : m['blog.expand']()
+                        }
+                        className="text-muted-foreground hover:text-primary flex size-6 shrink-0 items-center justify-center rounded-md"
+                      >
+                        {allExpanded ? (
+                          <ChevronDown className="size-4" />
+                        ) : (
+                          <ChevronRight className="size-4" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => selectCategory(categories[0].name)}
                         className={cn(
-                          'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm',
-                          activeCategory === cat.name
+                          'flex flex-1 items-center justify-between rounded-lg px-3 py-2 text-left text-sm',
+                          activeCategory === categories[0].name
                             ? 'bg-primary text-primary-foreground font-medium'
                             : 'text-foreground hover:bg-muted'
                         )}
                       >
-                        <span className="truncate">{cat.name}</span>
+                        <span className="truncate">{categories[0].name}</span>
                         <span
                           className={cn(
                             'ml-2 shrink-0 text-xs',
-                            activeCategory === cat.name
+                            activeCategory === categories[0].name
                               ? 'text-primary-foreground/80'
                               : 'text-muted-foreground'
                           )}
                         >
-                          {cat.count}
+                          {categories[0].count}
                         </span>
                       </button>
-                      {activeCategory === cat.name && filtered.length > 0 && (
-                        <ul className="mt-1 space-y-0.5 border-l pl-3">
-                          {filtered.map((post, idx) => (
-                            <li key={post.slug}>
-                              <button
-                                type="button"
-                                onClick={() => setSelectedIndex(idx)}
-                                className={cn(
-                                  'block w-full truncate rounded px-2 py-1.5 text-left text-xs',
-                                  idx === safeIndex
-                                    ? 'text-primary font-medium'
-                                    : 'text-muted-foreground hover:text-primary'
-                                )}
-                              >
-                                {post.title}
-                              </button>
+                    </div>
+                    {allExpanded && (
+                      <ul className="ml-3 space-y-1 border-l pl-2">
+                        {categories.slice(1).map((cat) => {
+                          const expanded = expandedCats.has(cat.name);
+                          const catArticles =
+                            articlesByCategory.get(cat.name) ?? [];
+                          return (
+                            <li key={cat.name}>
+                              <div className="flex items-center gap-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCat(cat.name)}
+                                  aria-label={
+                                    expanded
+                                      ? m['blog.collapse']()
+                                      : m['blog.expand']()
+                                  }
+                                  className="text-muted-foreground hover:text-primary flex size-6 shrink-0 items-center justify-center rounded-md"
+                                >
+                                  {expanded ? (
+                                    <ChevronDown className="size-4" />
+                                  ) : (
+                                    <ChevronRight className="size-4" />
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => selectCategory(cat.name)}
+                                  className={cn(
+                                    'flex flex-1 items-center justify-between rounded-lg px-3 py-2 text-left text-sm',
+                                    activeCategory === cat.name
+                                      ? 'bg-primary text-primary-foreground font-medium'
+                                      : 'text-foreground hover:bg-muted'
+                                  )}
+                                >
+                                  <span className="truncate">{cat.name}</span>
+                                  <span
+                                    className={cn(
+                                      'ml-2 shrink-0 text-xs',
+                                      activeCategory === cat.name
+                                        ? 'text-primary-foreground/80'
+                                        : 'text-muted-foreground'
+                                    )}
+                                  >
+                                    {cat.count}
+                                  </span>
+                                </button>
+                              </div>
+                              {expanded && catArticles.length > 0 && (
+                                <ul className="ml-3 space-y-0.5 border-l pl-2">
+                                  {catArticles.map((post, idx) => (
+                                    <li key={post.slug}>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          selectArticle(cat.name, idx)
+                                        }
+                                        className={cn(
+                                          'block w-full truncate rounded px-2 py-1.5 text-left text-xs',
+                                          post.slug === selected?.slug
+                                            ? 'text-primary font-medium'
+                                            : 'text-muted-foreground hover:text-primary'
+                                        )}
+                                      >
+                                        {post.title}
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
                             </li>
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                  ))}
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </li>
                 </ul>
               </div>
 

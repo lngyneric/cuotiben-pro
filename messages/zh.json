@@ -1153,6 +1153,8 @@
   "blog.all_categories": "全部",
   "blog.view_grid": "卡片",
   "blog.view_split": "分屏",
+  "blog.expand": "展开",
+  "blog.collapse": "收起",
   "blog.prev_article": "上一篇",
   "blog.next_article": "下一篇",
   "blog.article_position": "第 {current} 篇 / 共 {total} 篇",

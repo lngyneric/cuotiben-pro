@@ -59,15 +59,19 @@ None. Pure frontend change; no schema, permission, or env change.
   (`blog-view-mode`) and restored on revisit; default is Cards, so the
   existing grid view is unchanged unless the user switches.
 - Split view mirrors the `/html` two-column layout: left column is a
-  category nav (name + article count); the active category expands to
-  show its article titles for jumping straight to one. Right column
-  shows the selected article's full text (title, date, author,
-  categories, image, Markdown/MDX body) fetched on demand via
-  `getBlogPostFn`, with Previous / Next buttons to move through the
-  articles of the current category and a "第 X 篇 / 共 Y 篇" position
-  indicator. Switching category or changing the search resets to the
-  first article of that category. Members-only articles still show the
-  sign-in prompt instead of the body.
+  file-tree nav — “全部” is the collapsible root (chevron toggles it),
+  categories are its subdirectories (name + article count, each with its
+  own expand/collapse chevron), and articles are files inside their
+  category, never listed flat under “全部”. Clicking a category name
+  selects it; clicking an article title jumps to it. The active
+  article's category auto-expands, so the current article stays visible
+  in the tree. Right column shows the selected article's full text
+  (title, date, author, categories, image, Markdown/MDX body) fetched
+  on demand via `getBlogPostFn`, with Previous / Next buttons to move
+  through the articles of the current category and a "第 X 篇 / 共 Y 篇"
+  position indicator. Switching category or changing the search resets
+  to the first article of that category. Members-only articles still
+  show the sign-in prompt instead of the body.
 - New i18n keys: `blog.view_grid`, `blog.view_split`,
   `blog.prev_article`, `blog.next_article`, `blog.article_position`,
   `blog.select_article`, `blog.loading_article`, `blog.login_to_read`,

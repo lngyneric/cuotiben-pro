@@ -1153,6 +1153,8 @@
   "blog.all_categories": "All",
   "blog.view_grid": "Cards",
   "blog.view_split": "Split",
+  "blog.expand": "Expand",
+  "blog.collapse": "Collapse",
   "blog.prev_article": "Previous",
   "blog.next_article": "Next",
   "blog.article_position": "{current} of {total}",
