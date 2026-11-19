@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { m } from '@/paraglide/messages.js';
+
 export type VisualKind = 'domain' | 'node' | 'course';
 
 export interface VisualItem {
@@ -214,8 +216,13 @@ export function VisualGraph({
         const dy = p.y - drag.py;
         if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true;
         // toSvg 给的是 viewBox 坐标，要换算进 transform 后的世界坐标。
-        pos.fx = (p.x - view.x) / view.k;
-        pos.fy = (p.y - view.y) / view.k;
+        // 模拟循环在冷却后就停了，只改 fx/fy 不会立刻重绘，必须同时改 x/y。
+        const wx = (p.x - view.x) / view.k;
+        const wy = (p.y - view.y) / view.k;
+        pos.fx = wx;
+        pos.fy = wy;
+        pos.x = wx;
+        pos.y = wy;
       }
       setTick((t) => t + 1);
       return;
@@ -247,11 +254,19 @@ export function VisualGraph({
   };
 
   const onWheel = (e: React.WheelEvent) => {
-    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-    setView((v) => ({
-      ...v,
-      k: Math.max(0.4, Math.min(3, v.k * factor)),
-    }));
+    // 以光标为中心缩放（不改 view.x/view.y 会向左上角缩成一团）；
+    // 单次滚轮步进放小，触控板连续事件不至于一次缩太多。
+    const p = toSvg(e);
+    const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+    setView((v) => {
+      const k = Math.max(0.4, Math.min(3, v.k * factor));
+      const s = k / v.k;
+      return {
+        x: p.x - (p.x - v.x) * s,
+        y: p.y - (p.y - v.y) * s,
+        k,
+      };
+    });
   };
 
   const radius = (kind: VisualKind) =>
@@ -354,6 +369,13 @@ export function VisualGraph({
         <span className="ml-auto">
           拖节点移动 · 拖空白平移 · 滚轮缩放 · 点节点看详情
         </span>
+        <button
+          type="button"
+          onClick={() => setView({ x: 0, y: 0, k: 1 })}
+          className="text-primary font-medium hover:underline"
+        >
+          {m['graph.view_reset']()}
+        </button>
       </div>
     </div>
   );

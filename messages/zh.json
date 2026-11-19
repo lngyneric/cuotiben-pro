@@ -1386,5 +1386,6 @@
   "graph.people_no_mentees": "暂无学员",
   "graph.people_status": "带教状态：{s}",
   "graph.people_no_status": "暂无带教状态",
-  "graph.people_courses_taken": "已学 {n} 门"
+  "graph.people_courses_taken": "已学 {n} 门",
+  "graph.view_reset": "重置视图"
 }

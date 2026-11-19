@@ -1386,5 +1386,6 @@
   "graph.people_no_mentees": "No mentees yet",
   "graph.people_status": "Status: {s}",
   "graph.people_no_status": "No mentorship status yet",
-  "graph.people_courses_taken": "{n} courses taken"
+  "graph.people_courses_taken": "{n} courses taken",
+  "graph.view_reset": "Reset view"
 }

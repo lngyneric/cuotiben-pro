@@ -497,12 +497,13 @@ function GraphPage() {
     return out;
   }, [dynamicLinksByNode, liveCourseByBid]);
 
-  // 选节点后滚到详情顶部（修底部按钮点后视口停在下方留空白的问题）。
+  // 选节点或换领域后滚到详情顶部（修底部按钮点后视口停在下方留空白的问题）。
+  // section 带 scroll-mt，滚到顶时标题不被置顶导航栏遮住。
   useEffect(() => {
-    if (nodeId && sectionRef.current) {
+    if ((nodeId || domainId) && sectionRef.current) {
       sectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-  }, [nodeId]);
+  }, [nodeId, domainId]);
 
   const domainDocs = useMemo(() => {
     if (!activeDomain) return [];
@@ -684,7 +685,7 @@ function GraphPage() {
                 }}
               />
               {selectedNode && (
-                <section ref={sectionRef}>
+                <section ref={sectionRef} className="scroll-mt-20">
                   <NodeDetail
                     node={selectedNode}
                     courses={nodeEdges.courses}
@@ -738,7 +739,7 @@ function GraphPage() {
                 ))}
               </aside>
 
-              <section ref={sectionRef}>
+              <section ref={sectionRef} className="scroll-mt-20">
                 {!selectedNode ? (
                   <div className="space-y-3">
                     <h2 className="text-lg font-medium">
