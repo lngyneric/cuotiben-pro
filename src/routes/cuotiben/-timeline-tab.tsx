@@ -1,112 +1,22 @@
-// 错题 tab：列表 / 搜索 / 展开详情 / 已掌握切换 / 新增 / JSON 导入
+// 记事本时间线：按 createdAt 倒序，每条只显示一句简述
+// （内容第一行，内容空则取笔记第一行）＋日期＋来源/科目/标签 chips＋
+// 已完成/待处理徽标。点开看全文（内容、我的答案、答案、原理、笔记、图），
+// 每条带锚点 id（#note-<id>）可直达。只改页面 UI，不动 API、不动数据库。
 // 注意：路由文件按约定用 `-` 前缀拆分（colocated non-route files）
+// 主题：跟站内其它页一致，走 ShipAny 统一主题 token（bg-card/border-border/
+// bg-primary/bg-muted/text-muted-foreground 等），不用写死的 slate/blue 配色。
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { apiPost } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 import { m } from '@/paraglide/messages.js';
 
 import type { Card } from './-types';
-import { safeDiagram } from './-util';
+import { firstLine, formatDate, safeDiagram } from './-util';
 
-// 导出单文件闪卡 HTML（离线可看）
-function exportFlashcards(cards: Card[]) {
-  const esc = (s: string) =>
-    String(s || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-  const cardsHtml = cards
-    .map(
-      (c, i) => `
-    <div class="card" onclick="this.classList.toggle('flip')">
-      <div class="inner">
-        <div class="front">
-          <div class="num">#${i + 1} ${esc(c.tag || '')}</div>
-          <div class="q">${esc(c.question)}</div>
-          <div class="tap">点击翻面</div>
-        </div>
-        <div class="back">
-          <div class="a"><b>答案：</b>${esc(c.answer)}</div>
-          ${c.principle ? `<div class="p"><b>原理：</b>${esc(c.principle)}</div>` : ''}
-          ${c.note ? `<div class="n"><b>错因：</b>${esc(c.note)}</div>` : ''}
-        </div>
-      </div>
-    </div>`
-    )
-    .join('\n');
-  const html = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>错题闪卡</title><style>
-body{font-family:system-ui;margin:0;padding:16px;background:#f5f5f5}
-.card{perspective:1000px;margin:12px auto;max-width:600px;cursor:pointer}
-.inner{position:relative;min-height:200px;transition:transform .6s;transform-style:preserve-3d}
-.card.flip .inner{transform:rotateY(180deg)}
-.front,.back{position:absolute;inset:0;backface-visibility:hidden;background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.1)}
-.back{transform:rotateY(180deg)}
-.num{color:#888;font-size:12px;margin-bottom:8px}
-.q{font-size:17px;line-height:1.6;white-space:pre-wrap}
-.tap{color:#aaa;font-size:12px;margin-top:12px;text-align:center}
-.a,.p,.n{margin:8px 0;line-height:1.6;white-space:pre-wrap}
-h1{text-align:center}
-</style></head><body><h1>错题闪卡（${cards.length} 张）</h1>${cardsHtml}</body></html>`;
-  const blob = new Blob([html], { type: 'text/html' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = '错题闪卡.html';
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-// 类似题按钮：调用 AI 生成同类练习题
-function SimilarButton({ cardId }: { cardId: string }) {
-  const [result, setResult] = useState<{
-    question: string;
-    answer: string;
-  } | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [show, setShow] = useState(false);
-
-  const generate = async () => {
-    if (result) {
-      setShow(!show);
-      return;
-    }
-    setLoading(true);
-    try {
-      const data = await apiPost<{ question: string; answer: string }>(
-        '/api/cuotiben',
-        { action: 'similar', cardId }
-      );
-      setResult(data);
-      setShow(true);
-    } catch (e: any) {
-      toast.error(e.message || '生成失败');
-    }
-    setLoading(false);
-  };
-
-  return (
-    <div className="w-full">
-      <button
-        onClick={generate}
-        disabled={loading}
-        className="min-h-[40px] rounded-lg bg-purple-50 px-3 text-sm text-purple-700 disabled:opacity-50"
-      >
-        {loading ? '生成中...' : '📝 类似题'}
-      </button>
-      {show && result && (
-        <div className="mt-2 rounded-lg bg-purple-50 p-3 text-sm">
-          <div className="font-semibold text-purple-900">类似练习题：</div>
-          <div className="mt-1 whitespace-pre-wrap">{result.question}</div>
-          <div className="mt-2 font-semibold text-purple-900">答案：</div>
-          <div className="whitespace-pre-wrap">{result.answer}</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function CardsTab({
+export function TimelineTab({
   cards,
   allEmpty,
   toggleMastered,
@@ -135,16 +45,6 @@ export function CardsTab({
       (c.src || '').includes(kw)
   );
 
-  const seedMut = useMutation({
-    mutationFn: () =>
-      apiPost<{ count: number }>('/api/cuotiben', { action: 'seed' }),
-    onSuccess: (d) => {
-      toast.success(m['cuotiben.imported']({ count: d.count }));
-      invalidate();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
   const doImport = async () => {
     setImporting(true);
     try {
@@ -170,43 +70,24 @@ export function CardsTab({
           value={kw}
           onChange={(e) => setKw(e.target.value)}
           placeholder={m['cuotiben.search_placeholder']()}
-          className="min-h-[44px] flex-1 rounded-lg border px-3"
+          className="border-border bg-background min-h-[44px] flex-1 rounded-lg border px-3"
         />
         <button
           onClick={() => setShowAdd(!showAdd)}
-          className="min-h-[44px] shrink-0 rounded-lg bg-blue-600 px-4 text-white"
+          className="bg-primary text-primary-foreground min-h-[44px] shrink-0 rounded-lg px-4"
         >
           {m['cuotiben.btn_add']()}
         </button>
         <button
-          onClick={() => exportFlashcards(cards)}
-          className="min-h-[44px] shrink-0 rounded-lg bg-slate-600 px-4 text-white"
-          title="导出单文件闪卡 HTML"
+          onClick={() => setShowImport(!showImport)}
+          className="bg-muted text-muted-foreground min-h-[44px] shrink-0 rounded-lg px-4 text-sm"
         >
-          ⤓闪卡
+          {m['cuotiben.btn_import_json']()}
         </button>
       </div>
 
-      {allEmpty && (
-        <div className="mb-3 flex gap-2">
-          <button
-            onClick={() => seedMut.mutate()}
-            disabled={seedMut.isPending}
-            className="min-h-[44px] flex-1 rounded-lg bg-green-600 px-4 text-white disabled:opacity-50"
-          >
-            {m['cuotiben.btn_import_seed']()}
-          </button>
-          <button
-            onClick={() => setShowImport(!showImport)}
-            className="min-h-[44px] flex-1 rounded-lg bg-purple-600 px-4 text-white"
-          >
-            {m['cuotiben.btn_import_json']()}
-          </button>
-        </div>
-      )}
-
       {showImport && (
-        <div className="mb-3 rounded-lg border bg-white p-4">
+        <div className="border-border bg-card mb-3 rounded-2xl border p-4">
           <h3 className="mb-2 font-bold">{m['cuotiben.import_title']()}</h3>
           <input
             type="file"
@@ -225,12 +106,12 @@ export function CardsTab({
             value={importJson}
             onChange={(e) => setImportJson(e.target.value)}
             placeholder={m['cuotiben.import_placeholder']()}
-            className="mb-2 h-32 w-full rounded-lg border p-2 font-mono text-sm"
+            className="border-border bg-background mb-2 h-32 w-full rounded-lg border p-2 font-mono text-sm"
           />
           <button
             disabled={importing || !importJson.trim()}
             onClick={doImport}
-            className="min-h-[44px] rounded-lg bg-purple-600 px-4 text-white disabled:opacity-50"
+            className="bg-primary text-primary-foreground min-h-[44px] rounded-lg px-4 disabled:opacity-50"
           >
             {importing
               ? m['cuotiben.importing']()
@@ -248,41 +129,61 @@ export function CardsTab({
         />
       )}
 
+      {allEmpty && filtered.length === 0 && (
+        <div className="text-muted-foreground py-10 text-center">
+          {m['cuotiben.empty_cards']()}
+        </div>
+      )}
+
       <div className="space-y-3">
         {filtered.map((c) => {
           const open = !!expanded[c.id];
           const diagram = safeDiagram(c.diagram);
+          const summary = firstLine(c.question) || firstLine(c.note);
           return (
-            <div key={c.id} className="rounded-xl bg-white p-4 shadow-sm">
+            <div
+              key={c.id}
+              id={`note-${c.id}`}
+              className="border-border bg-card rounded-2xl border p-4"
+            >
               <div className="mb-1 flex flex-wrap items-center gap-1">
+                <span className="text-muted-foreground text-xs">
+                  {formatDate(c.createdAt)}
+                </span>
                 {c.src && (
-                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                  <span className="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 text-xs">
                     {c.src}
                   </span>
                 )}
-                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                <span className="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 text-xs">
                   {c.subject}
                 </span>
                 {c.tag && (
-                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                  <span className="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 text-xs">
                     {c.tag}
                   </span>
                 )}
                 <span
-                  className={`ml-auto rounded-full px-2 py-0.5 text-xs ${
+                  className={cn(
+                    'ml-auto rounded-full px-2 py-0.5 text-xs',
                     c.mastered
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-amber-100 text-amber-700'
-                  }`}
+                      ? 'bg-primary/10 text-primary'
+                      : 'bg-amber-500/10 text-amber-600'
+                  )}
                 >
                   {c.mastered
                     ? m['cuotiben.badge_mastered']()
                     : m['cuotiben.badge_unmastered']()}
                 </span>
               </div>
-              <div className="my-2 font-medium whitespace-pre-wrap">
-                {c.question}
-              </div>
+              <button
+                type="button"
+                onClick={() => setExpanded({ ...expanded, [c.id]: !open })}
+                className="my-2 block w-full truncate text-left font-medium"
+                title={summary}
+              >
+                {summary}
+              </button>
               {diagram && (
                 <div
                   className="my-2 text-center"
@@ -291,32 +192,33 @@ export function CardsTab({
               )}
               {open && (
                 <div className="mt-2 space-y-2 border-t pt-2 text-sm">
+                  <div className="whitespace-pre-wrap">{c.question}</div>
                   {c.myAnswer && (
                     <div>
-                      <span className="font-semibold text-slate-500">
+                      <span className="text-muted-foreground font-semibold">
                         {m['cuotiben.label_my_answer']()}：
                       </span>
                       <span className="whitespace-pre-wrap">{c.myAnswer}</span>
                     </div>
                   )}
-                  <div className="rounded-r-lg border-l-4 border-blue-600 bg-slate-50 p-2">
+                  <div className="border-primary bg-muted rounded-r-lg border-l-4 p-2">
                     <span className="font-semibold">
-                      ✅ {m['cuotiben.label_answer']()}：
+                      {m['cuotiben.label_answer']()}：
                     </span>
                     <span className="whitespace-pre-wrap">{c.answer}</span>
                   </div>
                   {c.principle && (
                     <div>
-                      <span className="font-semibold text-slate-500">
-                        📌 {m['cuotiben.label_principle']()}：
+                      <span className="text-muted-foreground font-semibold">
+                        {m['cuotiben.label_principle']()}：
                       </span>
                       <span className="whitespace-pre-wrap">{c.principle}</span>
                     </div>
                   )}
                   {c.note && (
                     <div>
-                      <span className="font-semibold text-slate-500">
-                        ⚠️ {m['cuotiben.label_note']()}：
+                      <span className="text-muted-foreground font-semibold">
+                        {m['cuotiben.label_note']()}：
                       </span>
                       <span className="whitespace-pre-wrap">{c.note}</span>
                     </div>
@@ -326,17 +228,18 @@ export function CardsTab({
               <div className="mt-2 flex gap-2">
                 <button
                   onClick={() => setExpanded({ ...expanded, [c.id]: !open })}
-                  className="min-h-[40px] rounded-lg bg-slate-100 px-3 text-sm text-blue-700"
+                  className="bg-muted text-primary min-h-[40px] rounded-lg px-3 text-sm"
                 >
                   {m['cuotiben.btn_detail']()}
                 </button>
                 <button
                   onClick={() => toggleMastered(c)}
-                  className={`min-h-[40px] rounded-lg px-3 text-sm ${
+                  className={cn(
+                    'min-h-[40px] rounded-lg px-3 text-sm',
                     c.mastered
-                      ? 'bg-slate-100 text-slate-600'
-                      : 'bg-green-100 text-green-700'
-                  }`}
+                      ? 'bg-muted text-muted-foreground'
+                      : 'bg-primary/10 text-primary'
+                  )}
                 >
                   {c.mastered
                     ? m['cuotiben.btn_unmaster']()
@@ -347,17 +250,16 @@ export function CardsTab({
                     if (window.confirm(m['cuotiben.confirm_delete']()))
                       deleteCard(c.id);
                   }}
-                  className="min-h-[40px] rounded-lg bg-red-50 px-3 text-sm text-red-600"
+                  className="bg-destructive/10 text-destructive min-h-[40px] rounded-lg px-3 text-sm"
                 >
                   {m['cuotiben.btn_delete']()}
                 </button>
-                <SimilarButton cardId={c.id} />
               </div>
             </div>
           );
         })}
-        {filtered.length === 0 && (
-          <div className="py-10 text-center text-slate-500">
+        {!allEmpty && filtered.length === 0 && (
+          <div className="text-muted-foreground py-10 text-center">
             {m['cuotiben.empty_cards']()}
           </div>
         )}
@@ -399,11 +301,12 @@ function AddCardForm({ onDone }: { onDone: () => void }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const inputCls = 'min-h-[44px] w-full rounded-lg border px-3 py-2';
-  const labelCls = 'mb-1 block text-sm text-slate-500';
+  const inputCls =
+    'border-border bg-background min-h-[44px] w-full rounded-lg border px-3 py-2';
+  const labelCls = 'text-muted-foreground mb-1 block text-sm';
 
   return (
-    <div className="mb-3 rounded-xl bg-white p-4 shadow-sm">
+    <div className="border-border bg-card mb-3 rounded-2xl border p-4">
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className={labelCls}>{m['cuotiben.form_subject']()}</label>
@@ -496,7 +399,7 @@ function AddCardForm({ onDone }: { onDone: () => void }) {
           }
           saveMut.mutate();
         }}
-        className="mt-3 min-h-[44px] w-full rounded-lg bg-blue-600 text-white disabled:opacity-50"
+        className="bg-primary text-primary-foreground mt-3 min-h-[44px] w-full rounded-lg disabled:opacity-50"
       >
         {m['cuotiben.btn_save']()}
       </button>

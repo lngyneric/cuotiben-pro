@@ -46,6 +46,26 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-19: Notepad restyled to the ShipAny unified theme
+
+### Action required
+
+None. Pure frontend change; no schema, permission, or env change.
+
+### New, no action needed
+
+- `/cuotiben` (记事本) now uses the site-wide ShipAny layout instead of
+  its own hardcoded blue/slate styling: the standard `Header`/`Footer`,
+  `bg-background`/`bg-card`/`bg-muted` theme tokens, `bg-primary` buttons
+  and `border-border` cards, so it matches `/blog`, `/html` and
+  `/ai-assistant`. The custom blue header bar and 📒 emoji title are gone;
+  the page now shows a plain title plus the `cuotiben.description` line.
+- New i18n key: `cuotiben.description` (zh + en). No behavior change:
+  the timeline, filters, add/import, expand, toggle-done and delete all
+  work as before.
+
+---
+
 ## 2026-11-19: Blog split-view reader (display-mode toggle)
 
 ### Action required
