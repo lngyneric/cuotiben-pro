@@ -22,8 +22,6 @@ export const Route = createFileRoute('/cuotiben/')({
   component: NotepadPage,
 });
 
-const SUBJECTS = ['全部', 'IGMath', '上海数学', 'Science'];
-
 // ─── 数据 hooks（TanStack Query + api-client，不用裸 fetch） ──────────────────
 
 function useCards() {
@@ -297,7 +295,6 @@ function OpsSection() {
 type StatusFilter = 'all' | 'pending' | 'done';
 
 function NotepadPage() {
-  const [subject, setSubject] = useState('全部');
   const [status, setStatus] = useState<StatusFilter>('all');
   const cardsQ = useCards();
   const invalidate = useInvalidateCuotiben();
@@ -305,24 +302,16 @@ function NotepadPage() {
   const deleteMut = useDeleteCard();
 
   const cards = cardsQ.data ?? [];
-  const subjects = useMemo(() => {
-    const extra = [
-      ...new Set(cards.map((c) => c.subject).filter(Boolean)),
-    ].filter((s) => !SUBJECTS.includes(s));
-    return [...SUBJECTS, ...extra];
-  }, [cards]);
   // 时间线：按 createdAt 倒序（API 已如此排，这里再排一次防兜底），
-  // 再按科目 + 处理状态过滤。
+  // 再按处理状态过滤。
   const filtered = useMemo(() => {
     const sorted = [...cards].sort((a, b) =>
       b.createdAt.localeCompare(a.createdAt)
     );
-    const bySubject =
-      subject === '全部' ? sorted : sorted.filter((c) => c.subject === subject);
-    if (status === 'pending') return bySubject.filter((c) => !c.mastered);
-    if (status === 'done') return bySubject.filter((c) => c.mastered);
-    return bySubject;
-  }, [cards, subject, status]);
+    if (status === 'pending') return sorted.filter((c) => !c.mastered);
+    if (status === 'done') return sorted.filter((c) => c.mastered);
+    return sorted;
+  }, [cards, status]);
   const masteredCount = cards.filter((c) => c.mastered).length;
   const pendingCount = cards.length - masteredCount;
 
@@ -359,25 +348,9 @@ function NotepadPage() {
             : ''}
         </p>
 
-        {/* 学科筛选 + 处理状态筛选 */}
+        {/* 处理状态筛选 */}
         <div className="mt-6">
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {subjects.map((s) => (
-              <button
-                key={s}
-                onClick={() => setSubject(s)}
-                className={cn(
-                  'min-h-[40px] shrink-0 rounded-full px-4 text-sm font-medium',
-                  subject === s
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-muted-foreground'
-                )}
-              >
-                {s === '全部' ? m['cuotiben.subject_all']() : s}
-              </button>
-            ))}
-          </div>
-          <div className="mt-2 flex gap-2">
+          <div className="flex gap-2">
             {(
               [
                 ['all', m['cuotiben.subject_all'](), cards.length],

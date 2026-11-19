@@ -1,7 +1,6 @@
 export type Card = {
   id: string;
   src: string;
-  subject: string;
   tag: string;
   kind: string;
   question: string;

@@ -46,6 +46,42 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-19: Notepad drops subject categories, adds CSV import
+
+### Action required
+
+None. Pure frontend change; no schema, permission, or env change.
+
+### New, no action needed
+
+- `/cuotiben` (记事本) is now for the corporate university, so the
+  school-subject categories are gone from the UI: no more subject filter
+  chips on the page (only the all / pending / done status filter
+  remains), no subject in search, no subject chip on cards, and no
+  subject dropdown in the add form. The `cuotiben.form_subject` message
+  key is left in `messages/{en,zh}.json` (unused, harmless). The backend
+  `subject` column and the API are untouched; new cards are created with
+  `subject: ''`.
+- The "来源" (source) field in the add form changed from a fixed
+  dropdown （中文数学 / igmath / igscience) to a free-text input
+  (e.g. a course name). New i18n key: `cuotiben.form_src_placeholder`.
+- Manual import now accepts `.csv` files as well as `.json`
+  (file picker `accept=".json,.csv"`). A CSV's first row is the header;
+  Chinese and English headers are both recognised (内容/question,
+  答案/answer, 我的答案/myAnswer, 原理/原理/公式/principle,
+  笔记/note, 标签/tag, 来源/src, 已完成/mastered). Quoted fields,
+  embedded commas/newlines and `""` escapes are handled. Rows missing
+  content or answer are skipped; the subject column, if present, is
+  ignored. Picking a `.csv` file parses and imports it directly; picking
+  a `.json` file still loads it into the textarea for the existing flow.
+  New i18n keys: `cuotiben.btn_import`, `cuotiben.import_format_hint`,
+  `cuotiben.invalid_csv`.
+- The import endpoint now respects `mastered: true` from the payload
+  (previously it hardcoded `mastered: false`), so the CSV 已完成 column
+  works (true / 1 / 是 → 已完成).
+
+---
+
 ## 2026-11-19: Wiki operations timeline on the notepad page
 
 ### Action required

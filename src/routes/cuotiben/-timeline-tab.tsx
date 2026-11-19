@@ -1,5 +1,5 @@
 // 记事本时间线：按 createdAt 倒序，每条只显示一句简述
-// （内容第一行，内容空则取笔记第一行）＋日期＋来源/科目/标签 chips＋
+// （内容第一行，内容空则取笔记第一行）＋日期＋来源/标签 chips＋
 // 已完成/待处理徽标。点开看全文（内容、我的答案、答案、原理、笔记、图），
 // 每条带锚点 id（#note-<id>）可直达。只改页面 UI，不动 API、不动数据库。
 // 注意：路由文件按约定用 `-` 前缀拆分（colocated non-route files）
@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 import { m } from '@/paraglide/messages.js';
 
 import type { Card } from './-types';
-import { firstLine, formatDate, safeDiagram } from './-util';
+import { firstLine, formatDate, parseCsvToCards, safeDiagram } from './-util';
 
 export function TimelineTab({
   cards,
@@ -41,7 +41,6 @@ export function TimelineTab({
       !kw ||
       c.question.includes(kw) ||
       c.tag.includes(kw) ||
-      c.subject.includes(kw) ||
       (c.src || '').includes(kw)
   );
 
@@ -63,6 +62,40 @@ export function TimelineTab({
     setImporting(false);
   };
 
+  /** CSV 文件：解析后直接调导入接口（与 JSON 同一接口）。 */
+  const doImportCsv = async (text: string) => {
+    setImporting(true);
+    try {
+      const { cards } = parseCsvToCards(text);
+      if (cards.length === 0) {
+        toast.error(m['cuotiben.invalid_csv']());
+        return;
+      }
+      const d = await apiPost<{ count: number }>('/api/cuotiben', {
+        action: 'import',
+        cards,
+      });
+      toast.success(m['cuotiben.imported']({ count: d.count }));
+      setShowImport(false);
+      setImportJson('');
+      invalidate();
+    } catch (e: any) {
+      toast.error(`${m['cuotiben.invalid_csv']()}: ${e.message}`);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  /** 导入文件：.csv 直接解析导入，.json 读进 textarea 再点导入。 */
+  const handleImportFile = async (f: File) => {
+    const text = await f.text();
+    if (/\.csv$/i.test(f.name)) {
+      await doImportCsv(text);
+    } else {
+      setImportJson(text);
+    }
+  };
+
   return (
     <div>
       <div className="mb-3 flex gap-2">
@@ -82,23 +115,23 @@ export function TimelineTab({
           onClick={() => setShowImport(!showImport)}
           className="bg-muted text-muted-foreground min-h-[44px] shrink-0 rounded-lg px-4 text-sm"
         >
-          {m['cuotiben.btn_import_json']()}
+          {m['cuotiben.btn_import']()}
         </button>
       </div>
 
       {showImport && (
         <div className="border-border bg-card mb-3 rounded-2xl border p-4">
           <h3 className="mb-2 font-bold">{m['cuotiben.import_title']()}</h3>
+          <p className="text-muted-foreground mb-2 text-xs">
+            {m['cuotiben.import_format_hint']()}
+          </p>
           <input
             type="file"
-            accept=".json"
+            accept=".json,.csv"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) {
-                const r = new FileReader();
-                r.onload = () => setImportJson(r.result as string);
-                r.readAsText(f);
-              }
+              if (f) void handleImportFile(f);
+              e.target.value = '';
             }}
             className="mb-2 w-full"
           />
@@ -155,9 +188,6 @@ export function TimelineTab({
                     {c.src}
                   </span>
                 )}
-                <span className="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 text-xs">
-                  {c.subject}
-                </span>
                 {c.tag && (
                   <span className="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 text-xs">
                     {c.tag}
@@ -269,8 +299,7 @@ export function TimelineTab({
 }
 
 function AddCardForm({ onDone }: { onDone: () => void }) {
-  const [subject, setSubject] = useState('上海数学');
-  const [src, setSrc] = useState('中文数学');
+  const [src, setSrc] = useState('');
   const [tag, setTag] = useState('');
   const [question, setQuestion] = useState('');
   const [myAnswer, setMyAnswer] = useState('');
@@ -283,7 +312,7 @@ function AddCardForm({ onDone }: { onDone: () => void }) {
       apiPost('/api/cuotiben', {
         action: 'create',
         card: {
-          subject,
+          subject: '',
           src,
           tag,
           question,
@@ -307,40 +336,14 @@ function AddCardForm({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="border-border bg-card mb-3 rounded-2xl border p-4">
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className={labelCls}>{m['cuotiben.form_subject']()}</label>
-          <select
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            className={inputCls}
-          >
-            {[
-              'IGMath',
-              '上海数学',
-              'Science',
-              'English Writing',
-              '英语',
-              '物理',
-              '化学',
-              '其他',
-            ].map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className={labelCls}>{m['cuotiben.form_src']()}</label>
-          <select
-            value={src}
-            onChange={(e) => setSrc(e.target.value)}
-            className={inputCls}
-          >
-            {['中文数学', 'igmath', 'igscience'].map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-        </div>
+      <div>
+        <label className={labelCls}>{m['cuotiben.form_src']()}</label>
+        <input
+          value={src}
+          onChange={(e) => setSrc(e.target.value)}
+          placeholder={m['cuotiben.form_src_placeholder']()}
+          className={inputCls}
+        />
       </div>
       <div className="mt-2">
         <label className={labelCls}>{m['cuotiben.form_tag']()}</label>

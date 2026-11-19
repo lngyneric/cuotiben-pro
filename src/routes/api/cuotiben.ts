@@ -99,7 +99,7 @@ async function POST({ request }: { request: Request }) {
           principle: c.principle || '',
           note: c.note || '',
           diagram: c.diagram || null,
-          mastered: false,
+          mastered: c.mastered === true,
         });
         count++;
       }
