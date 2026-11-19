@@ -1,20 +1,20 @@
+// 记事本：时间线首页。只改页面 UI，不动 API、不动数据库。
+// 下线的四个 tab（闪卡 / 学习 SRS / AI 问答 / 练一练）与今日统计已移除，
+// 答题记录（qa_log / srs / practice）不再展示，但库里的行全部保留。
+// 未掌握的条目就是待处理的提醒事项，不用答题记录算。
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
-import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
+import { apiDelete, apiGet, apiPut } from '@/lib/api-client';
 import { m } from '@/paraglide/messages.js';
 
-import { CardsTab } from './-cards-tab';
-import { FlashTab } from './-flash-tab';
-import { PracticeTab } from './-practice-tab';
-import { QaTab } from './-qa-tab';
-import { StudyTab } from './-study-tab';
-import { CARDS_KEY, DUE_KEY, STATS_KEY, type Card } from './-types';
+import { TimelineTab } from './-timeline-tab';
+import { CARDS_KEY, type Card } from './-types';
 
 export const Route = createFileRoute('/cuotiben/')({
-  component: CuotibenPage,
+  component: NotepadPage,
 });
 
 const SUBJECTS = ['全部', 'IGMath', '上海数学', 'Science'];
@@ -30,26 +30,7 @@ function useCards() {
 
 function useInvalidateCuotiben() {
   const qc = useQueryClient();
-  return () =>
-    Promise.all([
-      qc.invalidateQueries({ queryKey: CARDS_KEY }),
-      qc.invalidateQueries({ queryKey: DUE_KEY }),
-      qc.invalidateQueries({ queryKey: STATS_KEY }),
-    ]);
-}
-
-function useLog() {
-  const invalidate = useInvalidateCuotiben();
-  return useMutation({
-    mutationFn: (v: {
-      cardId: string;
-      kind: string;
-      ok: boolean;
-      skip?: boolean;
-    }) => apiPost('/api/cuotiben', { action: 'log', ...v }),
-    onSuccess: () => invalidate(),
-    onError: (e: Error) => toast.error(e.message),
-  });
+  return () => qc.invalidateQueries({ queryKey: CARDS_KEY });
 }
 
 function useToggleMastered() {
@@ -74,14 +55,13 @@ function useDeleteCard() {
 
 // ─── 主页面 ──────────────────────────────────────────────────────────────────
 
-type Tab = 'cards' | 'flash' | 'study' | 'qa' | 'practice';
+type StatusFilter = 'all' | 'pending' | 'done';
 
-function CuotibenPage() {
-  const [tab, setTab] = useState<Tab>('cards');
+function NotepadPage() {
   const [subject, setSubject] = useState('全部');
+  const [status, setStatus] = useState<StatusFilter>('all');
   const cardsQ = useCards();
   const invalidate = useInvalidateCuotiben();
-  const logMut = useLog();
   const toggleMut = useToggleMastered();
   const deleteMut = useDeleteCard();
 
@@ -92,19 +72,20 @@ function CuotibenPage() {
     ].filter((s) => !SUBJECTS.includes(s));
     return [...SUBJECTS, ...extra];
   }, [cards]);
-  const filtered = useMemo(
-    () =>
-      subject === '全部' ? cards : cards.filter((c) => c.subject === subject),
-    [cards, subject]
-  );
+  // 时间线：按 createdAt 倒序（API 已如此排，这里再排一次防兜底），
+  // 再按科目 + 处理状态过滤。
+  const filtered = useMemo(() => {
+    const sorted = [...cards].sort((a, b) =>
+      b.createdAt.localeCompare(a.createdAt)
+    );
+    const bySubject =
+      subject === '全部' ? sorted : sorted.filter((c) => c.subject === subject);
+    if (status === 'pending') return bySubject.filter((c) => !c.mastered);
+    if (status === 'done') return bySubject.filter((c) => c.mastered);
+    return bySubject;
+  }, [cards, subject, status]);
   const masteredCount = cards.filter((c) => c.mastered).length;
-
-  const log = (v: {
-    cardId: string;
-    kind: string;
-    ok: boolean;
-    skip?: boolean;
-  }) => logMut.mutate(v);
+  const pendingCount = cards.length - masteredCount;
 
   if (cardsQ.isError) {
     return (
@@ -122,15 +103,6 @@ function CuotibenPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
-      <style>{`
-        .fc-wrap{perspective:1200px}
-        .fc{position:relative;min-height:320px;cursor:pointer}
-        .fc-in{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .45s}
-        .fc.flip .fc-in{transform:rotateY(180deg)}
-        .fc-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:#fff;border-radius:18px;box-shadow:0 4px 16px rgba(0,0,0,.1);padding:22px;display:flex;flex-direction:column;justify-content:center;overflow:auto}
-        .fc-back{transform:rotateY(180deg)}
-      `}</style>
-
       <header className="sticky top-0 z-10 bg-blue-600 px-4 py-3 text-white">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
           <span className="text-lg font-bold">📒 {m['cuotiben.title']()}</span>
@@ -145,7 +117,7 @@ function CuotibenPage() {
         </div>
       </header>
 
-      {/* 学科筛选：4 个 tab 共用 */}
+      {/* 学科筛选 + 处理状态筛选 */}
       <div className="sticky top-[52px] z-10 border-b bg-white px-4 py-2">
         <div className="mx-auto flex max-w-2xl gap-2 overflow-x-auto">
           {subjects.map((s) => (
@@ -162,6 +134,27 @@ function CuotibenPage() {
             </button>
           ))}
         </div>
+        <div className="mx-auto mt-2 flex max-w-2xl gap-2">
+          {(
+            [
+              ['all', m['cuotiben.subject_all'](), cards.length],
+              ['pending', m['cuotiben.filter_pending'](), pendingCount],
+              ['done', m['cuotiben.filter_done'](), masteredCount],
+            ] as [StatusFilter, string, number][]
+          ).map(([key, label, count]) => (
+            <button
+              key={key}
+              onClick={() => setStatus(key)}
+              className={`min-h-[40px] flex-1 rounded-full px-4 text-sm font-medium ${
+                status === key
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {label} {count}
+            </button>
+          ))}
+        </div>
       </div>
 
       <main className="mx-auto max-w-2xl p-3">
@@ -170,54 +163,15 @@ function CuotibenPage() {
             {m['cuotiben.loading']()}
           </div>
         ) : (
-          <>
-            {tab === 'cards' && (
-              <CardsTab
-                cards={filtered}
-                allEmpty={cards.length === 0}
-                toggleMastered={(c) => toggleMut.mutate(c)}
-                deleteCard={(id) => deleteMut.mutate(id)}
-                invalidate={invalidate}
-              />
-            )}
-            {tab === 'flash' && (
-              <FlashTab
-                cards={filtered}
-                toggleMastered={(c) => toggleMut.mutate(c)}
-                log={log}
-              />
-            )}
-            {tab === 'study' && <StudyTab subject={subject} log={log} />}
-            {tab === 'qa' && <QaTab cards={filtered} log={log} />}
-            {tab === 'practice' && <PracticeTab subject={subject} />}
-          </>
+          <TimelineTab
+            cards={filtered}
+            allEmpty={cards.length === 0}
+            toggleMastered={(c) => toggleMut.mutate(c)}
+            deleteCard={(id) => deleteMut.mutate(id)}
+            invalidate={invalidate}
+          />
         )}
       </main>
-
-      <nav className="fixed inset-x-0 bottom-0 z-10 border-t bg-white">
-        <div className="mx-auto flex max-w-2xl">
-          {(
-            [
-              ['cards', '📝', m['cuotiben.tab_cards']()],
-              ['flash', '🃏', m['cuotiben.tab_flash']()],
-              ['study', '📊', m['cuotiben.tab_study']()],
-              ['qa', '💬', m['cuotiben.tab_qa']()],
-              ['practice', '✏️', '练习'],
-            ] as [Tab, string, string][]
-          ).map(([key, icon, label]) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`min-h-[60px] flex-1 py-2 text-xs ${
-                tab === key ? 'font-bold text-blue-600' : 'text-slate-500'
-              }`}
-            >
-              <span className="block text-xl">{icon}</span>
-              {label}
-            </button>
-          ))}
-        </div>
-      </nav>
     </div>
   );
 }

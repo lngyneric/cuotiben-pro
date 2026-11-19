@@ -1,4 +1,7 @@
-// 错题 tab：列表 / 搜索 / 展开详情 / 已掌握切换 / 新增 / JSON 导入
+// 记事本时间线：按 createdAt 倒序，每条只显示一句简述
+// （内容第一行，内容空则取笔记第一行）＋日期＋来源/科目/标签 chips＋
+// 已完成/待处理徽标。点开看全文（内容、我的答案、答案、原理、笔记、图），
+// 每条带锚点 id（#note-<id>）可直达。只改页面 UI，不动 API、不动数据库。
 // 注意：路由文件按约定用 `-` 前缀拆分（colocated non-route files）
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
@@ -8,105 +11,9 @@ import { apiPost } from '@/lib/api-client';
 import { m } from '@/paraglide/messages.js';
 
 import type { Card } from './-types';
-import { safeDiagram } from './-util';
+import { firstLine, formatDate, safeDiagram } from './-util';
 
-// 导出单文件闪卡 HTML（离线可看）
-function exportFlashcards(cards: Card[]) {
-  const esc = (s: string) =>
-    String(s || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-  const cardsHtml = cards
-    .map(
-      (c, i) => `
-    <div class="card" onclick="this.classList.toggle('flip')">
-      <div class="inner">
-        <div class="front">
-          <div class="num">#${i + 1} ${esc(c.tag || '')}</div>
-          <div class="q">${esc(c.question)}</div>
-          <div class="tap">点击翻面</div>
-        </div>
-        <div class="back">
-          <div class="a"><b>答案：</b>${esc(c.answer)}</div>
-          ${c.principle ? `<div class="p"><b>原理：</b>${esc(c.principle)}</div>` : ''}
-          ${c.note ? `<div class="n"><b>错因：</b>${esc(c.note)}</div>` : ''}
-        </div>
-      </div>
-    </div>`
-    )
-    .join('\n');
-  const html = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>错题闪卡</title><style>
-body{font-family:system-ui;margin:0;padding:16px;background:#f5f5f5}
-.card{perspective:1000px;margin:12px auto;max-width:600px;cursor:pointer}
-.inner{position:relative;min-height:200px;transition:transform .6s;transform-style:preserve-3d}
-.card.flip .inner{transform:rotateY(180deg)}
-.front,.back{position:absolute;inset:0;backface-visibility:hidden;background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.1)}
-.back{transform:rotateY(180deg)}
-.num{color:#888;font-size:12px;margin-bottom:8px}
-.q{font-size:17px;line-height:1.6;white-space:pre-wrap}
-.tap{color:#aaa;font-size:12px;margin-top:12px;text-align:center}
-.a,.p,.n{margin:8px 0;line-height:1.6;white-space:pre-wrap}
-h1{text-align:center}
-</style></head><body><h1>错题闪卡（${cards.length} 张）</h1>${cardsHtml}</body></html>`;
-  const blob = new Blob([html], { type: 'text/html' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = '错题闪卡.html';
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-// 类似题按钮：调用 AI 生成同类练习题
-function SimilarButton({ cardId }: { cardId: string }) {
-  const [result, setResult] = useState<{
-    question: string;
-    answer: string;
-  } | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [show, setShow] = useState(false);
-
-  const generate = async () => {
-    if (result) {
-      setShow(!show);
-      return;
-    }
-    setLoading(true);
-    try {
-      const data = await apiPost<{ question: string; answer: string }>(
-        '/api/cuotiben',
-        { action: 'similar', cardId }
-      );
-      setResult(data);
-      setShow(true);
-    } catch (e: any) {
-      toast.error(e.message || '生成失败');
-    }
-    setLoading(false);
-  };
-
-  return (
-    <div className="w-full">
-      <button
-        onClick={generate}
-        disabled={loading}
-        className="min-h-[40px] rounded-lg bg-purple-50 px-3 text-sm text-purple-700 disabled:opacity-50"
-      >
-        {loading ? '生成中...' : '📝 类似题'}
-      </button>
-      {show && result && (
-        <div className="mt-2 rounded-lg bg-purple-50 p-3 text-sm">
-          <div className="font-semibold text-purple-900">类似练习题：</div>
-          <div className="mt-1 whitespace-pre-wrap">{result.question}</div>
-          <div className="mt-2 font-semibold text-purple-900">答案：</div>
-          <div className="whitespace-pre-wrap">{result.answer}</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function CardsTab({
+export function TimelineTab({
   cards,
   allEmpty,
   toggleMastered,
@@ -134,16 +41,6 @@ export function CardsTab({
       c.subject.includes(kw) ||
       (c.src || '').includes(kw)
   );
-
-  const seedMut = useMutation({
-    mutationFn: () =>
-      apiPost<{ count: number }>('/api/cuotiben', { action: 'seed' }),
-    onSuccess: (d) => {
-      toast.success(m['cuotiben.imported']({ count: d.count }));
-      invalidate();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
 
   const doImport = async () => {
     setImporting(true);
@@ -179,31 +76,12 @@ export function CardsTab({
           {m['cuotiben.btn_add']()}
         </button>
         <button
-          onClick={() => exportFlashcards(cards)}
-          className="min-h-[44px] shrink-0 rounded-lg bg-slate-600 px-4 text-white"
-          title="导出单文件闪卡 HTML"
+          onClick={() => setShowImport(!showImport)}
+          className="min-h-[44px] shrink-0 rounded-lg bg-slate-100 px-4 text-sm text-slate-600"
         >
-          ⤓闪卡
+          {m['cuotiben.btn_import_json']()}
         </button>
       </div>
-
-      {allEmpty && (
-        <div className="mb-3 flex gap-2">
-          <button
-            onClick={() => seedMut.mutate()}
-            disabled={seedMut.isPending}
-            className="min-h-[44px] flex-1 rounded-lg bg-green-600 px-4 text-white disabled:opacity-50"
-          >
-            {m['cuotiben.btn_import_seed']()}
-          </button>
-          <button
-            onClick={() => setShowImport(!showImport)}
-            className="min-h-[44px] flex-1 rounded-lg bg-purple-600 px-4 text-white"
-          >
-            {m['cuotiben.btn_import_json']()}
-          </button>
-        </div>
-      )}
 
       {showImport && (
         <div className="mb-3 rounded-lg border bg-white p-4">
@@ -248,13 +126,27 @@ export function CardsTab({
         />
       )}
 
+      {allEmpty && filtered.length === 0 && (
+        <div className="py-10 text-center text-slate-500">
+          {m['cuotiben.empty_cards']()}
+        </div>
+      )}
+
       <div className="space-y-3">
         {filtered.map((c) => {
           const open = !!expanded[c.id];
           const diagram = safeDiagram(c.diagram);
+          const summary = firstLine(c.question) || firstLine(c.note);
           return (
-            <div key={c.id} className="rounded-xl bg-white p-4 shadow-sm">
+            <div
+              key={c.id}
+              id={`note-${c.id}`}
+              className="rounded-xl bg-white p-4 shadow-sm"
+            >
               <div className="mb-1 flex flex-wrap items-center gap-1">
+                <span className="text-xs text-slate-400">
+                  {formatDate(c.createdAt)}
+                </span>
                 {c.src && (
                   <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
                     {c.src}
@@ -280,9 +172,14 @@ export function CardsTab({
                     : m['cuotiben.badge_unmastered']()}
                 </span>
               </div>
-              <div className="my-2 font-medium whitespace-pre-wrap">
-                {c.question}
-              </div>
+              <button
+                type="button"
+                onClick={() => setExpanded({ ...expanded, [c.id]: !open })}
+                className="my-2 block w-full truncate text-left font-medium"
+                title={summary}
+              >
+                {summary}
+              </button>
               {diagram && (
                 <div
                   className="my-2 text-center"
@@ -291,6 +188,7 @@ export function CardsTab({
               )}
               {open && (
                 <div className="mt-2 space-y-2 border-t pt-2 text-sm">
+                  <div className="whitespace-pre-wrap">{c.question}</div>
                   {c.myAnswer && (
                     <div>
                       <span className="font-semibold text-slate-500">
@@ -351,12 +249,11 @@ export function CardsTab({
                 >
                   {m['cuotiben.btn_delete']()}
                 </button>
-                <SimilarButton cardId={c.id} />
               </div>
             </div>
           );
         })}
-        {filtered.length === 0 && (
+        {!allEmpty && filtered.length === 0 && (
           <div className="py-10 text-center text-slate-500">
             {m['cuotiben.empty_cards']()}
           </div>
