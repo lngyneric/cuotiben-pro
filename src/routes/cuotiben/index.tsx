@@ -4,7 +4,7 @@
 // 未掌握的条目就是待处理的提醒事项，不用答题记录算。
 // 主题：跟站内其它页一致，走 ShipAny 统一主题（Header/Footer＋主题 token，
 // 不再用写死的 slate/blue 配色与自定义蓝底 header）。
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -56,6 +56,240 @@ function useDeleteCard() {
     onSuccess: () => invalidate(),
     onError: (e: Error) => toast.error(e.message),
   });
+}
+
+// ─── Wiki 操作时间线（只读聚合，见 src/modules/cuotiben/timeline.ts） ──────
+
+type TimelineCategory =
+  | 'assistant'
+  | 'card'
+  | 'admin'
+  | 'html'
+  | 'mentor'
+  | 'system';
+
+type TimelineEvent = {
+  id: string;
+  at: number;
+  category: TimelineCategory;
+  title: string;
+  detail?: string;
+  href?: string;
+};
+
+type TimelineTodos = {
+  pendingConfirm: number;
+  overdue: number;
+  unresolvedIdentity: number;
+  noCourseActivity: number;
+};
+
+type WikiTimeline = {
+  events: TimelineEvent[];
+  todos: TimelineTodos;
+};
+
+const TIMELINE_KEY = ['cuotiben-timeline'];
+const TODOS_VISIBLE_KEY = 'cuotiben-todos-visible';
+
+const OPS_CATEGORIES: (TimelineCategory | 'all')[] = [
+  'all',
+  'assistant',
+  'admin',
+  'mentor',
+  'system',
+  'html',
+  'card',
+];
+
+function opsCategoryLabel(cat: TimelineCategory | 'all'): string {
+  switch (cat) {
+    case 'all':
+      return m['cuotiben.subject_all']();
+    case 'assistant':
+      return m['cuotiben.ops_cat_assistant']();
+    case 'admin':
+      return m['cuotiben.ops_cat_admin']();
+    case 'mentor':
+      return m['cuotiben.ops_cat_mentor']();
+    case 'system':
+      return m['cuotiben.ops_cat_system']();
+    case 'html':
+      return m['cuotiben.ops_cat_html']();
+    case 'card':
+      return m['cuotiben.ops_cat_card']();
+  }
+}
+
+/** 毫秒时间戳 → 本地日期时间（浏览器时区）；解析失败返回空。 */
+function formatTimelineAt(at: number): string {
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
+function useTimeline() {
+  return useQuery({
+    queryKey: TIMELINE_KEY,
+    queryFn: () => apiGet<WikiTimeline>('/api/cuotiben/timeline'),
+  });
+}
+
+function OpsSection() {
+  const timelineQ = useTimeline();
+  const [cat, setCat] = useState<TimelineCategory | 'all'>('all');
+  // 待办面板显示开关：默认显示，记 localStorage；挂载后读，避免 SSR 水合不一致
+  //（与 blog 分屏的 viewMode 同一做法，刷新瞬间可能闪一下）。
+  const [todosVisible, setTodosVisible] = useState(true);
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(TODOS_VISIBLE_KEY) === '0')
+        setTodosVisible(false);
+    } catch {
+      // localStorage 不可用时保持默认显示
+    }
+  }, []);
+  const toggleTodosVisible = () => {
+    setTodosVisible((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(TODOS_VISIBLE_KEY, next ? '1' : '0');
+      } catch {
+        // 写入失败不阻塞
+      }
+      return next;
+    });
+  };
+
+  const events = timelineQ.data?.events ?? [];
+  const todos = timelineQ.data?.todos;
+  const hasTodos =
+    !!todos &&
+    (todos.pendingConfirm > 0 ||
+      todos.overdue > 0 ||
+      todos.unresolvedIdentity > 0 ||
+      todos.noCourseActivity > 0);
+  const filtered =
+    cat === 'all' ? events : events.filter((e) => e.category === cat);
+
+  return (
+    <section className="mt-10">
+      <h2 className="text-xl font-bold">{m['cuotiben.ops_title']()}</h2>
+
+      {/* 待办面板：常驻提醒，标题行右侧可隐藏；隐藏后只留一行加显示按钮 */}
+      {hasTodos && todos && todosVisible && (
+        <div className="border-border bg-card mt-4 rounded-2xl border p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold">{m['cuotiben.todo_title']()}</h3>
+            <button
+              onClick={toggleTodosVisible}
+              className="text-muted-foreground min-h-[32px] px-2 text-sm underline"
+            >
+              {m['cuotiben.todo_hide']()}
+            </button>
+          </div>
+          <ul className="mt-2 space-y-1 text-sm">
+            {todos.pendingConfirm > 0 && (
+              <li>
+                {m['cuotiben.todo_pending_confirm']({
+                  n: todos.pendingConfirm,
+                })}
+              </li>
+            )}
+            {todos.overdue > 0 && (
+              <li>{m['cuotiben.todo_overdue']({ n: todos.overdue })}</li>
+            )}
+            {todos.unresolvedIdentity > 0 && (
+              <li>
+                {m['cuotiben.todo_unresolved']({
+                  n: todos.unresolvedIdentity,
+                })}
+              </li>
+            )}
+            {todos.noCourseActivity > 0 && (
+              <li>
+                {m['cuotiben.todo_no_course']({
+                  n: todos.noCourseActivity,
+                })}
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
+      {hasTodos && !todosVisible && (
+        <div className="border-border bg-card mt-4 flex items-center justify-between rounded-2xl border p-4">
+          <span className="text-muted-foreground text-sm">
+            {m['cuotiben.todo_hidden']()}
+          </span>
+          <button
+            onClick={toggleTodosVisible}
+            className="bg-primary text-primary-foreground min-h-[32px] rounded-full px-4 text-sm font-medium"
+          >
+            {m['cuotiben.todo_show']()}
+          </button>
+        </div>
+      )}
+
+      {/* 分类筛选 */}
+      <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+        {OPS_CATEGORIES.map((c) => (
+          <button
+            key={c}
+            onClick={() => setCat(c)}
+            className={cn(
+              'min-h-[40px] shrink-0 rounded-full px-4 text-sm font-medium',
+              cat === c
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground'
+            )}
+          >
+            {opsCategoryLabel(c)}
+          </button>
+        ))}
+      </div>
+
+      {/* 事件列表 */}
+      {timelineQ.isLoading ? (
+        <div className="text-muted-foreground py-8 text-center">
+          {m['cuotiben.loading']()}
+        </div>
+      ) : filtered.length === 0 ? (
+        <p className="text-muted-foreground py-8 text-center">
+          {m['cuotiben.ops_empty']()}
+        </p>
+      ) : (
+        <ul className="divide-border mt-2 divide-y">
+          {filtered.map((ev) => (
+            <li key={ev.id} className="py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="bg-secondary text-secondary-foreground shrink-0 rounded-full px-2 py-0.5 text-xs">
+                  {opsCategoryLabel(ev.category)}
+                </span>
+                {ev.href ? (
+                  <a href={ev.href} className="font-medium underline">
+                    {ev.title}
+                  </a>
+                ) : (
+                  <span className="font-medium">{ev.title}</span>
+                )}
+              </div>
+              {ev.detail && (
+                <p className="text-muted-foreground mt-1 text-sm">
+                  {ev.detail}
+                </p>
+              )}
+              <p className="text-muted-foreground mt-1 text-xs">
+                {formatTimelineAt(ev.at)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 // ─── 主页面 ──────────────────────────────────────────────────────────────────
@@ -182,6 +416,8 @@ function NotepadPage() {
             />
           )}
         </div>
+
+        <OpsSection />
       </main>
       <Footer />
     </div>

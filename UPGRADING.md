@@ -46,6 +46,63 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-19: Wiki operations timeline on the notepad page
+
+### Action required
+
+None. Pure frontend change plus a read-only aggregation endpoint; no
+schema, permission, or env change.
+
+### New, no action needed
+
+- `/cuotiben` (记事本) now has a "Wiki 操作" section below the card
+  timeline. It shows a to-do panel plus a unified event list (newest
+  first, at most the 100 most recent), fetched from the new endpoint
+  `GET /api/cuotiben/timeline` (login required; IP 200ms + per-user 2s
+  rate limit, same as the AI assistant routes).
+- Event sources (all filtered to the current user): AI assistant
+  questions (`user_event` ai_assistant_query — only mode/found/course
+  count, never the question text), note cards (`cuotiben_card`),
+  admin batch article-status changes (`admin_execution`
+  posts_batch_status, completed only), HTML uploads
+  (`blog_html_file`, links straight to the file), mentor
+  confirmations/comments (`user_status_summary.actual.confirmations`),
+  and the latest system sync (`user_status_summary` max `computed_at`).
+  `posts_batch_status` is grouped under the admin category, not a
+  separate article category.
+- To-dos count mentoring records whose flags contain
+  `pending_confirm` / `overdue` / `unresolved_identity` /
+  `no_course_activity`. Admins see all records; other users see only
+  their own (by employee number). The panel is a persistent reminder
+  with a hide/show text button; the choice is stored in the browser's
+  localStorage (`cuotiben-todos-visible`, '1'/'0', default '1'). When
+  hidden, only one line ("待办事项（已隐藏）") plus a Show button
+  remains. Category filter chips filter the event list only; there is
+  no per-category toggle.
+- New i18n keys: `cuotiben.ops_title`, `cuotiben.ops_empty`,
+  `cuotiben.ops_open`, `cuotiben.ops_cat_assistant`,
+  `cuotiben.ops_cat_admin`, `cuotiben.ops_cat_mentor`,
+  `cuotiben.ops_cat_system`, `cuotiben.ops_cat_html`,
+  `cuotiben.ops_cat_card`, `cuotiben.todo_title`,
+  `cuotiben.todo_pending_confirm`, `cuotiben.todo_overdue`,
+  `cuotiben.todo_unresolved`, `cuotiben.todo_no_course`,
+  `cuotiben.todo_hide`, `cuotiben.todo_show`,
+  `cuotiben.todo_hidden` (zh + en). Event titles themselves are
+  data-driven Chinese strings built server-side (they embed names,
+  counts and node names), so they stay Chinese even in the English
+  UI; only the surrounding chrome is localized.
+- Known limits (as observed in production, not bugs): mentor
+  confirmations are currently empty — the only structured row
+  (官雨润) has passed/confirmedAt/comments all null, so no mentor
+  events appear until a mentor actually fills one in; the system-sync
+  event shows only the latest sync (there is no sync history to list);
+  cards have no "completed at" column, so card events use the
+  creation time and show the current status (已完成/待处理) as the
+  detail; to-do counts are per mentoring record, so a person with two
+  records (e.g. 谢艳芳) counts twice.
+
+---
+
 ## 2026-11-19: Notepad restyled to the ShipAny unified theme
 
 ### Action required
