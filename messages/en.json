@@ -1415,5 +1415,7 @@
   "growth.plan_total": "{n} nodes · about {hours} hours total",
   "growth.to_graph_prefix": "Want to see everything the company knows?",
   "growth.to_graph_link": "Go to the Knowledge Graph",
-  "growth.to_graph_suffix": "It maps IVD laboratory medicine knowledge nodes, courses and documents by domain."
+  "growth.to_graph_suffix": "It maps IVD laboratory medicine knowledge nodes, courses and documents by domain.",
+  "growth.auto_matched": "Auto-matched by title",
+  "growth.auto_matched_note": "These courses were matched to this node automatically by title and refresh hourly; let us know if a match looks wrong."
 }

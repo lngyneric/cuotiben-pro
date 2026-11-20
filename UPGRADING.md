@@ -699,3 +699,18 @@ grant_<orderNo>`, so the unique index allows one grant per order. Older
   `utm_source` filter (`users_sources` operation, `GET /api/admin/users/sources`,
   `users.read`). The subscriptions and credits list APIs now also return
   `userName` / `userImage`.
+
+## 成长路径视频课自动挂接（标题匹配）
+
+- 新表 `growth_course_link`（三份 schema 方言模板均已加，生产库已直建）：
+  节点 → blog 已发布视频课的自动挂接，来源 `auto-title`。
+- 定时同步 `/home/sysmex/graph-sync/sync-growth-courses.py`（每小时跑，
+  与图谱课程同步同目录）：只取 blog 已发布且在 ai-shifu 有视频流
+  （outline 含 .m3u8/mp4）的课，按标题 2 字 gram 打分（节点名＋技能＋
+  领域名；分数 ≥3、至少 2 个命中 gram 或一个整词命中、且至少 1 个命中
+  gram 来自节点名）。生产库现为 7 条链接、6 个节点、7 门课。
+- 新接口 `GET /api/growth`（需登录）：返回 growth_course_link 链接＋
+  blog 课程实时状态；成长页把匹配到的视频课叠加到节点详情（链到
+  blog 文章页，标注“标题自动匹配”），计数与缺口随之实时更新。
+- 注意：视频课库以中欧管理沟通类为主，AI 智能体／数字化等节点大多
+  仍无匹配课——那是课程缺口，不是匹配失败；缺口数由 27 降到 21。

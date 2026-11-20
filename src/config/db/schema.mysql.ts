@@ -725,3 +725,28 @@ export const graphCourseLink = table(
 
 export type GraphCourseLink = typeof graphCourseLink.$inferSelect;
 export type NewGraphCourseLink = typeof graphCourseLink.$inferInsert;
+
+// ─── Growth Path (成长路径) ─────────────────────────────────────────────────
+// Auto-matched video courses for growth nodes (title matching, see
+// sync-growth-courses.py). Same shape as graphCourseLink.
+export const growthCourseLink = table(
+  'growth_course_link',
+  {
+    id: varchar191('id').primaryKey(),
+    nodeId: varchar191('node_id').notNull(),
+    courseBid: varchar191('course_bid').notNull(),
+    score: integer('score').notNull().default(0),
+    source: varchar191('source').notNull().default('auto-title'),
+    updatedAt: timestamp('updated_at', { fsp: 3 })
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (t) => [
+    index('idx_growth_link_node').on(t.nodeId),
+    index('idx_growth_link_course').on(t.courseBid),
+  ]
+);
+
+export type GrowthCourseLink = typeof growthCourseLink.$inferSelect;
+export type NewGrowthCourseLink = typeof growthCourseLink.$inferInsert;

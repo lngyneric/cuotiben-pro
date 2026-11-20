@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 
 import { useSession } from '@/core/auth/client';
 import { Link } from '@/core/i18n/navigation';
 import { localizedAbsoluteUrl } from '@/core/i18n/urls';
 import { envConfigs } from '@/config';
+import { apiGet } from '@/lib/api-client';
+import { withAppBase } from '@/lib/base-path';
 import { cn } from '@/lib/utils';
 import { m } from '@/paraglide/messages.js';
 import { getLocale, locales } from '@/paraglide/runtime.js';
@@ -22,6 +25,19 @@ import {
 interface GrowthCourse {
   shifu_bid: string;
   title: string;
+}
+
+interface OverlayCourse {
+  bid: string;
+  slug: string;
+  title: string;
+  status: string;
+}
+
+interface OverlayLink {
+  nodeId: string;
+  courseBid: string;
+  score: number;
 }
 
 interface GrowthNode {
@@ -152,13 +168,57 @@ function GrowthPage() {
     []
   );
 
+  // 实时叠加：定时同步按标题匹配到的视频课；失败时用静态状态降级展示。
+  const overlayQ = useQuery({
+    queryKey: ['growth-overlay'],
+    queryFn: () =>
+      apiGet<{
+        courses: OverlayCourse[];
+        links: OverlayLink[];
+      }>('/api/growth'),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const liveCourseByBid = useMemo(() => {
+    const map = new Map<string, OverlayCourse>();
+    for (const c of overlayQ.data?.courses ?? []) map.set(c.bid, c);
+    return map;
+  }, [overlayQ.data]);
+  // 节点 → 自动匹配到的视频课（只保留已发布且在 blog 里有记录的）。
+  const matchedByNode = useMemo(() => {
+    const map = new Map<string, OverlayCourse[]>();
+    for (const l of overlayQ.data?.links ?? []) {
+      const c = liveCourseByBid.get(l.courseBid);
+      if (!c || c.status !== 'published') continue;
+      const list = map.get(l.nodeId) ?? [];
+      list.push(c);
+      map.set(l.nodeId, list);
+    }
+    return map;
+  }, [overlayQ.data, liveCourseByBid]);
+  // 节点是否有课：静态 ai-shifu 课程或自动匹配到的视频课，任一即可。
+  const hasCourse = (n: GrowthNode) =>
+    n.courses.length > 0 || (matchedByNode.get(n.id)?.length ?? 0) > 0;
+  // 实时计数：静态 8 门＋自动匹配到的视频课；缺口随之减少。
+  const liveCounts = useMemo(() => {
+    const withCourse = GROWTH.nodes.filter((n) => hasCourse(n)).length;
+    const matchedLinks = [...matchedByNode.values()].reduce(
+      (s, list) => s + list.length,
+      0
+    );
+    return {
+      courses: GROWTH.counts.courses + matchedLinks,
+      gaps: GROWTH.counts.nodes - withCourse,
+    };
+  }, [matchedByNode]);
+
   const visibleNodes = useMemo(() => {
     return GROWTH.nodes.filter((n) => {
       if (domainId && n.domain !== domainId) return false;
-      if (gapsOnly && n.courses.length > 0) return false;
+      if (gapsOnly && hasCourse(n)) return false;
       return true;
     });
-  }, [domainId, gapsOnly]);
+  }, [domainId, gapsOnly, matchedByNode]);
 
   const visibleIds = useMemo(
     () => new Set(visibleNodes.map((n) => n.id)),
@@ -190,7 +250,7 @@ function GrowthPage() {
         label: n.name,
         kind: 'node',
         color: d?.color ?? '#64748b',
-        status: n.courses.length > 0 ? 'has-course' : 'gap',
+        status: hasCourse(n) ? 'has-course' : 'gap',
       });
       links.push({
         source: `domain:${n.domain}`,
@@ -280,8 +340,8 @@ function GrowthPage() {
             {m['growth.counts_line']({
               domains: String(GROWTH.counts.domains),
               nodes: String(GROWTH.counts.nodes),
-              courses: String(GROWTH.counts.courses),
-              gaps: String(GROWTH.counts.gaps),
+              courses: String(liveCounts.courses),
+              gaps: String(liveCounts.gaps),
             })}
             {' · '}
             {m['growth.version']({ version: GROWTH.version })}
@@ -401,6 +461,8 @@ function GrowthPage() {
                   <NodeDetail
                     node={selectedNode}
                     domain={domainsById.get(selectedNode.domain)}
+                    matched={matchedByNode.get(selectedNode.id) ?? []}
+                    hasCourse={hasCourse(selectedNode)}
                     onBack={() => setNodeId(null)}
                     onSelectNode={(id) => setNodeId(id)}
                   />
@@ -415,7 +477,7 @@ function GrowthPage() {
                     (n) => n.domain === d.id
                   ).length;
                   const gapCount = GROWTH.nodes.filter(
-                    (n) => n.domain === d.id && n.courses.length === 0
+                    (n) => n.domain === d.id && !hasCourse(n)
                   ).length;
                   return (
                     <button
@@ -455,6 +517,8 @@ function GrowthPage() {
                     <NodeDetail
                       node={selectedNode}
                       domain={domainsById.get(selectedNode.domain)}
+                      matched={matchedByNode.get(selectedNode.id) ?? []}
+                      hasCourse={hasCourse(selectedNode)}
                       onBack={() => setNodeId(null)}
                       onSelectNode={(id) => setNodeId(id)}
                     />
@@ -485,7 +549,7 @@ function GrowthPage() {
                                 {n.phase}
                               </span>
                             )}
-                            {n.courses.length > 0 ? (
+                            {hasCourse(n) ? (
                               <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-600 dark:text-emerald-400">
                                 {m['growth.has_course']()}
                               </span>
@@ -554,7 +618,7 @@ function GrowthPage() {
                           })}
                         </span>
                       </span>
-                      {n.courses.length > 0 ? (
+                      {hasCourse(n) ? (
                         <span className="shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-600 dark:text-emerald-400">
                           {m['growth.has_course']()}
                         </span>
@@ -579,11 +643,15 @@ function GrowthPage() {
 function NodeDetail({
   node,
   domain,
+  matched,
+  hasCourse,
   onBack,
   onSelectNode,
 }: {
   node: GrowthNode;
   domain: GrowthDomain | undefined;
+  matched: OverlayCourse[];
+  hasCourse: boolean;
   onBack: () => void;
   onSelectNode: (id: string) => void;
 }) {
@@ -615,7 +683,7 @@ function NodeDetail({
           hours: String(node.estimated_hours),
         })}
       </p>
-      {node.courses.length > 0 ? (
+      {hasCourse ? (
         <span className="mt-3 inline-block rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-600 dark:text-emerald-400">
           {m['growth.has_course']()}
         </span>
@@ -673,7 +741,7 @@ function NodeDetail({
 
       <div className="mt-6">
         <h3 className="text-sm font-medium">{m['growth.courses']()}</h3>
-        {node.courses.length === 0 ? (
+        {node.courses.length === 0 && matched.length === 0 ? (
           <p className="text-muted-foreground mt-2 text-sm">
             {m['growth.no_course_desc']()}
           </p>
@@ -691,7 +759,25 @@ function NodeDetail({
                 </a>
               </li>
             ))}
+            {matched.map((c) => (
+              <li key={c.bid}>
+                <Link
+                  href={withAppBase(`/blog/${c.slug}`)}
+                  className="text-primary block truncate text-sm underline underline-offset-4"
+                >
+                  {c.title}
+                </Link>
+                <span className="text-muted-foreground text-xs">
+                  {m['growth.auto_matched']()}
+                </span>
+              </li>
+            ))}
           </ul>
+        )}
+        {matched.length > 0 && (
+          <p className="text-muted-foreground mt-2 text-xs leading-relaxed">
+            {m['growth.auto_matched_note']()}
+          </p>
         )}
       </div>
 

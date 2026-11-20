@@ -797,6 +797,30 @@ export const graphCourseLink = table(
 export type GraphCourseLink = typeof graphCourseLink.$inferSelect;
 export type NewGraphCourseLink = typeof graphCourseLink.$inferInsert;
 
+// ─── Growth Path (成长路径) ─────────────────────────────────────────────────
+// Auto-matched video courses for growth nodes (title matching, see
+// sync-growth-courses.py). Same shape as graphCourseLink.
+export const growthCourseLink = table(
+  'growth_course_link',
+  {
+    id: text('id').primaryKey(),
+    nodeId: text('node_id').notNull(),
+    courseBid: text('course_bid').notNull(),
+    score: integer('score').notNull().default(0),
+    source: text('source').notNull().default('auto-title'),
+    updatedAt: timestamp('updated_at')
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => [
+    index('idx_growth_link_node').on(t.nodeId),
+    index('idx_growth_link_course').on(t.courseBid),
+  ]
+);
+
+export type GrowthCourseLink = typeof growthCourseLink.$inferSelect;
+export type NewGrowthCourseLink = typeof growthCourseLink.$inferInsert;
+
 // ─── Cuotiben (错题本) ───────────────────────────────────────────────────────
 
 export const cuotibenCard = table(

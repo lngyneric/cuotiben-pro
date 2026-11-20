@@ -1415,5 +1415,7 @@
   "growth.plan_total": "共 {n} 个节点 · 约 {hours} 学时",
   "growth.to_graph_prefix": "想看看公司全部的知识和课程？",
   "growth.to_graph_link": "去知识图谱",
-  "growth.to_graph_suffix": "那里按领域收录了 IVD 检验医学的知识节点、课程和文档。"
+  "growth.to_graph_suffix": "那里按领域收录了 IVD 检验医学的知识节点、课程和文档。",
+  "growth.auto_matched": "标题自动匹配",
+  "growth.auto_matched_note": "以上课程由系统按标题自动匹配到该节点，每小时更新一次；匹配不准的地方请告诉我们。"
 }
