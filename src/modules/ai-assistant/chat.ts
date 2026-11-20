@@ -93,6 +93,10 @@ export interface ChatInput {
   docSectionUrl: (section: DocCandidate) => string;
   baseUrl: string;
   apiKey: string;
+  /** 本轮参考资料文本（附件中提取，调用方已截断）；拼进 system prompt。 */
+  attachmentContext?: string;
+  /** 本轮直通图片（截图/粘贴图）；只挂在最新一轮 user 消息上。 */
+  images?: { mime: string; base64: string }[];
 }
 
 /** 工具循环上限：LLM 最多调 3 次工具，之后必须直接回答。 */
@@ -119,7 +123,7 @@ function toolDescriptions(tools: ChatTools): string {
 }
 
 function chatSystemPrompt(input: ChatInput): string {
-  return [
+  const lines = [
     '你是企业大学 wiki 的 AI 学习助手，和企微里的大圆一样：能正常聊天，不只推课。',
     '用中文回答，简短直接，先给结论；一轮只答当前问题，不要一次列十几条。',
     '',
@@ -134,7 +138,18 @@ function chatSystemPrompt(input: ChatInput): string {
     '5. 问候、闲聊、与课程无关的问题，正常接话，不用拒绝，也不用硬推课。',
     '6. 不知道就直说不知道，不要编造。',
     ...assistantContextLines(input.role, input.statusSummaries),
-  ].join('\n');
+  ];
+  // 本轮附件：抽出的文本拼进 system prompt（不走 history，免得每轮
+  // 重复带）；图片直接挂在 user 消息上，模型自己看图。
+  const refText = input.attachmentContext?.trim();
+  if (refText) {
+    lines.push(
+      '',
+      '用户本轮提供了以下参考资料（附件里提取的文字），回答时优先参考这些内容；资料里没有的不要编造：',
+      refText
+    );
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -201,6 +216,16 @@ function parseLlmJson(text: string): LlmJson | null {
   }
 }
 
+/** OpenAI 兼容消息内容：纯文本，或文本 + 图片（image_url 直通）。 */
+export type ChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
+export interface ChatLlmMessage {
+  role: string;
+  content: string | ChatContentPart[];
+}
+
 /** 调 OpenAI 兼容的 chat completions（本机部署指向 Magpie 网关），返回原文。 */
 async function callChatLLM({
   baseUrl,
@@ -211,7 +236,7 @@ async function callChatLLM({
   baseUrl: string;
   apiKey: string;
   model?: string;
-  messages: { role: string; content: string }[];
+  messages: ChatLlmMessage[];
 }): Promise<string | null> {
   let resp: Response;
   try {
@@ -442,10 +467,25 @@ export async function runAssistantChat(input: ChatInput): Promise<ChatResult> {
   if (!baseUrl || !apiKey) return fallbackChat(input);
 
   const history = input.history.slice(-CHAT_MAX_HISTORY_TURNS * 2);
-  const messages: { role: string; content: string }[] = [
+  // 图片只挂最新一轮 user 消息：历史保持纯文本，免得每轮重复传图。
+  const latestUserContent: string | ChatContentPart[] =
+    input.images && input.images.length > 0
+      ? [
+          { type: 'text', text: query },
+          ...input.images.map(
+            (img): ChatContentPart => ({
+              type: 'image_url',
+              image_url: {
+                url: `data:${img.mime};base64,${img.base64}`,
+              },
+            })
+          ),
+        ]
+      : query;
+  const messages: ChatLlmMessage[] = [
     { role: 'system', content: chatSystemPrompt(input) },
     ...history.map((h) => ({ role: h.role, content: h.content.slice(0, 500) })),
-    { role: 'user', content: query },
+    { role: 'user', content: latestUserContent },
   ];
 
   const seenCourses = new Map<string, ChatCourseBrief>();

@@ -46,6 +46,16 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-20: AI 学习助手附件上传与截图粘贴
+
+- `/wiki/ai-assistant` 对话框旁新增附件按钮（支持 txt、md、csv、tsv、docx、pdf、xls、xlsx 与 png、jpg、gif、webp 图片），输入框支持直接粘贴截图；截图在浏览器里缩放（最长边 1568px、JPEG 0.9）后再发。
+- 新模块 `src/modules/ai-assistant/attachments.ts`：文字类附件服务端抽取文本拼进参考资料（每文件 8000 字、合计 16000 字），图片以 `image_url` 直通模型；每次最多 5 个文件、其中图片最多 3 张、base64 总量 ≤2MB；doc/odt/rtf/ppt/pptx 明确拒绝并给出中文提示。
+- 参考资料文本存在浏览器 localStorage（与对话分开的 key），每轮带回；新上传替换旧的，没有新附件时旧的原样带过。审计事件 `ai_assistant_query` 仍只记元数据，不记附件内容。
+
+### Action required
+
+- 部署时跑 `pnpm install`：新增依赖 `mammoth`、`pdf-parse`（v2）、`xlsx`（均已进 `pnpm-lock.yaml`）。无 schema 变化、无新权限码、无新环境变量。
+
 ## 2026-11-20: Wiki agent PPT generation (Presenton)
 
 ### Action required
