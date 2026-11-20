@@ -4,13 +4,13 @@
 // 拼进本轮对话的参考资料区块，不落盘、不记日志。
 //
 // 支持：txt / md / csv / tsv（直接解码）、docx（mammoth）、pdf
-// （pdf-parse）、xls / xlsx（读表转 CSV 文本）；图片 png / jpg / jpeg /
-// gif / webp 不解析文本，只做直通校验，由模型直接读图。
+// （unpdf，见 extractPdf 注释：pdf-parse v2/v1 在服务端都会崩）、
+// xls / xlsx（读表转 CSV 文本）；图片 png / jpg / jpeg / gif / webp
+// 不解析文本，只做直通校验，由模型直接读图。
 // 明确拒绝：doc / odt / rtf / ppt / pptx（不在解析支持范围），错误里
 // 用中文提示并列出支持的类型。
 
 import mammoth from 'mammoth';
-import { PDFParse } from 'pdf-parse';
 import * as XLSX from 'xlsx';
 
 export class AttachmentError extends Error {
@@ -116,13 +116,15 @@ async function extractDocx(buf: Buffer): Promise<string> {
 }
 
 async function extractPdf(buf: Buffer): Promise<string> {
-  const parser = new PDFParse({ data: buf });
-  try {
-    const out = await parser.getText();
-    return out.text ?? '';
-  } finally {
-    await parser.destroy().catch(() => {});
-  }
+  // 注意：不要换回 pdf-parse——v2 打包的 pdfjs-dist 在服务端 import 时
+  // 就引用浏览器才有的 DOMMatrix，2026-11-20 部署实测导致整站 500；
+  // v1 的 index.js 还有 import 时读测试文件的调试代码，同样不安全。
+  // 改用 unpdf（专为 Node 设计的 pdfjs 封装），并用动态 import：解析库
+  // 只在真有 PDF 要处理时才加载，万一将来某个解析库又在 import 时崩，
+  // 也只影响当次 PDF，不会拖垮整站。
+  const { extractText } = await import('unpdf');
+  const out = await extractText(buf);
+  return (out.text ?? []).join('\n');
 }
 
 function extractSpreadsheet(buf: Buffer): string {
