@@ -46,6 +46,44 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-20: Growth Path page — personal-growth tree moved into the wiki
+
+### Action required
+
+- None for the wiki itself (new page, static data, no schema change).
+- Retire the old standalone page: redirect `/personal-growth-tree.html`
+  to `/wiki/growth` in the ai-shifu nginx config (the old page must no
+  longer be served as a destination; see `docs/wiki-growth-path.md`).
+
+### What changed
+
+- New page `/growth` (“成长路径”, `src/routes/growth.tsx`): the personal
+  capability tree from `personal-growth-tree.html` rebuilt in the ShipAny
+  design language — theme tokens, shadcn components, no hardcoded dark
+  theme, no emoji in headers, `growth.*` i18n keys in both locales.
+- Data is static content `src/content/growth/growth.json` (35 nodes,
+  9 domains, 8 courses, 27 gaps), ported from the old page's embedded
+  TREE (v1.0.1). Node fields kept: difficulty, estimated hours, phase,
+  skills, prerequisites / extends / parallel, courses (shifu_bid + title).
+- The page reuses the wiki graph's no-D3 `VisualGraph`
+  (`src/routes/graph/-visual-graph.tsx`) for the force-directed view,
+  with list/visual toggle persisted as `growth-view-mode`.
+- Course links point at the ai-shifu player (`/c/<shifu_bid>`), not at
+  blog posts: these 8 courses exist in ai-shifu but were never synced
+  into the blog's `course-<bid>` posts, so there is no blog slug to link
+  to. (Do not “fix” this by pointing at `/blog/course-<bid>` — it 404s.)
+- A “学习计划” section lists the visible nodes in prerequisite
+  (topological) order with total hours, so the page answers “where do
+  I start” without the old page's AI-generated plan.
+- Naming/positioning (why this is a separate page, not a tab of the
+  knowledge graph): `/graph` is the company knowledge map (“what
+  exists”), `/growth` is the personal path (“where am I, what next”).
+  The old page and the TREE page both called themselves “知识图谱”,
+  which is the confusion this change removes. See
+  `docs/wiki-growth-path.md` for the full three-graph design.
+
+---
+
 ## 2026-11-20: Draft preview eye + graph course links — respect the app base path
 
 ### Action required

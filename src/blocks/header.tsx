@@ -6,6 +6,7 @@ export function Header() {
     { href: '/#courses', label: m['landing.nav.tracks']() },
     { href: '/ai-assistant', label: m['landing.nav.ai_assistant']() },
     { href: '/graph', label: m['landing.nav.graph']() },
+    { href: '/growth', label: m['landing.nav.growth']() },
     { href: '/blog', label: m['landing.nav.blog']() },
     { href: '/html', label: m['landing.nav.html']() },
     { href: '/sign-in', label: m['landing.nav.sign_in']() },
