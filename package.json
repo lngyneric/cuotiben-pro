@@ -33,7 +33,8 @@
     "test:atomic:pg": "TSX_TSCONFIG_PATH=tests/tsconfig.pg.json node --import tsx --test tests/atomic.test.ts",
     "test:graph": "node --import tsx --test tests/wiki-graph.test.ts",
     "test:presentations": "node --import tsx --test tests/presentations.test.ts",
-    "test:ai-assistant-attachments": "node --import tsx --test tests/ai-assistant-attachments.test.ts"
+    "test:ai-assistant-attachments": "node --import tsx --test tests/ai-assistant-attachments.test.ts",
+    "test:ai-assistant-presentations": "node --import tsx --test tests/ai-assistant-presentations.test.ts"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs,cjs}": "prettier --write",

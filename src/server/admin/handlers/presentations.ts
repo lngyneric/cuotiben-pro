@@ -4,7 +4,7 @@ import { respData, respErr } from '@/lib/resp';
 
 import type { AdminHandlerContext } from '../types';
 
-function presentonErrorResponse(error: unknown) {
+export function presentonErrorResponse(error: unknown) {
   if (error instanceof PresentonError) {
     const status =
       error.code === 'llm_quota_exceeded'
