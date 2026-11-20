@@ -7,6 +7,12 @@ import { getAuth } from '@/core/auth';
 import { db } from '@/core/db';
 import { user } from '@/config/db/schema';
 import {
+  AttachmentError,
+  MAX_TOTAL_TEXT_CHARS,
+  processAttachments,
+  type AttachmentInput,
+} from '@/modules/ai-assistant/attachments';
+import {
   CHAT_MAX_HISTORY_TURNS,
   runAssistantChat,
   type ChatDocHit,
@@ -148,6 +154,34 @@ async function POST({ request }: { request: Request }) {
           .slice(-CHAT_MAX_HISTORY_TURNS * 2)
           .map((h: any) => ({ role: h.role, content: h.content.slice(0, 500) }))
       : [];
+
+    // 附件：新上传的在内存里抽取文本（用完即弃，不落盘、不记日志），
+    // 抽取结果替换旧的参考资料；没有新附件时把旧的原样带过（截断到上限）。
+    // 图片只直通本轮，不进参考资料文本。
+    const newAttachments: AttachmentInput[] = Array.isArray(body?.attachments)
+      ? body.attachments.map((a: any) => ({
+          name: String(a?.name ?? ''),
+          mime: String(a?.mime ?? ''),
+          base64: String(a?.base64 ?? ''),
+        }))
+      : [];
+    let attachmentContext = String(body?.attachmentContext ?? '').slice(
+      0,
+      MAX_TOTAL_TEXT_CHARS
+    );
+    let attachmentImages: { mime: string; base64: string }[] = [];
+    if (newAttachments.length > 0) {
+      try {
+        const processed = await processAttachments(newAttachments);
+        attachmentContext = processed.context;
+        attachmentImages = processed.images;
+      } catch (e) {
+        if (e instanceof AttachmentError) {
+          return respErr(e.message, { status: e.status });
+        }
+        return respErr('附件处理失败，请换一份文件再试', { status: 400 });
+      }
+    }
 
     // 身份：wiki 用户行（邮箱 <工号>@sysmex.internal）→ 工号；admin 另判。
     const [me] = await db()
@@ -361,6 +395,8 @@ async function POST({ request }: { request: Request }) {
       docSectionUrl,
       baseUrl,
       apiKey,
+      attachmentContext: attachmentContext || undefined,
+      images: attachmentImages,
     });
 
     // 审计：只记模式/是否命中/课程数，不记原问句与历史。
@@ -375,7 +411,12 @@ async function POST({ request }: { request: Request }) {
       },
     });
 
-    return respData({ ...result, role, status: statusSummaries });
+    return respData({
+      ...result,
+      role,
+      status: statusSummaries,
+      attachmentContext,
+    });
   } catch {
     return respErr('对话服务暂时不可用，请稍后再试', { status: 503 });
   }

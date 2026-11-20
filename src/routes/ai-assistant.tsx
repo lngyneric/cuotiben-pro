@@ -35,6 +35,8 @@ interface ChatResult {
   sources: DocSource[];
   mode: 'chat' | 'keyword' | 'doc';
   found: boolean;
+  /** 服务端回传的本轮生效参考资料文本（下轮带回）。 */
+  attachmentContext?: string;
 }
 
 interface ChatMessage {
@@ -43,7 +45,26 @@ interface ChatMessage {
   text: string;
   courses?: RecommendedCourse[];
   sources?: DocSource[];
+  /** 用户消息随附的附件名（只存名，不存抽出的文本）。 */
+  attachments?: string[];
 }
+
+/** 待发送的附件（base64 已备好，随下一轮提问一起发）。 */
+interface PendingAttachment {
+  id: number;
+  name: string;
+  mime: string;
+  base64: string;
+  size: number;
+  isImage: boolean;
+}
+
+/** 与服务端 allowlist 一致（扩展名 + MIME 双重校验在服务端做）。 */
+const ATTACH_ACCEPT =
+  '.txt,.md,.csv,.tsv,.docx,.pdf,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp';
+const MAX_PENDING_FILES = 5;
+const MAX_PENDING_IMAGES = 3;
+const MAX_IMAGE_SIDE = 1568;
 
 const TOPIC_KEYS = [
   'ai_assistant.topic_leadership',
@@ -54,6 +75,94 @@ const TOPIC_KEYS = [
 
 /** 对话历史只存本机浏览器（刷新不丢；换设备不带走）。 */
 const CHAT_STORAGE_KEY = 'ai-assistant-chat-v1';
+/** 参考资料文本与文件名（与对话分开的 key；抽出的长文本只存这里）。 */
+const ATTACH_STORAGE_KEY = 'ai-assistant-attachments-v1';
+
+function loadStoredAttachments(): { context: string; fileNames: string[] } {
+  if (typeof window === 'undefined') return { context: '', fileNames: [] };
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(ATTACH_STORAGE_KEY) ?? ''
+    );
+    return {
+      context: typeof parsed?.context === 'string' ? parsed.context : '',
+      fileNames: Array.isArray(parsed?.fileNames)
+        ? parsed.fileNames.filter((n): n is string => typeof n === 'string')
+        : [],
+    };
+  } catch {
+    return { context: '', fileNames: [] };
+  }
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileToDataUrl(file: File | Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(new Error('read failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function base64Of(dataUrl: string): string {
+  const i = dataUrl.indexOf(',');
+  return i >= 0 ? dataUrl.slice(i + 1) : dataUrl;
+}
+
+/**
+ * 图片预处理：最长边超过 1568px 时用 canvas 缩放后转 JPEG（0.9），
+ * 小图原样返回（不重新编码）。返回待发送的附件。
+ */
+async function processImageFile(
+  file: File,
+  id: number
+): Promise<PendingAttachment> {
+  const dataUrl = await fileToDataUrl(file);
+  const img = new Image();
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error('image load failed'));
+    img.src = dataUrl;
+  });
+  const longest = Math.max(img.naturalWidth, img.naturalHeight);
+  if (longest <= MAX_IMAGE_SIDE) {
+    return {
+      id,
+      name: file.name,
+      mime: file.type || 'image/png',
+      base64: base64Of(dataUrl),
+      size: file.size,
+      isImage: true,
+    };
+  }
+  const scale = MAX_IMAGE_SIDE / longest;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(img.naturalWidth * scale);
+  canvas.height = Math.round(img.naturalHeight * scale);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('canvas unavailable');
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, 'image/jpeg', 0.9)
+  );
+  if (!blob) throw new Error('canvas encode failed');
+  const resizedUrl = await fileToDataUrl(blob);
+  const base = file.name.replace(/\.[^.]*$/, '') || 'screenshot';
+  return {
+    id,
+    name: `${base}.jpg`,
+    mime: 'image/jpeg',
+    base64: base64Of(resizedUrl),
+    size: blob.size,
+    isImage: true,
+  };
+}
 
 function loadStoredMessages(): ChatMessage[] {
   if (typeof window === 'undefined') return [];
@@ -162,6 +271,15 @@ function AiAssistantPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const idRef = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 附件：待发送的文件 + 已生效的参考资料（服务端抽取后回传）。
+  const [pending, setPending] = useState<PendingAttachment[]>([]);
+  const [attachError, setAttachError] = useState('');
+  const [attachmentContext, setAttachmentContext] = useState('');
+  const [refFileNames, setRefFileNames] = useState<string[]>([]);
+  // 发送时随附件一起记下文件名，成功后更新“参考资料”提示。
+  const sentNamesRef = useRef<string[]>([]);
 
   // 刷新后恢复本机保存的对话（只在客户端跑，避免服务端渲染不一致）。
   useEffect(() => {
@@ -170,6 +288,9 @@ function AiAssistantPage() {
       idRef.current = stored.reduce((max, m) => Math.max(max, m.id || 0), 0);
       setMessages(stored);
     }
+    const storedAttach = loadStoredAttachments();
+    setAttachmentContext(storedAttach.context);
+    setRefFileNames(storedAttach.fileNames);
   }, []);
 
   useEffect(() => {
@@ -184,10 +305,24 @@ function AiAssistantPage() {
     }
   }, [messages]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(
+        ATTACH_STORAGE_KEY,
+        JSON.stringify({ context: attachmentContext, fileNames: refFileNames })
+      );
+    } catch {
+      // 存储满或被禁时静默跳过，不影响对话。
+    }
+  }, [attachmentContext, refFileNames]);
+
   const mutation = useMutation({
     mutationFn: (vars: {
       query: string;
       history: { role: 'user' | 'assistant'; content: string }[];
+      attachments?: { name: string; mime: string; base64: string }[];
+      attachmentContext?: string;
     }) => apiPost<ChatResult>('/api/ai-assistant/chat', vars),
     onSuccess: (data) => {
       setMessages((prev) => [
@@ -200,8 +335,78 @@ function AiAssistantPage() {
           sources: data.sources,
         },
       ]);
+      // 服务端回传本轮生效的参考资料：有新附件时是新抽取的，否则是旧的。
+      setAttachmentContext(data.attachmentContext ?? '');
+      if (sentNamesRef.current.length > 0) {
+        setRefFileNames(sentNamesRef.current);
+      }
+      sentNamesRef.current = [];
+    },
+    onError: () => {
+      sentNamesRef.current = [];
     },
   });
+
+  /** 把选中的文件/粘贴的内容加进待发送列表（数量与大小先在本地拦一道）。 */
+  const addFiles = async (files: File[]) => {
+    setAttachError('');
+    const incoming = files.filter((f) => f.size > 0);
+    if (incoming.length === 0) return;
+    if (pending.length + incoming.length > MAX_PENDING_FILES) {
+      setAttachError(m['ai_assistant.attach_too_many']());
+      return;
+    }
+    const newImages = incoming.filter((f) =>
+      f.type.startsWith('image/')
+    ).length;
+    const oldImages = pending.filter((p) => p.isImage).length;
+    if (oldImages + newImages > MAX_PENDING_IMAGES) {
+      setAttachError(m['ai_assistant.attach_too_many_images']());
+      return;
+    }
+    try {
+      const prepared: PendingAttachment[] = [];
+      for (const file of incoming) {
+        const id = ++idRef.current;
+        if (file.type.startsWith('image/')) {
+          prepared.push(await processImageFile(file, id));
+        } else {
+          const dataUrl = await fileToDataUrl(file);
+          prepared.push({
+            id,
+            name: file.name,
+            mime: file.type || 'application/octet-stream',
+            base64: base64Of(dataUrl),
+            size: file.size,
+            isImage: false,
+          });
+        }
+      }
+      const totalBase64 = [...pending, ...prepared].reduce(
+        (sum, p) => sum + p.base64.length,
+        0
+      );
+      if (totalBase64 > 2_000_000) {
+        setAttachError(m['ai_assistant.attach_too_large']());
+        return;
+      }
+      setPending((prev) => [...prev, ...prepared]);
+    } catch {
+      setAttachError(m['ai_assistant.attach_failed']());
+    }
+  };
+
+  /** 输入框粘贴：截图（clipboard image）与复制的文件都接。 */
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = Array.from(e.clipboardData?.items ?? []);
+    const files = items
+      .filter((it) => it.kind === 'file')
+      .map((it) => it.getAsFile())
+      .filter((f): f is File => !!f);
+    if (files.length === 0) return;
+    e.preventDefault();
+    void addFiles(files);
+  };
 
   const send = (text: string) => {
     const trimmed = text.trim();
@@ -209,12 +414,30 @@ function AiAssistantPage() {
     const history = messages
       .slice(-20)
       .map((msg) => ({ role: msg.role, content: msg.text }));
+    const attachments = pending.map((p) => ({
+      name: p.name,
+      mime: p.mime,
+      base64: p.base64,
+    }));
+    const sentNames = pending.map((p) => p.name);
+    sentNamesRef.current = sentNames;
     setMessages((prev) => [
       ...prev,
-      { id: ++idRef.current, role: 'user', text: trimmed },
+      {
+        id: ++idRef.current,
+        role: 'user',
+        text: trimmed,
+        attachments: sentNames.length > 0 ? sentNames : undefined,
+      },
     ]);
     setInput('');
-    mutation.mutate({ query: trimmed, history });
+    setPending([]);
+    mutation.mutate({
+      query: trimmed,
+      history,
+      attachments: attachments.length > 0 ? attachments : undefined,
+      attachmentContext: attachmentContext || undefined,
+    });
   };
 
   // 图谱页带节点过来（/ai-assistant?q=请介绍一下「节点名」）：登录后自动发
@@ -276,8 +499,13 @@ function AiAssistantPage() {
                     disabled={mutation.isPending}
                     onClick={() => {
                       setMessages([]);
-                      if (typeof window !== 'undefined')
+                      setPending([]);
+                      setAttachmentContext('');
+                      setRefFileNames([]);
+                      if (typeof window !== 'undefined') {
                         window.localStorage.removeItem(CHAT_STORAGE_KEY);
+                        window.localStorage.removeItem(ATTACH_STORAGE_KEY);
+                      }
                     }}
                     className="text-muted-foreground hover:text-primary underline disabled:opacity-50"
                   >
@@ -286,13 +514,28 @@ function AiAssistantPage() {
                 )}
               </div>
 
+              {attachmentContext && refFileNames.length > 0 && (
+                <p className="text-muted-foreground mb-4 text-center text-xs">
+                  {m['ai_assistant.attach_active']({
+                    names: refFileNames.join('、'),
+                  })}
+                </p>
+              )}
+
               <div className="space-y-4">
                 {messages.map((msg) =>
                   msg.role === 'user' ? (
-                    <div key={msg.id} className="flex justify-end">
+                    <div key={msg.id} className="flex flex-col items-end">
                       <div className="bg-primary text-primary-foreground max-w-[85%] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap">
                         {msg.text}
                       </div>
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <div className="text-muted-foreground mt-1 max-w-[85%] text-right text-xs">
+                          {m['ai_assistant.attach_sent']({
+                            names: msg.attachments.join('、'),
+                          })}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div key={msg.id} className="space-y-3">
@@ -340,6 +583,40 @@ function AiAssistantPage() {
                 </p>
               )}
 
+              {attachError && (
+                <p className="mt-6 text-center text-sm text-red-600">
+                  {attachError}
+                </p>
+              )}
+
+              {pending.length > 0 && (
+                <div className="mx-auto mt-6 flex max-w-xl flex-wrap gap-1.5">
+                  {pending.map((p) => (
+                    <span
+                      key={p.id}
+                      className="border-border bg-card inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
+                    >
+                      <span className="max-w-40 truncate" title={p.name}>
+                        {p.name}（{formatFileSize(p.size)}）
+                      </span>
+                      <button
+                        type="button"
+                        disabled={mutation.isPending}
+                        aria-label={m['ai_assistant.attach_remove']()}
+                        onClick={() =>
+                          setPending((prev) =>
+                            prev.filter((x) => x.id !== p.id)
+                          )
+                        }
+                        className="text-muted-foreground hover:text-primary disabled:opacity-50"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -348,9 +625,32 @@ function AiAssistantPage() {
                 className="mx-auto mt-6 flex max-w-xl gap-2"
               >
                 <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept={ATTACH_ACCEPT}
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    e.target.value = '';
+                    void addFiles(files);
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={mutation.isPending}
+                  title={m['ai_assistant.attach_title']()}
+                  aria-label={m['ai_assistant.attach_title']()}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-border bg-card text-muted-foreground hover:text-primary shrink-0 rounded-full border px-3.5 py-2 text-sm disabled:opacity-50"
+                >
+                  +
+                </button>
+                <input
                   type="search"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
+                  onPaste={handlePaste}
                   placeholder={m['ai_assistant.chat_placeholder']()}
                   maxLength={200}
                   className="border-border bg-card min-w-0 flex-1 rounded-full border px-4 py-2 text-sm"
@@ -366,6 +666,9 @@ function AiAssistantPage() {
                   {m['ai_assistant.send']()}
                 </button>
               </form>
+              <p className="text-muted-foreground mx-auto mt-2 max-w-xl text-center text-xs">
+                {m['ai_assistant.attach_hint']()}
+              </p>
             </>
           )}
         </div>
