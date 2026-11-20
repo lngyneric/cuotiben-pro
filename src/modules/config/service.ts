@@ -139,6 +139,7 @@ const ENDPOINT_SECRETS: Record<string, string[]> = {
   telegram_api_base: ['telegram_bot_token'],
   notify_webhook_url: ['notify_webhook_token'],
   kb_mcp_url: ['kb_mcp_token'],
+  presenton_base_url: ['presenton_api_key'],
 };
 
 const normalizeEndpoint = (value: string | undefined) =>

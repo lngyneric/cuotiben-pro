@@ -821,6 +821,40 @@ export const growthCourseLink = table(
 export type GrowthCourseLink = typeof growthCourseLink.$inferSelect;
 export type NewGrowthCourseLink = typeof growthCourseLink.$inferInsert;
 
+// ─── Presentations (PPT 生成任务) ───────────────────────────────────────────
+// wiki agent 的 PPT 生成任务（Presenton）。一行一个任务；归属按调用方身份
+// 登记（ownerUserId + ownerTokenId），查询与下载只放行属主本人——Presenton
+// 侧是共用管理员账号，所有 deck 在其名下互见，绝不能把原生编辑地址或别人
+// 的文件返回给调用方。任务状态由 presentations_get 轮询 Presenton 后更新，
+// wiki 不跑后台 worker。
+export const presentationJob = table(
+  'presentation_job',
+  {
+    id: text('id').primaryKey(),
+    ownerUserId: text('owner_user_id').notNull(),
+    ownerTokenId: text('owner_token_id'),
+    presentonId: text('presenton_id'),
+    presentonTaskId: text('presenton_task_id'),
+    status: text('status').notNull().default('queued'), // queued | generating | completed | failed
+    title: text('title'),
+    slideCount: integer('slide_count'),
+    exportPath: text('export_path'), // Presenton 侧导出路径（相对路径或绝对 URL），只在服务端用，绝不返回给调用方
+    error: text('error'),
+    errorCode: text('error_code'), // llm_quota_exceeded 等，见 presentations/service.ts
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (t) => [
+    index('idx_presentation_job_owner').on(t.ownerUserId),
+    index('idx_presentation_job_status').on(t.status),
+  ]
+);
+
+export type PresentationJob = typeof presentationJob.$inferSelect;
+export type NewPresentationJob = typeof presentationJob.$inferInsert;
+
 // ─── Cuotiben (错题本) ───────────────────────────────────────────────────────
 
 export const cuotibenCard = table(

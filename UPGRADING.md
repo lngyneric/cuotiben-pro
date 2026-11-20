@@ -46,6 +46,23 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-20: Wiki agent PPT generation (Presenton)
+
+### Action required
+
+- **Schema:** new table `presentation_job`. Dev: `pnpm db:push`. Production: `pnpm db:generate`, review the SQL, then `pnpm db:migrate`.
+- **Permissions:** run `pnpm admin:token sync-permissions` so the new `admin.presentations.generate` / `admin.presentations.read` rows exist, then grant them to the agent role that should generate PPTs (Admin → Roles). `super_admin` holds `*` and works without this step.
+- **Settings (manual, by the project owner):** Admin → Settings → AI → PPT（Presenton）: set `presenton_base_url` (default `http://presenton-trial:80`) and paste the Presenton admin API key into `presenton_api_key`. Without the key every generate call fails with `Presenton is not configured`. The key is never stored in the repo.
+
+### What changed
+
+- New module `src/modules/presentations/service.ts`: Presenton client (upload via `/mcp-upload`, standard mode via `/generate/async` + status polling, smart mode via `/create` + SSE stream) plus the `presentation_job` table. Generation is async — the wiki never blocks on it and runs no background worker; status refreshes on `presentations_get`.
+- New admin operations `presentations_generate` (`admin.presentations.generate`) and `presentations_get` (`admin.presentations.read`), new download route `GET /api/admin/agent/presentations/download?id=<jobId>`. Jobs are owned by the calling agent account (`userId` + `tokenId`); other callers get 404 on read/download, and Presenton edit URLs are never returned (the shared Presenton admin sees every deck).
+- Magpie quota/rate-limit failures surface as a distinct `llm_quota_exceeded` error (job `errorCode`, HTTP 429) and trigger a notify alert (`notify_llm_quota_enabled`, default on) instead of a generic 500.
+- Limits: at most 50 slides per deck; files at most ~1.5 MB base64 per MCP call (Presenton upload cap is 100 MB); image generation is disabled (placeholder images).
+
+---
+
 ## 2026-11-20: Growth Path page — personal-growth tree moved into the wiki
 
 ### Action required

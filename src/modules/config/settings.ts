@@ -186,6 +186,13 @@ export function getSettingGroups(): SettingGroup[] {
       tab: 'ai',
     },
     {
+      name: 'presenton',
+      title: 'PPT（Presenton）',
+      description:
+        '内网 Presenton PPT 生成：agent 经 presentations_generate 生成、presentations_get 轮询、下载地址取回文件',
+      tab: 'ai',
+    },
+    {
       name: 'anthropic',
       title: 'Anthropic',
       description: 'Anthropic Claude API',
@@ -939,6 +946,32 @@ export function getSettings(): Setting[] {
       placeholder: 'MCP 访问令牌',
       group: 'kb_mcp',
       tab: 'ai',
+    },
+
+    // ─── AI / PPT（Presenton） ─────────────────────────────────────────────
+    {
+      name: 'presenton_base_url',
+      title: 'Presenton URL',
+      type: 'text',
+      placeholder: 'http://presenton-trial:80',
+      group: 'presenton',
+      tab: 'ai',
+    },
+    {
+      name: 'presenton_api_key',
+      title: 'API Key',
+      type: 'password',
+      placeholder: 'Presenton 管理员 API Key',
+      group: 'presenton',
+      tab: 'ai',
+    },
+    {
+      name: 'notify_llm_quota_enabled',
+      title: 'Magpie 额度提醒',
+      type: 'switch',
+      group: 'presenton',
+      tab: 'ai',
+      defaultValue: 'true',
     },
 
     // ─── AI / Anthropic ──────────────────────────────────────────────

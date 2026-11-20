@@ -580,6 +580,51 @@ export async function notifyTicketEvent(params: {
   }
 }
 
+/**
+ * Push a Magpie quota/rate-limit alert for a failed PPT generation.
+ * Opt-out: sends whenever a channel is configured, unless the admin turns
+ * notify_llm_quota_enabled off. Never throws — a notification failure must
+ * not fail the request that triggered it.
+ */
+export async function notifyLlmQuotaExceeded(params: {
+  jobId: string;
+  title: string;
+  detail: string;
+}): Promise<void> {
+  try {
+    const configs = await getAllConfigs();
+    if (configs.notify_llm_quota_enabled === 'false') return;
+
+    const channels = getNotifyChannelConfig(configs);
+    if (Object.keys(channels).length === 0) return;
+
+    const language = normalizeNotifyLanguage(configs.notify_language);
+    const detail = params.detail.slice(0, 300);
+    const text =
+      language === 'zh'
+        ? `【PPT 生成】Magpie 额度/限流：任务 ${params.jobId}${params.title ? `（${params.title}）` : ''}生成失败。请检查 Magpie 额度后重试。${detail}`
+        : `[PPT] Magpie quota/rate limit: job ${params.jobId}${params.title ? ` (${params.title})` : ''} failed. Check the Magpie quota and retry. ${detail}`;
+    const results = await sendToChannels(channels, text, {
+      event: 'presentations.llm_quota_exceeded',
+      data: {
+        job_id: params.jobId,
+        title: params.title,
+        detail,
+      },
+    });
+    for (const r of results) {
+      if (!r.success) {
+        console.error(
+          `[notify] ${r.channel} failed for ppt job ${params.jobId}:`,
+          r.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error('[notify] llm quota notification failed', error);
+  }
+}
+
 /** Admin "Test" button for the ticket group: send a sample ticket. */
 export async function sendTestTicketNotification(
   configs: Record<string, string>

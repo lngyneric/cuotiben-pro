@@ -338,6 +338,9 @@ const defaultRoles = [
       'admin.apikeys.*',
       'admin.settings.read',
       'admin.ai-tasks.*',
+      // PPT 生成：两个操作各一个独立 code，不用通配符，agent 角色按需授予。
+      'admin.presentations.read',
+      'admin.presentations.generate',
     ],
   },
   {
