@@ -45,6 +45,28 @@ const CONTROL_TIMEOUT_MS = 30_000;
 const UPLOAD_TIMEOUT_MS = 120_000;
 const STREAM_TIMEOUT_MS = 10 * 60_000;
 
+/**
+ * Presenton 瞬时失败只重试一次，间隔 1 秒。2026-11-20 实测：smart /create
+ * 在 17:04:19 得过一次 401（Presenton 中间件在 handler 前拒绝，未建 deck），
+ * 4 分钟后同一把 key、同一接口直接 200。重试只覆盖“请求大概率未生效”的
+ * 情况：401（中间件拒绝，未进 handler）、429、502/503/504，以及连不上
+ * Presenton 的网络/超时错误。400/403/404/422 不重试；额度类
+ * （llm_quota_exceeded）绝不重试。注意：网络错误重试时，第一次请求可能
+ * 其实已在 Presenton 侧生效，重试会多建一个无主 deck——可接受，代价远小于
+ * 直接让用户任务失败；无主 deck 不会被任何 wiki job 引用。
+ */
+const PRESENTON_MAX_ATTEMPTS = 2;
+const PRESENTON_RETRY_DELAY_MS = 1000;
+const RETRYABLE_PRESENTON_STATUSES = new Set([401, 429, 502, 503, 504]);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isRetryablePresentonStatus(status: number, text: string): boolean {
+  if (!RETRYABLE_PRESENTON_STATUSES.has(status)) return false;
+  // 429 可能是 Presenton 侧限流（可重试），也可能是 Magpie 额度耗尽（绝不重试）。
+  return !isQuotaSignal(status, text);
+}
+
 const QUOTA_PATTERN = /rate.?limit|quota|insufficient|too many requests/i;
 
 /** 文件扩展名 → 允许的 MIME（Presenton 侧还会再校验一次；不含 SVG）。 */
@@ -202,31 +224,49 @@ async function presentonFetch(
   timeoutMs: number
 ): Promise<PresentonResponse> {
   const { baseUrl, apiKey } = await getPresentonConfig();
-  let response: Response;
-  try {
-    response = await fetch(`${baseUrl}${path}`, {
-      ...init,
-      signal: AbortSignal.timeout(timeoutMs),
-      headers: {
-        ...(init.headers || {}),
-        Authorization: `Bearer ${apiKey}`,
-      },
-    });
-  } catch (error) {
-    throw new PresentonError(
-      'presenton_error',
-      `Cannot reach Presenton (${baseUrl}): ${error instanceof Error ? error.message : 'network error'}`,
-      502
-    );
-  }
-  const text = await response.text().catch(() => '');
-  let json: unknown = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {
-    json = null;
-  }
-  if (!response.ok) {
+  for (let attempt = 1; attempt <= PRESENTON_MAX_ATTEMPTS; attempt++) {
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}${path}`, {
+        ...init,
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: {
+          ...(init.headers || {}),
+          Authorization: `Bearer ${apiKey}`,
+        },
+      });
+    } catch (error) {
+      if (attempt < PRESENTON_MAX_ATTEMPTS) {
+        console.warn(
+          `[presentations] Presenton ${path} unreachable (attempt ${attempt}/${PRESENTON_MAX_ATTEMPTS}), retrying once`
+        );
+        await sleep(PRESENTON_RETRY_DELAY_MS);
+        continue;
+      }
+      throw new PresentonError(
+        'presenton_error',
+        `Cannot reach Presenton (${baseUrl}): ${error instanceof Error ? error.message : 'network error'}`,
+        502
+      );
+    }
+    const text = await response.text().catch(() => '');
+    let json: unknown = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      json = null;
+    }
+    if (response.ok) return { status: response.status, text, json };
+    if (
+      attempt < PRESENTON_MAX_ATTEMPTS &&
+      isRetryablePresentonStatus(response.status, text)
+    ) {
+      console.warn(
+        `[presentations] Presenton ${path} HTTP ${response.status} (attempt ${attempt}/${PRESENTON_MAX_ATTEMPTS}), retrying once`
+      );
+      await sleep(PRESENTON_RETRY_DELAY_MS);
+      continue;
+    }
     const { code, message } = classifyError(response.status, text);
     throw new PresentonError(
       code,
@@ -234,7 +274,8 @@ async function presentonFetch(
       code === 'llm_quota_exceeded' ? 429 : 502
     );
   }
-  return { status: response.status, text, json };
+  // 循环内所有路径都会返回、继续或抛出；到这里只为满足类型检查。
+  throw new PresentonError('presenton_error', 'Presenton request failed');
 }
 
 async function presentonJson<T>(

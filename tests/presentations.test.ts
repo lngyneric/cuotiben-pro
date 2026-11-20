@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
+import { desc } from 'drizzle-orm';
 
 // No application modules are loaded until the isolated environment is installed.
 const directory = await mkdtemp(join(tmpdir(), 'shipany-presentations-test-'));
@@ -45,6 +46,10 @@ const PPTX_BYTES = Buffer.concat([
 // --- Stubbed Presenton -----------------------------------------------------
 // Modes: status answers 'pending' once, then 'completed'; 'error-quota'
 // answers a rate-limit failure; 'pending' never completes.
+// createFail forces the smart /create endpoint to fail: '401-once' answers
+// 401 on the first call only (transient), '400' always answers 400,
+// 'quota-429' always answers 429 with a quota message. asyncThrowOnce
+// rejects the first /generate/async call with a network error.
 const stub = {
   mode: 'pending-then-completed' as
     | 'pending-then-completed'
@@ -52,6 +57,10 @@ const stub = {
     | 'pending',
   statusCalls: 0,
   calls: [] as { method: string; url: string; body: string }[],
+  createCalls: 0,
+  asyncCalls: 0,
+  createFail: 'none' as 'none' | '401-once' | '400' | 'quota-429',
+  asyncThrowOnce: false,
 };
 
 function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
@@ -68,7 +77,10 @@ function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
     );
   if (url.endsWith('/api/v1/ppt/files/mcp-upload'))
     return json({ file_paths: ['/tmp/presenton/test/x.txt'] });
-  if (url.endsWith('/api/v1/ppt/presentation/generate/async'))
+  if (url.endsWith('/api/v1/ppt/presentation/generate/async')) {
+    stub.asyncCalls += 1;
+    if (stub.asyncThrowOnce && stub.asyncCalls === 1)
+      return Promise.reject(new TypeError('fetch failed'));
     return json({
       id: 'task-1',
       status: 'pending',
@@ -78,6 +90,7 @@ function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
         remaining_slides: 1,
       },
     });
+  }
   if (url.includes('/api/v1/ppt/presentation/status/')) {
     stub.statusCalls += 1;
     if (stub.mode === 'error-quota')
@@ -115,8 +128,21 @@ function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
       },
     });
   }
-  if (url.endsWith('/api/v1/ppt/presentation/create'))
+  if (url.endsWith('/api/v1/ppt/presentation/create')) {
+    stub.createCalls += 1;
+    if (stub.createFail === '401-once' && stub.createCalls === 1)
+      return json({ detail: 'Unauthorized' }, 401);
+    if (stub.createFail === '400') return json({ detail: 'Bad request' }, 400);
+    if (stub.createFail === 'quota-429')
+      return json(
+        {
+          detail:
+            'Rate limit exceeded for model opencode-go/deepseek-v4.1-flash',
+        },
+        429
+      );
     return json({ id: 'pres-smart', title: 'Smart Deck' });
+  }
   if (url.includes('/api/v1/ppt/presentation/stream/')) {
     const stream = new ReadableStream({
       start(controller) {
@@ -298,6 +324,15 @@ async function download(id: string, token: string) {
       { headers: { Authorization: `Bearer ${token}` } }
     ),
   });
+}
+
+async function latestJob() {
+  const rows = await db()
+    .select()
+    .from(schema.presentationJob)
+    .orderBy(desc(schema.presentationJob.createdAt))
+    .limit(1);
+  return rows[0];
 }
 
 async function waitForJob(
@@ -483,4 +518,71 @@ test('smart mode completes through the SSE stream', async () => {
   assert.equal(job?.status, 'completed');
   assert.equal(job?.slideCount, 1);
   assert.equal(job?.exportPath, '/app_data/exports/smart.pptx');
+});
+
+test('transient 401 on smart create is retried once and the job completes', async () => {
+  stub.mode = 'pending-then-completed';
+  stub.createFail = '401-once';
+  stub.createCalls = 0;
+  const { response, body } = await generate(
+    { content: 'Retry test', nSlides: 1, mode: 'smart' },
+    ownerToken,
+    'ppt-retry-401'
+  );
+  assert.equal(response.status, 200);
+  const jobId = body.data.jobId as string;
+  await waitForJob(jobId, 'completed');
+  assert.equal(stub.createCalls, 2);
+  stub.createFail = 'none';
+});
+
+test('non-retryable 400 on smart create fails the job without a retry', async () => {
+  stub.createFail = '400';
+  stub.createCalls = 0;
+  const { response } = await generate(
+    { content: 'Bad request test', nSlides: 1, mode: 'smart' },
+    ownerToken,
+    'ppt-retry-400'
+  );
+  // Start-phase failures surface the error directly (no job id in the reply).
+  assert.equal(response.status, 502);
+  assert.equal(stub.createCalls, 1);
+  const job = await latestJob();
+  assert.equal(job?.status, 'failed');
+  assert.equal(job?.errorCode, 'presenton_error');
+  stub.createFail = 'none';
+});
+
+test('quota 429 on smart create is not retried and surfaces llm_quota_exceeded', async () => {
+  stub.createFail = 'quota-429';
+  stub.createCalls = 0;
+  const { response, body } = await generate(
+    { content: 'Quota create test', nSlides: 1, mode: 'smart' },
+    ownerToken,
+    'ppt-retry-quota'
+  );
+  assert.equal(response.status, 429);
+  assert.match(body.message, /llm_quota_exceeded/);
+  assert.equal(stub.createCalls, 1);
+  const job = await latestJob();
+  assert.equal(job?.status, 'failed');
+  assert.equal(job?.errorCode, 'llm_quota_exceeded');
+  stub.createFail = 'none';
+});
+
+test('dropped connection on standard start is retried once', async () => {
+  stub.mode = 'pending-then-completed';
+  stub.statusCalls = 0;
+  stub.asyncThrowOnce = true;
+  stub.asyncCalls = 0;
+  const { response, body } = await generate(
+    { content: 'Network retry test', nSlides: 1 },
+    ownerToken,
+    'ppt-retry-network'
+  );
+  assert.equal(response.status, 200);
+  const jobId = body.data.jobId as string;
+  await waitForJob(jobId, 'generating');
+  assert.equal(stub.asyncCalls, 2);
+  stub.asyncThrowOnce = false;
 });
