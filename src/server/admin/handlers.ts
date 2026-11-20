@@ -10,6 +10,7 @@ import * as orders from './handlers/orders';
 import * as orders_refund from './handlers/orders-refund';
 import * as permissions from './handlers/permissions';
 import * as posts from './handlers/posts';
+import * as presentations from './handlers/presentations';
 import * as roles_assign from './handlers/roles-assign';
 import * as roles_index from './handlers/roles-index';
 import * as roles_permissions from './handlers/roles-permissions';
@@ -52,6 +53,8 @@ export const handlers: Record<
   posts_update: posts.PUT,
   posts_delete: posts.DELETE,
   posts_batch_status: posts.batchStatus,
+  presentations_generate: presentations.POST,
+  presentations_get: presentations.GET,
   invite_codes_list: invite_codes.GET,
   invite_codes_create: invite_codes.POST,
   invite_codes_delete: invite_codes.DELETE,

@@ -564,6 +564,44 @@ export const adminOperations: AdminOperation[] = [
       })
       .strict()
   ),
+  op(
+    'presentations_generate',
+    'Generate a PPT deck with the intranet Presenton engine (Magpie LLM). Returns a job id immediately — generation takes roughly 1–2 minutes; poll presentations_get until completed/failed, then download. Materials: content text, inline base64 files (total decoded size at most 1.5 MB per call; larger files must be wiki posts), and/or wiki post slugs resolved server-side. At least one of content/files/postSlugs is required; nSlides is 1–50. Never paste raw personal data (ID numbers, phone numbers) — send summaries instead.',
+    'presentations.generate',
+    'POST',
+    'presentations/generate',
+    z
+      .object({
+        content: z.string().max(10_000).optional(),
+        nSlides: z.number().int().min(1).max(50).optional(),
+        language: z.string().max(50).default('Chinese'),
+        template: z.string().max(191).default('general'),
+        mode: z.enum(['standard', 'smart']).default('standard'),
+        instructions: z.string().max(2000).optional(),
+        files: z
+          .array(
+            z
+              .object({
+                name: z.string().min(1).max(191),
+                mime: z.string().max(191),
+                base64: z.string().min(1),
+              })
+              .strict()
+          )
+          .max(10)
+          .optional(),
+        postSlugs: z.array(z.string().min(1).max(191)).max(10).optional(),
+      })
+      .strict()
+  ),
+  op(
+    'presentations_get',
+    'Read one PPT generation job. Only the agent account that created the job can read it — other callers get a 404. When completed, downloadUrl is the wiki download address (same admin key); Presenton edit URLs are never returned.',
+    'presentations.read',
+    'GET',
+    'presentations/{id}',
+    remove
+  ),
 ];
 
 export const adminScopes = [
