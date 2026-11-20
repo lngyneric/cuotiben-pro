@@ -46,6 +46,16 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-20: AI 学习助手页生成 PPT（接生产 Presenton 接口）
+
+- `/wiki/ai-assistant` 有 `admin.presentations.generate` 权限的用户会看到“生成 PPT”按钮：点开对话框，内容默认填最近一轮提问 + 最新助手回答 + 参考资料文本（可改），页数默认 6（1–50）、模式标准/智能、补充说明可选；提交后每 5 秒轮询任务状态，完成后显示标题、页数与下载链接，失败显示服务端返回的错误。
+- 新路由 `POST/GET /api/ai-assistant/presentations`：与 MCP 的 `presentations_generate` / `presentations_get` 是同一套服务（`src/modules/presentations/service.ts`），调用方是登录用户（session；`authenticateAdmin` 也接受 agent key），归属按 `(userId, tokenId)` 配对，非属主查任务一律 404；下载复用现有的 `/api/admin/agent/presentations/download`。限流：IP 200ms，建任务每人 10 秒。
+- `GET /api/user/permissions` 现在除 `isAdmin` 外还返回调用方自己的权限码列表（供页面按权限显隐入口；服务端接口仍各自鉴权）。
+
+### Action required
+
+- 无 schema 变化、无新权限码（复用 `admin.presentations.generate` / `admin.presentations.read`）、无新环境变量、无新依赖。已授过这两个权限的角色（admin、course-advisor）直接可用。
+
 ## 2026-11-20: AI 学习助手附件上传与截图粘贴
 
 - `/wiki/ai-assistant` 对话框旁新增附件按钮（支持 txt、md、csv、tsv、docx、pdf、xls、xlsx 与 png、jpg、gif、webp 图片），输入框支持直接粘贴截图；截图在浏览器里缩放（最长边 1568px、JPEG 0.9）后再发。

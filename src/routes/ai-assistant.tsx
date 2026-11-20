@@ -6,13 +6,32 @@ import { useSession } from '@/core/auth/client';
 import { Link } from '@/core/i18n/navigation';
 import { localizedAbsoluteUrl } from '@/core/i18n/urls';
 import { envConfigs } from '@/config';
-import { apiPost } from '@/lib/api-client';
+import { apiGet, apiPost } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { m } from '@/paraglide/messages.js';
 import { getLocale, locales } from '@/paraglide/runtime.js';
+import { useUserPermissions } from '@/hooks/use-user-permissions';
 import { Footer } from '@/blocks/footer';
 import { Header } from '@/blocks/header';
 import { buttonVariants } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 
 interface RecommendedCourse {
   slug: string;
@@ -47,6 +66,17 @@ interface ChatMessage {
   sources?: DocSource[];
   /** 用户消息随附的附件名（只存名，不存抽出的文本）。 */
   attachments?: string[];
+}
+
+/** PPT 生成任务状态（与服务端 /api/ai-assistant/presentations 的 GET 回包一致）。 */
+interface PptJobStatus {
+  jobId: string;
+  status: 'queued' | 'generating' | 'completed' | 'failed';
+  title?: string | null;
+  slideCount?: number | null;
+  downloadUrl?: string;
+  error?: string;
+  errorCode?: string;
 }
 
 /** 待发送的附件（base64 已备好，随下一轮提问一起发）。 */
@@ -281,6 +311,87 @@ function AiAssistantPage() {
   // 发送时随附件一起记下文件名，成功后更新“参考资料”提示。
   const sentNamesRef = useRef<string[]>([]);
 
+  // 生成 PPT：只对有 admin.presentations.generate 权限的角色显示入口
+  // （服务端接口仍各自鉴权，这里只决定“显不显示”）。
+  const { data: userPermissions } = useUserPermissions();
+  const canGeneratePpt =
+    userPermissions?.permissions?.includes('admin.presentations.generate') ??
+    false;
+  const [pptDialogOpen, setPptDialogOpen] = useState(false);
+  const [pptContent, setPptContent] = useState('');
+  const [pptSlides, setPptSlides] = useState('6');
+  const [pptMode, setPptMode] = useState<'standard' | 'smart'>('standard');
+  const [pptInstructions, setPptInstructions] = useState('');
+  const [pptJob, setPptJob] = useState<PptJobStatus | null>(null);
+  const [pptPolling, setPptPolling] = useState(false);
+  const [pptError, setPptError] = useState('');
+
+  /** 对话框默认内容：最近一轮提问 + 最新回答 + 参考资料文本。 */
+  const assemblePptContent = () => {
+    const parts: string[] = [];
+    const lastUser = [...messages].reverse().find((msg) => msg.role === 'user');
+    const lastAssistant = [...messages]
+      .reverse()
+      .find((msg) => msg.role === 'assistant');
+    if (lastUser) parts.push(`问题：${lastUser.text}`);
+    if (lastAssistant) parts.push(`回答：${lastAssistant.text}`);
+    if (attachmentContext) parts.push(`参考资料：\n${attachmentContext}`);
+    return parts.join('\n\n').slice(0, 100_000);
+  };
+
+  const openPptDialog = () => {
+    setPptContent(assemblePptContent());
+    setPptError('');
+    setPptDialogOpen(true);
+  };
+
+  const pptMutation = useMutation({
+    mutationFn: (vars: {
+      content: string;
+      nSlides: number;
+      mode: 'standard' | 'smart';
+      instructions?: string;
+    }) =>
+      apiPost<{ jobId: string; status: string }>(
+        '/api/ai-assistant/presentations',
+        vars
+      ),
+    onSuccess: (data) => {
+      setPptJob({
+        jobId: data.jobId,
+        status: data.status as PptJobStatus['status'],
+      });
+      setPptPolling(true);
+      setPptDialogOpen(false);
+    },
+    onError: (e) => {
+      setPptError(e instanceof Error ? e.message : m['ai_assistant.error']());
+    },
+  });
+
+  // 任务生成中时每 5 秒轮询一次状态，到终态（completed/failed）即停。
+  useEffect(() => {
+    if (!pptPolling || !pptJob) return;
+    const timer = window.setInterval(() => {
+      void apiGet<PptJobStatus>(
+        `/api/ai-assistant/presentations?id=${encodeURIComponent(pptJob.jobId)}`
+      )
+        .then((data) => {
+          setPptJob(data);
+          if (data.status === 'completed' || data.status === 'failed')
+            setPptPolling(false);
+        })
+        .catch((e) => {
+          // 轮询失败时停掉轮询并报错，避免无声卡住；任务本身还在服务端跑。
+          setPptPolling(false);
+          setPptError(
+            e instanceof Error ? e.message : m['ai_assistant.error']()
+          );
+        });
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [pptPolling, pptJob?.jobId]);
+
   // 刷新后恢复本机保存的对话（只在客户端跑，避免服务端渲染不一致）。
   useEffect(() => {
     const stored = loadStoredMessages();
@@ -512,6 +623,21 @@ function AiAssistantPage() {
                     {m['ai_assistant.clear']()}
                   </button>
                 )}
+                {canGeneratePpt && (
+                  <button
+                    type="button"
+                    disabled={messages.length === 0 || pptMutation.isPending}
+                    title={
+                      messages.length === 0
+                        ? m['ai_assistant.ppt_no_content']()
+                        : undefined
+                    }
+                    onClick={openPptDialog}
+                    className="text-muted-foreground hover:text-primary underline disabled:opacity-50"
+                  >
+                    {m['ai_assistant.ppt_button']()}
+                  </button>
+                )}
               </div>
 
               {attachmentContext && refFileNames.length > 0 && (
@@ -587,6 +713,48 @@ function AiAssistantPage() {
                 <p className="mt-6 text-center text-sm text-red-600">
                   {attachError}
                 </p>
+              )}
+
+              {pptError && (
+                <p className="mt-6 text-center text-sm text-red-600">
+                  {pptError}
+                </p>
+              )}
+
+              {pptJob && (
+                <div className="border-border bg-card mx-auto mt-6 max-w-xl rounded-2xl border p-4 text-sm">
+                  {pptJob.status === 'completed' ? (
+                    <>
+                      <p className="font-medium">
+                        {m['ai_assistant.ppt_completed']()}
+                        {pptJob.title ? `：${pptJob.title}` : ''}
+                      </p>
+                      {typeof pptJob.slideCount === 'number' && (
+                        <p className="text-muted-foreground mt-1 text-xs">
+                          {m['ai_assistant.ppt_slide_count']({
+                            count: pptJob.slideCount,
+                          })}
+                        </p>
+                      )}
+                      {pptJob.downloadUrl && (
+                        <a
+                          href={pptJob.downloadUrl}
+                          className="text-primary mt-3 inline-flex items-center gap-1.5 font-medium"
+                        >
+                          {m['ai_assistant.ppt_download']()} ↓
+                        </a>
+                      )}
+                    </>
+                  ) : pptJob.status === 'failed' ? (
+                    <p className="text-red-600">
+                      {pptJob.error || m['ai_assistant.error']()}
+                    </p>
+                  ) : (
+                    <p className="text-muted-foreground">
+                      {m['ai_assistant.ppt_generating']()}
+                    </p>
+                  )}
+                </div>
               )}
 
               {pending.length > 0 && (
@@ -669,6 +837,117 @@ function AiAssistantPage() {
               <p className="text-muted-foreground mx-auto mt-2 max-w-xl text-center text-xs">
                 {m['ai_assistant.attach_hint']()}
               </p>
+
+              <Dialog open={pptDialogOpen} onOpenChange={setPptDialogOpen}>
+                <DialogContent className="sm:max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>
+                      {m['ai_assistant.ppt_dialog_title']()}
+                    </DialogTitle>
+                    <DialogDescription>
+                      {m['ai_assistant.ppt_dialog_description']()}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="ppt-content">
+                        {m['ai_assistant.ppt_content_label']()}
+                      </Label>
+                      <Textarea
+                        id="ppt-content"
+                        value={pptContent}
+                        onChange={(e) => setPptContent(e.target.value)}
+                        rows={8}
+                      />
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="flex-1 space-y-2">
+                        <Label htmlFor="ppt-slides">
+                          {m['ai_assistant.ppt_slides_label']()}
+                        </Label>
+                        <Input
+                          id="ppt-slides"
+                          type="number"
+                          min={1}
+                          max={50}
+                          value={pptSlides}
+                          onChange={(e) => setPptSlides(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex-1 space-y-2">
+                        <Label htmlFor="ppt-mode">
+                          {m['ai_assistant.ppt_mode_label']()}
+                        </Label>
+                        <Select
+                          value={pptMode}
+                          onValueChange={(v) =>
+                            setPptMode(v === 'smart' ? 'smart' : 'standard')
+                          }
+                        >
+                          <SelectTrigger id="ppt-mode">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="standard">
+                              {m['ai_assistant.ppt_mode_standard']()}
+                            </SelectItem>
+                            <SelectItem value="smart">
+                              {m['ai_assistant.ppt_mode_smart']()}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ppt-instructions">
+                        {m['ai_assistant.ppt_instructions_label']()}
+                      </Label>
+                      <Input
+                        id="ppt-instructions"
+                        value={pptInstructions}
+                        onChange={(e) => setPptInstructions(e.target.value)}
+                        placeholder={m[
+                          'ai_assistant.ppt_instructions_placeholder'
+                        ]()}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <button
+                      type="button"
+                      onClick={() => setPptDialogOpen(false)}
+                      className={cn(
+                        buttonVariants({ variant: 'outline' }),
+                        'rounded-full px-5'
+                      )}
+                    >
+                      {m['ai_assistant.ppt_cancel']()}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={pptMutation.isPending || !pptContent.trim()}
+                      onClick={() => {
+                        setPptError('');
+                        pptMutation.mutate({
+                          content: pptContent,
+                          nSlides: Math.min(
+                            50,
+                            Math.max(1, Number(pptSlides) || 6)
+                          ),
+                          mode: pptMode,
+                          instructions: pptInstructions.trim() || undefined,
+                        });
+                      }}
+                      className={cn(
+                        buttonVariants(),
+                        'rounded-full px-5 disabled:opacity-50'
+                      )}
+                    >
+                      {m['ai_assistant.ppt_submit']()}
+                    </button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </>
           )}
         </div>
