@@ -46,6 +46,15 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-22: AI 学习助手 PPT 指引 + 已生成任务列表
+
+- 对话助手以前不知道页面有「生成 PPT」按钮，用户问做 PPT 时会直接拒绝（“无法生成或存储 .pptx”）。现在 system prompt 加了一条规则：用户要 PPT 时指引点本页的「生成 PPT」按钮（内容默认取最近对话，可改；页数 1–50），并可先帮用户把要点整理成大纲。
+- 助手页新增「最近生成的 PPT」列表：已完成的任务记到本机 localStorage（`ai-assistant-ppt-jobs-v1`，最多 5 条），刷新页面后下载链接还在；进行中的任务不在列表里。
+
+### Action required
+
+无。
+
 ## 2026-11-21: PPT 下载链接补 /wiki 前缀（修 404）
 
 - PPT 任务完成后的 `downloadUrl` 以前是裸 `/api/admin/agent/presentations/download?id=...`。页面把它当普通 `<a href>` 渲染，点开后浏览器走到裸域名，nginx 把 `/api/*` 交给 ai-shifu（Flask），返回 `{"code":404,"message":"The requested URL was not found on the server..."}`。现在服务端用 `withAppBase()` 生成下载地址，内网部署下是 `/wiki/api/...`，Cloudflare 部署（无 base）保持原样。

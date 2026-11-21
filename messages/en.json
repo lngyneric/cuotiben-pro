@@ -1046,6 +1046,7 @@
   "ai_assistant.ppt_cancel": "Cancel",
   "ai_assistant.ppt_generating": "Generating PPT…",
   "ai_assistant.ppt_completed": "PPT is ready",
+  "ai_assistant.ppt_recent": "Recent PPTs",
   "ai_assistant.ppt_download": "Download PPTX",
   "ai_assistant.ppt_slide_count": "{count} slides",
   "ai_assistant.ppt_no_content": "Chat a bit first, then generate a PPT from the conversation",
