@@ -56,6 +56,8 @@ const stub = {
   statusCalls: 0,
   createCalls: 0,
   createFail: 'none' as 'none' | 'quota-429',
+  /** 最近一次调 generate/async 的请求体（断言版式透传用）。 */
+  lastGenerateBody: '',
 };
 
 function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
@@ -69,7 +71,8 @@ function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-  if (url.endsWith('/api/v1/ppt/presentation/generate/async'))
+  if (url.endsWith('/api/v1/ppt/presentation/generate/async')) {
+    stub.lastGenerateBody = body;
     return json({
       id: 'task-1',
       status: 'pending',
@@ -79,6 +82,7 @@ function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
         remaining_slides: 1,
       },
     });
+  }
   if (url.includes('/api/v1/ppt/presentation/status/')) {
     stub.statusCalls += 1;
     if (stub.mode === 'error-quota')
@@ -357,6 +361,27 @@ test('empty content and nSlides=51 → 400', async () => {
   const over = await postPpt({ content: 'x', nSlides: 51 }, ownerToken);
   assert.equal(over.response.status, 400);
   assert.match(over.body.message, /between 1 and 50/);
+});
+
+test('valid template is accepted and forwarded to Presenton', async () => {
+  stub.mode = 'pending-then-completed';
+  stub.lastGenerateBody = '';
+  const { response, body } = await postPpt(
+    { content: 'Template deck topic', nSlides: 1, template: 'momentum' },
+    ownerToken
+  );
+  assert.equal(response.status, 200);
+  assert.equal(body.code, 0);
+  assert.equal(JSON.parse(stub.lastGenerateBody).template, 'momentum');
+});
+
+test('unknown template → 400', async () => {
+  const { response, body } = await postPpt(
+    { content: 'x', nSlides: 1, template: 'not-a-template' },
+    ownerToken
+  );
+  assert.equal(response.status, 400);
+  assert.match(body.message, /Unknown template/);
 });
 
 test('quota failure at start → 429 llm_quota_exceeded', async () => {

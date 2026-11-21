@@ -7,6 +7,7 @@ import { Link } from '@/core/i18n/navigation';
 import { localizedAbsoluteUrl } from '@/core/i18n/urls';
 import { envConfigs } from '@/config';
 import { apiGet, apiPost } from '@/lib/api-client';
+import { PPT_DEFAULT_TEMPLATE, PPT_TEMPLATES } from '@/lib/ppt-templates';
 import { cn } from '@/lib/utils';
 import { m } from '@/paraglide/messages.js';
 import { getLocale, locales } from '@/paraglide/runtime.js';
@@ -32,6 +33,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+
+import {
+  ATTACH_STORAGE_KEY,
+  buildPptContent,
+  CHAT_STORAGE_KEY,
+  loadStoredPptJobs,
+  storePptJob,
+  type PptJobRecord,
+  type PptJobStatus,
+} from './ai-assistant/-ppt-shared';
 
 interface RecommendedCourse {
   slug: string;
@@ -68,17 +79,6 @@ interface ChatMessage {
   attachments?: string[];
 }
 
-/** PPT 生成任务状态（与服务端 /api/ai-assistant/presentations 的 GET 回包一致）。 */
-interface PptJobStatus {
-  jobId: string;
-  status: 'queued' | 'generating' | 'completed' | 'failed';
-  title?: string | null;
-  slideCount?: number | null;
-  downloadUrl?: string;
-  error?: string;
-  errorCode?: string;
-}
-
 /** 待发送的附件（base64 已备好，随下一轮提问一起发）。 */
 interface PendingAttachment {
   id: number;
@@ -102,56 +102,6 @@ const TOPIC_KEYS = [
   'ai_assistant.topic_sales',
   'ai_assistant.topic_newcomer',
 ] as const;
-
-/** 对话历史只存本机浏览器（刷新不丢；换设备不带走）。 */
-const CHAT_STORAGE_KEY = 'ai-assistant-chat-v1';
-/** 参考资料文本与文件名（与对话分开的 key；抽出的长文本只存这里）。 */
-const ATTACH_STORAGE_KEY = 'ai-assistant-attachments-v1';
-/** 已完成的 PPT 任务（只存本机浏览器；刷新后下载链接还在）。 */
-const PPT_JOBS_STORAGE_KEY = 'ai-assistant-ppt-jobs-v1';
-const MAX_STORED_PPT_JOBS = 5;
-
-interface PptJobRecord {
-  jobId: string;
-  title?: string | null;
-  slideCount?: number | null;
-  downloadUrl: string;
-  completedAt: number;
-}
-
-function loadStoredPptJobs(): PptJobRecord[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = window.localStorage.getItem(PPT_JOBS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (j): j is PptJobRecord =>
-          !!j &&
-          typeof j.jobId === 'string' &&
-          typeof j.downloadUrl === 'string'
-      )
-      .slice(0, MAX_STORED_PPT_JOBS);
-  } catch {
-    return [];
-  }
-}
-
-/** 把一个已完成的任务记到本机列表最前面（去重，最多 5 条），返回新列表。 */
-function storePptJob(job: PptJobRecord): PptJobRecord[] {
-  const next = [
-    job,
-    ...loadStoredPptJobs().filter((j) => j.jobId !== job.jobId),
-  ].slice(0, MAX_STORED_PPT_JOBS);
-  try {
-    window.localStorage.setItem(PPT_JOBS_STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    // 存储满或被禁时静默跳过，不影响下载。
-  }
-  return next;
-}
 
 function loadStoredAttachments(): { context: string; fileNames: string[] } {
   if (typeof window === 'undefined') return { context: '', fileNames: [] };
@@ -366,7 +316,17 @@ function AiAssistantPage() {
   const [pptContent, setPptContent] = useState('');
   const [pptSlides, setPptSlides] = useState('6');
   const [pptMode, setPptMode] = useState<'standard' | 'smart'>('standard');
+  const [pptTemplate, setPptTemplate] = useState(PPT_DEFAULT_TEMPLATE);
   const [pptInstructions, setPptInstructions] = useState('');
+  /** 对话框拖动偏移（相对居中位置；关窗时归零）。 */
+  const [pptDrag, setPptDrag] = useState({ x: 0, y: 0 });
+  const [pptDragging, setPptDragging] = useState(false);
+  const pptDragRef = useRef<{
+    startX: number;
+    startY: number;
+    baseX: number;
+    baseY: number;
+  } | null>(null);
   const [pptJob, setPptJob] = useState<PptJobStatus | null>(null);
   const [pptPolling, setPptPolling] = useState(false);
   const [pptError, setPptError] = useState('');
@@ -375,15 +335,15 @@ function AiAssistantPage() {
 
   /** 对话框默认内容：最近一轮提问 + 最新回答 + 参考资料文本。 */
   const assemblePptContent = () => {
-    const parts: string[] = [];
     const lastUser = [...messages].reverse().find((msg) => msg.role === 'user');
     const lastAssistant = [...messages]
       .reverse()
       .find((msg) => msg.role === 'assistant');
-    if (lastUser) parts.push(`问题：${lastUser.text}`);
-    if (lastAssistant) parts.push(`回答：${lastAssistant.text}`);
-    if (attachmentContext) parts.push(`参考资料：\n${attachmentContext}`);
-    return parts.join('\n\n').slice(0, 100_000);
+    return buildPptContent(
+      lastUser?.text,
+      lastAssistant?.text,
+      attachmentContext
+    );
   };
 
   const openPptDialog = () => {
@@ -392,11 +352,46 @@ function AiAssistantPage() {
     setPptDialogOpen(true);
   };
 
+  const handlePptDialogOpenChange = (open: boolean) => {
+    setPptDialogOpen(open);
+    if (!open) {
+      setPptDrag({ x: 0, y: 0 });
+      setPptDragging(false);
+      pptDragRef.current = null;
+    }
+  };
+
+  /** 拖动对话框：按住标题栏移动；用 translate 叠加在居中定位上。 */
+  const onPptDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    pptDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      baseX: pptDrag.x,
+      baseY: pptDrag.y,
+    };
+    setPptDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPptDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = pptDragRef.current;
+    if (!drag) return;
+    setPptDrag({
+      x: drag.baseX + (e.clientX - drag.startX),
+      y: drag.baseY + (e.clientY - drag.startY),
+    });
+  };
+  const onPptDragEnd = () => {
+    pptDragRef.current = null;
+    setPptDragging(false);
+  };
+
   const pptMutation = useMutation({
     mutationFn: (vars: {
       content: string;
       nSlides: number;
       mode: 'standard' | 'smart';
+      template?: string;
       instructions?: string;
     }) =>
       apiPost<{ jobId: string; status: string }>(
@@ -929,17 +924,35 @@ function AiAssistantPage() {
                 {m['ai_assistant.attach_hint']()}
               </p>
 
-              <Dialog open={pptDialogOpen} onOpenChange={setPptDialogOpen}>
-                <DialogContent className="sm:max-w-lg">
-                  <DialogHeader>
+              <Dialog
+                open={pptDialogOpen}
+                onOpenChange={handlePptDialogOpenChange}
+              >
+                <DialogContent
+                  className="flex max-h-[90dvh] flex-col sm:max-w-lg"
+                  style={{
+                    translate: `calc(-50% + ${pptDrag.x}px) calc(-50% + ${pptDrag.y}px)`,
+                    transition: pptDragging ? 'none' : undefined,
+                  }}
+                >
+                  <DialogHeader
+                    className="shrink-0 cursor-grab touch-none select-none active:cursor-grabbing"
+                    onPointerDown={onPptDragStart}
+                    onPointerMove={onPptDragMove}
+                    onPointerUp={onPptDragEnd}
+                    onPointerCancel={onPptDragEnd}
+                  >
                     <DialogTitle>
                       {m['ai_assistant.ppt_dialog_title']()}
                     </DialogTitle>
                     <DialogDescription>
                       {m['ai_assistant.ppt_dialog_description']()}
                     </DialogDescription>
+                    <p className="text-muted-foreground text-xs">
+                      {m['ai_assistant.ppt_drag_hint']()}
+                    </p>
                   </DialogHeader>
-                  <div className="space-y-4">
+                  <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
                     <div className="space-y-2">
                       <Label htmlFor="ppt-content">
                         {m['ai_assistant.ppt_content_label']()}
@@ -990,6 +1003,32 @@ function AiAssistantPage() {
                       </div>
                     </div>
                     <div className="space-y-2">
+                      <Label htmlFor="ppt-template">
+                        {m['ai_assistant.ppt_template_label']()}
+                      </Label>
+                      <Select
+                        value={pptTemplate}
+                        disabled={pptMode === 'smart'}
+                        onValueChange={(v) => setPptTemplate(v)}
+                      >
+                        <SelectTrigger id="ppt-template">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PPT_TEMPLATES.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-muted-foreground text-xs">
+                        {pptMode === 'smart'
+                          ? m['ai_assistant.ppt_template_smart_note']()
+                          : m['ai_assistant.ppt_template_hint']()}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
                       <Label htmlFor="ppt-instructions">
                         {m['ai_assistant.ppt_instructions_label']()}
                       </Label>
@@ -1003,7 +1042,15 @@ function AiAssistantPage() {
                       />
                     </div>
                   </div>
-                  <DialogFooter>
+                  <DialogFooter className="shrink-0">
+                    <Link
+                      href="/ai-assistant/ppt"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-muted-foreground hover:text-primary mr-auto self-center text-xs underline"
+                    >
+                      {m['ai_assistant.ppt_open_page']()}
+                    </Link>
                     <button
                       type="button"
                       onClick={() => setPptDialogOpen(false)}
@@ -1026,6 +1073,8 @@ function AiAssistantPage() {
                             Math.max(1, Number(pptSlides) || 6)
                           ),
                           mode: pptMode,
+                          template:
+                            pptMode === 'smart' ? undefined : pptTemplate,
                           instructions: pptInstructions.trim() || undefined,
                         });
                       }}

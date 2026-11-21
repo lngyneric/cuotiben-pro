@@ -40,6 +40,31 @@ export const MAX_FILES = 10;
 export const MAX_TOTAL_FILE_BYTES = 1_500_000;
 /** 拼进生成提示的素材上限（wiki 文章可能很长）。 */
 export const MAX_ASSEMBLED_CONTENT_CHARS = 100_000;
+/**
+ * Presenton 版式（template）白名单：2026-11-22 对线上 Presenton
+ * 0.9.12-beta 的 /api/v1/ppt/template/all 实测得到的 16 个内置版式
+ *（id 即小写名）。generate/async 只认这些 id；smart 模式的 create
+ * 接口不接受 template，版式只在标准模式生效。
+ */
+export const PRESENTATION_TEMPLATES = [
+  'general',
+  'momentum',
+  'dynamic',
+  'executive',
+  'modern',
+  'standard',
+  'swift',
+  'civic',
+  'editorial',
+  'horizon',
+  'landmark',
+  'mosaic',
+  'nova',
+  'pulse',
+  'signal',
+  'verdant',
+] as const;
+export type PresentationTemplate = (typeof PRESENTATION_TEMPLATES)[number];
 
 const CONTROL_TIMEOUT_MS = 30_000;
 const UPLOAD_TIMEOUT_MS = 120_000;
@@ -636,6 +661,14 @@ export function validateGenerateInput(input: GenerateInput): void {
     throw new PresentonError(
       'invalid_input',
       `At most ${MAX_FILES} postSlugs per request`
+    );
+  if (
+    input.template !== undefined &&
+    !(PRESENTATION_TEMPLATES as readonly string[]).includes(input.template)
+  )
+    throw new PresentonError(
+      'invalid_input',
+      `Unknown template: ${input.template}`
     );
 }
 
