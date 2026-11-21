@@ -1056,7 +1056,6 @@
   "ai_assistant.ppt_open_page": "在单独页面打开",
   "ai_assistant.ppt_page_title": "生成 PPT",
   "ai_assistant.ppt_page_description": "在单独页面详细设置并生成 PPT，内容默认取最近的对话，可改。",
-  "ai_assistant.ppt_back_to_chat": "返回对话",
   "ai_assistant.ppt_no_permission": "当前账号没有生成 PPT 的权限，请联系管理员。",
   "ai_assistant.ppt_drag_hint": "拖动标题栏可以移动窗口",
   "landing.tracks.title": "课程体系",

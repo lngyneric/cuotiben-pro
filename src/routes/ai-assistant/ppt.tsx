@@ -159,12 +159,6 @@ function PptPage() {
       <Header />
       <main className="flex-1 px-4 py-8">
         <div className="mx-auto max-w-3xl">
-          <Link
-            href="/ai-assistant"
-            className="text-muted-foreground hover:text-primary text-sm underline"
-          >
-            ← {m['ai_assistant.ppt_back_to_chat']()}
-          </Link>
           <div className="mt-4 mb-6 text-center">
             <h1 className="font-serif text-3xl font-normal tracking-tight sm:text-4xl">
               {m['ai_assistant.ppt_page_title']()}
