@@ -9,6 +9,7 @@ import { presentonErrorResponse } from '@/server/admin/handlers/presentations';
 
 import * as presentationsService from '@/modules/presentations/service';
 import { PresentonError } from '@/modules/presentations/service';
+import { withAppBase } from '@/lib/base-path';
 import { enforceMinIntervalRateLimit } from '@/lib/rate-limit';
 import { respData, respErr } from '@/lib/resp';
 
@@ -101,7 +102,9 @@ async function GET({ request }: { request: Request }) {
       slideCount: current.slideCount,
       ...(current.status === 'completed'
         ? {
-            downloadUrl: `/api/admin/agent/presentations/download?id=${encodeURIComponent(current.id)}`,
+            downloadUrl: withAppBase(
+              `/api/admin/agent/presentations/download?id=${encodeURIComponent(current.id)}`
+            ),
           }
         : {}),
       ...(current.status === 'failed'

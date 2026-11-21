@@ -451,6 +451,40 @@ test('completed job returns a download URL; download streams the pptx to the own
   assert.equal(foreign.status, 404);
 });
 
+test('completed job downloadUrl carries the /wiki app base when APP_BASE_PATH is set', async () => {
+  // Regression: a raw /api/... download URL navigates the browser to the
+  // bare domain, where nginx routes /api/* to ai-shifu (Flask) → 404.
+  // The MCP handler must prefix the app base like the page route does.
+  const prev = process.env.APP_BASE_PATH;
+  process.env.APP_BASE_PATH = '/wiki';
+  try {
+    stub.mode = 'pending-then-completed';
+    stub.statusCalls = 0;
+    const { body } = await generate(
+      { content: 'Base path MCP deck', nSlides: 1 },
+      ownerToken,
+      'ppt-download-base-1'
+    );
+    const jobId = body.data.jobId as string;
+    // First poll: still generating; second poll: Presenton reports completed.
+    const first = await request('presentations_get', { id: jobId }, ownerToken);
+    assert.equal(
+      (((await first.json()) as any).data as any).status,
+      'generating'
+    );
+    const got = await request('presentations_get', { id: jobId }, ownerToken);
+    const data = ((await got.json()) as any).data;
+    assert.equal(data.status, 'completed');
+    assert.equal(
+      data.downloadUrl,
+      `/wiki/api/admin/agent/presentations/download?id=${jobId}`
+    );
+  } finally {
+    if (prev === undefined) delete process.env.APP_BASE_PATH;
+    else process.env.APP_BASE_PATH = prev;
+  }
+});
+
 test('postSlugs resolve server-side and files upload through Presenton', async () => {
   stub.mode = 'pending-then-completed';
   stub.statusCalls = 0;

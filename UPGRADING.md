@@ -46,6 +46,15 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-21: PPT 下载链接补 /wiki 前缀（修 404）
+
+- PPT 任务完成后的 `downloadUrl` 以前是裸 `/api/admin/agent/presentations/download?id=...`。页面把它当普通 `<a href>` 渲染，点开后浏览器走到裸域名，nginx 把 `/api/*` 交给 ai-shifu（Flask），返回 `{"code":404,"message":"The requested URL was not found on the server..."}`。现在服务端用 `withAppBase()` 生成下载地址，内网部署下是 `/wiki/api/...`，Cloudflare 部署（无 base）保持原样。
+- 同一处修复也覆盖 MCP 的 `presentations_get` 返回的 `downloadUrl`。
+
+### Action required
+
+- 无 schema 变化、无新权限码、无新环境变量、无新依赖。已部署的版本直接随下次重建生效。
+
 ## 2026-11-20: AI 学习助手页生成 PPT（接生产 Presenton 接口）
 
 - `/wiki/ai-assistant` 有 `admin.presentations.generate` 权限的用户会看到“生成 PPT”按钮：点开对话框，内容默认填最近一轮提问 + 最新助手回答 + 参考资料文本（可改），页数默认 6（1–50）、模式标准/智能、补充说明可选；提交后每 5 秒轮询任务状态，完成后显示标题、页数与下载链接，失败显示服务端返回的错误。
