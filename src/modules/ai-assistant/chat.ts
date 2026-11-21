@@ -122,7 +122,7 @@ function toolDescriptions(tools: ChatTools): string {
   return lines.map((l, i) => `${i + 1}. ${l}`).join('\n');
 }
 
-function chatSystemPrompt(input: ChatInput): string {
+export function chatSystemPrompt(input: ChatInput): string {
   const lines = [
     '你是企业大学 wiki 的 AI 学习助手，和企微里的大圆一样：能正常聊天，不只推课。',
     '用中文回答，简短直接，先给结论；一轮只答当前问题，不要一次列十几条。',
@@ -137,6 +137,7 @@ function chatSystemPrompt(input: ChatInput): string {
     '4. 文档问题只按工具返回的原文回答；原文写“待填”“速览”或“细则以正式制度原文为准”时，如实说明，不要自己补一个流程。',
     '5. 问候、闲聊、与课程无关的问题，正常接话，不用拒绝，也不用硬推课。',
     '6. 不知道就直说不知道，不要编造。',
+    '7. 用户要生成 PPT、做演示文稿、导出 PPT 时，不要说做不了、没有文件：告诉用户点本页的「生成 PPT」按钮（内容默认取最近的对话与参考资料，可改；页数 1–50，标准/智能模式可选），生成后页面会给出下载链接；可以先帮用户把要点整理成适合放进对话框的大纲。',
     ...assistantContextLines(input.role, input.statusSummaries),
   ];
   // 本轮附件：抽出的文本拼进 system prompt（不走 history，免得每轮

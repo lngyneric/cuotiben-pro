@@ -107,6 +107,51 @@ const TOPIC_KEYS = [
 const CHAT_STORAGE_KEY = 'ai-assistant-chat-v1';
 /** 参考资料文本与文件名（与对话分开的 key；抽出的长文本只存这里）。 */
 const ATTACH_STORAGE_KEY = 'ai-assistant-attachments-v1';
+/** 已完成的 PPT 任务（只存本机浏览器；刷新后下载链接还在）。 */
+const PPT_JOBS_STORAGE_KEY = 'ai-assistant-ppt-jobs-v1';
+const MAX_STORED_PPT_JOBS = 5;
+
+interface PptJobRecord {
+  jobId: string;
+  title?: string | null;
+  slideCount?: number | null;
+  downloadUrl: string;
+  completedAt: number;
+}
+
+function loadStoredPptJobs(): PptJobRecord[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(PPT_JOBS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (j): j is PptJobRecord =>
+          !!j &&
+          typeof j.jobId === 'string' &&
+          typeof j.downloadUrl === 'string'
+      )
+      .slice(0, MAX_STORED_PPT_JOBS);
+  } catch {
+    return [];
+  }
+}
+
+/** 把一个已完成的任务记到本机列表最前面（去重，最多 5 条），返回新列表。 */
+function storePptJob(job: PptJobRecord): PptJobRecord[] {
+  const next = [
+    job,
+    ...loadStoredPptJobs().filter((j) => j.jobId !== job.jobId),
+  ].slice(0, MAX_STORED_PPT_JOBS);
+  try {
+    window.localStorage.setItem(PPT_JOBS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // 存储满或被禁时静默跳过，不影响下载。
+  }
+  return next;
+}
 
 function loadStoredAttachments(): { context: string; fileNames: string[] } {
   if (typeof window === 'undefined') return { context: '', fileNames: [] };
@@ -325,6 +370,8 @@ function AiAssistantPage() {
   const [pptJob, setPptJob] = useState<PptJobStatus | null>(null);
   const [pptPolling, setPptPolling] = useState(false);
   const [pptError, setPptError] = useState('');
+  /** 本机已完成的 PPT 任务（刷新后下载链接还在）。 */
+  const [pptJobs, setPptJobs] = useState<PptJobRecord[]>([]);
 
   /** 对话框默认内容：最近一轮提问 + 最新回答 + 参考资料文本。 */
   const assemblePptContent = () => {
@@ -380,6 +427,17 @@ function AiAssistantPage() {
           setPptJob(data);
           if (data.status === 'completed' || data.status === 'failed')
             setPptPolling(false);
+          if (data.status === 'completed' && data.downloadUrl) {
+            setPptJobs(
+              storePptJob({
+                jobId: data.jobId,
+                title: data.title,
+                slideCount: data.slideCount,
+                downloadUrl: data.downloadUrl,
+                completedAt: Date.now(),
+              })
+            );
+          }
         })
         .catch((e) => {
           // 轮询失败时停掉轮询并报错，避免无声卡住；任务本身还在服务端跑。
@@ -402,6 +460,7 @@ function AiAssistantPage() {
     const storedAttach = loadStoredAttachments();
     setAttachmentContext(storedAttach.context);
     setRefFileNames(storedAttach.fileNames);
+    setPptJobs(loadStoredPptJobs());
   }, []);
 
   useEffect(() => {
@@ -754,6 +813,38 @@ function AiAssistantPage() {
                       {m['ai_assistant.ppt_generating']()}
                     </p>
                   )}
+                </div>
+              )}
+
+              {pptJobs.filter((j) => j.jobId !== pptJob?.jobId).length > 0 && (
+                <div className="border-border bg-card mx-auto mt-6 max-w-xl rounded-2xl border p-4 text-sm">
+                  <p className="font-medium">
+                    {m['ai_assistant.ppt_recent']()}
+                  </p>
+                  <ul className="mt-2 space-y-2">
+                    {pptJobs
+                      .filter((j) => j.jobId !== pptJob?.jobId)
+                      .map((j) => (
+                        <li
+                          key={j.jobId}
+                          className="flex items-center justify-between gap-3"
+                        >
+                          <span className="min-w-0 truncate">
+                            {j.title || m['ai_assistant.ppt_completed']()}
+                            {typeof j.slideCount === 'number' &&
+                              `（${m['ai_assistant.ppt_slide_count']({
+                                count: j.slideCount,
+                              })}）`}
+                          </span>
+                          <a
+                            href={j.downloadUrl}
+                            className="text-primary shrink-0 font-medium"
+                          >
+                            {m['ai_assistant.ppt_download']()} ↓
+                          </a>
+                        </li>
+                      ))}
+                  </ul>
                 </div>
               )}
 

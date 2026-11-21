@@ -1046,6 +1046,7 @@
   "ai_assistant.ppt_cancel": "取消",
   "ai_assistant.ppt_generating": "正在生成 PPT…",
   "ai_assistant.ppt_completed": "PPT 已生成",
+  "ai_assistant.ppt_recent": "最近生成的 PPT",
   "ai_assistant.ppt_download": "下载 PPTX",
   "ai_assistant.ppt_slide_count": "{count} 页",
   "ai_assistant.ppt_no_content": "先聊几句，再根据对话内容生成 PPT",

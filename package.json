@@ -34,7 +34,8 @@
     "test:graph": "node --import tsx --test tests/wiki-graph.test.ts",
     "test:presentations": "node --import tsx --test tests/presentations.test.ts",
     "test:ai-assistant-attachments": "node --import tsx --test tests/ai-assistant-attachments.test.ts",
-    "test:ai-assistant-presentations": "node --import tsx --test tests/ai-assistant-presentations.test.ts"
+    "test:ai-assistant-presentations": "node --import tsx --test tests/ai-assistant-presentations.test.ts",
+    "test:ai-assistant-prompt": "node --import tsx --test tests/ai-assistant-prompt.test.ts"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs,cjs}": "prettier --write",
