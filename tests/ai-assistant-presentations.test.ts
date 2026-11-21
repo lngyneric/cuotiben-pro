@@ -320,6 +320,35 @@ test('non-owner GET → 404', async () => {
   assert.match(foreign.body.message, /not found/i);
 });
 
+test('completed job downloadUrl carries the /wiki app base when APP_BASE_PATH is set', async () => {
+  // Regression: the page renders downloadUrl as a plain <a href>. A raw
+  // /api/... path navigates the browser to the bare domain, where nginx
+  // routes /api/* to ai-shifu (Flask) instead of this app → 404.
+  const prev = process.env.APP_BASE_PATH;
+  process.env.APP_BASE_PATH = '/wiki';
+  try {
+    stub.mode = 'pending-then-completed';
+    stub.statusCalls = 0;
+    const { body } = await postPpt(
+      { content: 'Base path deck', nSlides: 1 },
+      ownerToken
+    );
+    const jobId = body.data.jobId as string;
+    // First poll: still generating; second poll: Presenton reports completed.
+    const first = await getPpt(jobId, ownerToken);
+    assert.equal(first.body.data.status, 'generating');
+    const got = await getPpt(jobId, ownerToken);
+    assert.equal(got.body.data.status, 'completed');
+    assert.equal(
+      got.body.data.downloadUrl,
+      `/wiki/api/admin/agent/presentations/download?id=${jobId}`
+    );
+  } finally {
+    if (prev === undefined) delete process.env.APP_BASE_PATH;
+    else process.env.APP_BASE_PATH = prev;
+  }
+});
+
 test('empty content and nSlides=51 → 400', async () => {
   const empty = await postPpt({}, ownerToken);
   assert.equal(empty.response.status, 400);

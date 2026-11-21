@@ -1,5 +1,6 @@
 import * as presentationsService from '@/modules/presentations/service';
 import { PresentonError } from '@/modules/presentations/service';
+import { withAppBase } from '@/lib/base-path';
 import { respData, respErr } from '@/lib/resp';
 
 import type { AdminHandlerContext } from '../types';
@@ -60,7 +61,9 @@ export async function GET({ params, actor }: AdminHandlerContext) {
       slideCount: current.slideCount,
       ...(current.status === 'completed'
         ? {
-            downloadUrl: `/api/admin/agent/presentations/download?id=${encodeURIComponent(current.id)}`,
+            downloadUrl: withAppBase(
+              `/api/admin/agent/presentations/download?id=${encodeURIComponent(current.id)}`
+            ),
           }
         : {}),
       ...(current.status === 'failed'
