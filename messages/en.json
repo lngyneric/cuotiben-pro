@@ -1056,7 +1056,6 @@
   "ai_assistant.ppt_open_page": "Open in a separate page",
   "ai_assistant.ppt_page_title": "Generate PPT",
   "ai_assistant.ppt_page_description": "Set up and generate a PPT on a separate page. Content defaults to the recent conversation and can be edited.",
-  "ai_assistant.ppt_back_to_chat": "Back to chat",
   "ai_assistant.ppt_no_permission": "Your account doesn't have permission to generate PPTs. Please contact an administrator.",
   "ai_assistant.ppt_drag_hint": "Drag the title bar to move the window",
   "landing.tracks.title": "Course tracks",
