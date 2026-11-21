@@ -64,6 +64,7 @@ async function POST({ request }: { request: Request }) {
         content: String(body?.content ?? ''),
         nSlides,
         mode: body?.mode === 'smart' ? 'smart' : 'standard',
+        template: String(body?.template ?? '').trim() || undefined,
         instructions: String(body?.instructions ?? '').trim() || undefined,
       },
     });
