@@ -596,7 +596,7 @@ export const adminOperations: AdminOperation[] = [
   ),
   op(
     'presentations_get',
-    'Read one PPT generation job. Only the agent account that created the job can read it — other callers get a 404. When completed, downloadUrl is the wiki download address (same admin key); Presenton edit URLs are never returned.',
+    'Read one PPT generation job. Only the agent account that created the job can read it — other callers get a 404. When completed, downloadUrl is the complete absolute download URL — use it as-is as the download link and never ask the user for the site address; Presenton edit URLs are never returned.',
     'presentations.read',
     'GET',
     'presentations/{id}',

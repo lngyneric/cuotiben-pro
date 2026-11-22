@@ -1,3 +1,4 @@
+import { envConfigs } from '@/config';
 import * as presentationsService from '@/modules/presentations/service';
 import { PresentonError } from '@/modules/presentations/service';
 import { withAppBase } from '@/lib/base-path';
@@ -61,9 +62,15 @@ export async function GET({ params, actor }: AdminHandlerContext) {
       slideCount: current.slideCount,
       ...(current.status === 'completed'
         ? {
-            downloadUrl: withAppBase(
+            // Absolute URL: an MCP agent is an external client — a
+            // relative path leaves it unable to link the file, and it
+            // ends up asking the user for the site address instead.
+            // The handler's synthetic request is http://admin.internal,
+            // so the origin comes from VITE_APP_URL (intranet:
+            // https://eu.sysmex.com.cn/wiki), never from request.url.
+            downloadUrl: `${new URL(envConfigs.app_url).origin}${withAppBase(
               `/api/admin/agent/presentations/download?id=${encodeURIComponent(current.id)}`
-            ),
+            )}`,
           }
         : {}),
       ...(current.status === 'failed'

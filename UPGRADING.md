@@ -46,6 +46,11 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-22: MCP 的 PPT 下载地址改为完整 URL（大圆不再反问站点地址）
+
+- 根因：`presentations_get` 返回的 `downloadUrl` 是相对路径（`/wiki/api/...`），MCP 客户端（企微大圆）是外部调用方，拿不到站点域名，拼不出可点击链接，只能反问用户“企业大学站点网址是什么”。修法：MCP 端的 `downloadUrl` 改为完整 URL（`VITE_APP_URL` 的 origin ＋ `withAppBase` 路径，内网即 `https://eu.sysmex.com.cn/wiki/api/...`）；skill 与 `presentations_get` 工具描述同步明确“`downloadUrl` 是完整地址、原样贴出、不要问用户要站点地址”。页面接口（`/api/ai-assistant/presentations`）的 `downloadUrl` 仍是相对路径，浏览器内使用不受影响。
+- 注意：MCP handler 收到的 request 是 `executeAdmin` 重建的合成请求（origin 为 `http://admin.internal`），所以 origin 只能取 `VITE_APP_URL`，不能从 `request.url` 取。内网部署须保证 `VITE_APP_URL` 是真实公网地址（现为 `https://eu.sysmex.com.cn/wiki`），否则大圆拿到的链接仍不可用。
+
 ## 2026-11-22: 独立 PPT 页路由嵌套修复（/ai-assistant/ppt 曾渲染成对话页）
 
 - 根因：`/ai-assistant`（文件路由）与 `/ai-assistant/ppt`（子路由）共用父路由，但父组件（对话页）没有渲染 `<Outlet />`，子路由无处挂载——URL 与标题正确，内容却是对话页。修法：按 TanStack 惯例拆成布局路由 `src/routes/ai-assistant/route.tsx`（只渲染 `<Outlet />`）＋对话页移为 `src/routes/ai-assistant/index.tsx`（`createFileRoute('/ai-assistant/')`）＋`ppt.tsx` 不变。URL 不变（仍是 /ai-assistant/ppt），无 schema、无新权限。

@@ -435,7 +435,7 @@ test('completed job returns a download URL; download streams the pptx to the own
   assert.equal(data.title, 'Test Deck');
   assert.equal(
     data.downloadUrl,
-    `/api/admin/agent/presentations/download?id=${jobId}`
+    `http://localhost:3000/api/admin/agent/presentations/download?id=${jobId}`
   );
   assert.ok(!('edit_path' in data) && !('exportPath' in data));
 
@@ -451,10 +451,11 @@ test('completed job returns a download URL; download streams the pptx to the own
   assert.equal(foreign.status, 404);
 });
 
-test('completed job downloadUrl carries the /wiki app base when APP_BASE_PATH is set', async () => {
-  // Regression: a raw /api/... download URL navigates the browser to the
-  // bare domain, where nginx routes /api/* to ai-shifu (Flask) → 404.
-  // The MCP handler must prefix the app base like the page route does.
+test('completed job downloadUrl is absolute and carries the /wiki app base when APP_BASE_PATH is set', async () => {
+  // Regression: a relative /api/... download URL leaves an MCP agent
+  // unable to link the file — it ends up asking the user for the site
+  // address instead of sending a clickable link. The MCP handler must
+  // return a complete URL (origin from VITE_APP_URL + app base).
   const prev = process.env.APP_BASE_PATH;
   process.env.APP_BASE_PATH = '/wiki';
   try {
@@ -477,7 +478,7 @@ test('completed job downloadUrl carries the /wiki app base when APP_BASE_PATH is
     assert.equal(data.status, 'completed');
     assert.equal(
       data.downloadUrl,
-      `/wiki/api/admin/agent/presentations/download?id=${jobId}`
+      `http://localhost:3000/wiki/api/admin/agent/presentations/download?id=${jobId}`
     );
   } finally {
     if (prev === undefined) delete process.env.APP_BASE_PATH;
