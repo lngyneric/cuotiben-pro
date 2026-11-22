@@ -126,7 +126,7 @@ function statusBadgeVariant(
   return 'outline';
 }
 
-export const Route = createFileRoute('/mentoring-dashboard')({
+export const Route = createFileRoute('/mentoring-dashboard/')({
   loader: async () => {
     const locale = getLocale();
     return { locale };
@@ -185,7 +185,11 @@ function MentoringDashboardPage() {
     },
     staleTime: 60_000,
     retry: false,
-    enabled: !!session?.user && !needMentor,
+    // 总表查询始终启用：导师视角未选导师时，后端返回空行＋导师列表
+    // （不再报 mentor_required），页面才能渲染选择器与视角切换。
+    // 若此处用 !needMentor 禁用查询，data 为空会导致 isAdminScope 为
+    // false，切换器与选择器一起消失、页面只剩提示（2026-11-22 实测）。
+    enabled: !!session?.user,
   });
 
   const data = summaryQ.data;

@@ -375,9 +375,19 @@ test('总表：管理员看全部；导师只看自己名下学员（含无工�
   );
 });
 
-test('总表导师预览：管理员须指定导师；不存在的导师报 not_found', async () => {
+test('总表导师预览：未选导师返回空行＋导师列表（供选择器渲染）；不存在的导师报 not_found', async () => {
+  // 未选导师不再报 mentor_required：前端查询须拿到 mentors 才能渲染
+  // 选择器，否则 isAdminScope 为 false、切换器与选择器一起消失、
+  // 页面只剩提示（2026-11-22 实测）。
   const noId = await service.listDashboardRows({ kind: 'admin' }, 'mentor');
-  assert.deepEqual(noId, { error: 'mentor_required' });
+  assert.ok(!('error' in noId));
+  if ('error' in noId) return;
+  assert.equal(noId.view, 'mentor');
+  assert.equal(noId.scope, 'admin');
+  assert.deepEqual(noId.rows, []);
+  assert.equal(noId.summary.total, 0);
+  assert.equal(noId.mentors.length, 2);
+  assert.equal(noId.computedAt, NOW.toISOString());
   const badId = await service.listDashboardRows(
     { kind: 'admin' },
     'mentor',
@@ -439,4 +449,51 @@ test('个人页：管理员任意行；导师只看名下；学员只看自己�
   assert.deepEqual(await service.getDashboardPerson(admin, 'record:nope'), {
     error: 'not_found',
   });
+});
+
+test('路由结构：个人页能挂载（父路由只渲染 Outlet，总表在 index）', async () => {
+  // 2026-11-22 实测：父路由 mentoring-dashboard.tsx 直接渲染总表、
+  // 不渲染 Outlet，子路由 $recordId 挂不上——地址与标题变了，正文
+  // 仍是总表。与 ai-assistant 的 route.tsx（只挂 Outlet）同一模式。
+  // 此单测守住文件结构，防止改回旧结构。
+  const { existsSync, readFileSync } = await import('node:fs');
+  const base = join(process.cwd(), 'src/routes/mentoring-dashboard');
+  const layout = join(base, 'route.tsx');
+  const index = join(base, 'index.tsx');
+  const person = join(base, '$recordId.tsx');
+  const oldParent = join(process.cwd(), 'src/routes/mentoring-dashboard.tsx');
+
+  assert.equal(existsSync(oldParent), false, '旧父路由文件须已删除');
+  assert.equal(existsSync(layout), true);
+  assert.equal(existsSync(index), true);
+  assert.equal(existsSync(person), true);
+
+  const layoutSrc = readFileSync(layout, 'utf8');
+  assert.match(layoutSrc, /createFileRoute\('\/mentoring-dashboard'\)/);
+  assert.match(layoutSrc, /<Outlet\s*\/>/);
+  assert.doesNotMatch(layoutSrc, /MentoringDashboardPage|DataTable/);
+
+  const indexSrc = readFileSync(index, 'utf8');
+  assert.match(indexSrc, /createFileRoute\('\/mentoring-dashboard\/'\)/);
+  assert.match(indexSrc, /MentoringDashboardPage/);
+
+  const personSrc = readFileSync(person, 'utf8');
+  assert.match(
+    personSrc,
+    /createFileRoute\('\/mentoring-dashboard\/\$recordId'\)/
+  );
+  assert.match(personSrc, /MentoringPersonPage/);
+});
+
+test('导师视角：总表查询不因未选导师而禁用（否则选择器与切换器消失）', async () => {
+  // 2026-11-22 实测：查询 enabled 含 !needMentor，导师视角未选导师
+  // 时查询禁用、data 为空、isAdminScope 为 false，切换器与选择器
+  // 一起消失、页面只剩提示，且无法切回。查询须始终启用。
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(
+    join(process.cwd(), 'src/routes/mentoring-dashboard/index.tsx'),
+    'utf8'
+  );
+  assert.doesNotMatch(src, /enabled:\s*!!session\?\.user\s*&&\s*!needMentor/);
+  assert.match(src, /enabled:\s*!!session\?\.user,/);
 });

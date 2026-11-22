@@ -438,7 +438,18 @@ export type ListDashboardResult =
       mentors: MentorOption[];
       computedAt: string | null;
     }
-  | { error: 'mentor_required' | 'mentor_not_found' | 'forbidden' };
+  | { error: 'mentor_not_found' | 'forbidden' };
+
+/** 全部行的最新 computedAt（同步时间，全行一致；空行时为 null）。 */
+function latestComputedAt(rows: MentoringRow[]): string | null {
+  return (
+    rows
+      .map((r) => r.computedAt)
+      .filter((x): x is string => !!x)
+      .sort()
+      .at(-1) ?? null
+  );
+}
 
 /**
  * 总表数据：按 scope＋view 取行。行数少（同步上限 500），全量取回后在
@@ -465,7 +476,21 @@ export async function listDashboardRows(
   if (scope.kind === 'admin') {
     mentors = mentorOptions(mentorRows, statusRows);
     if (effectiveView === 'mentor') {
-      if (!mentorId) return { error: 'mentor_required' };
+      if (!mentorId) {
+        // 未选导师：返回空行＋导师列表，供页面渲染选择器；不报错。
+        // 若报 mentor_required，前端查询拿不到数据，isAdminScope 为
+        // false 会导致视角切换器与选择器一起消失、页面只剩提示
+        // （2026-11-22 实测）。汇总按空行算（页面未选导师时不展示
+        // 汇总卡片），computedAt 取全部行的最新值。
+        return {
+          view: 'mentor',
+          scope: 'admin',
+          rows: [],
+          summary: summarizeRows([]),
+          mentors,
+          computedAt: latestComputedAt(statusRows.map(toMentoringRow)),
+        };
+      }
       const mentor = mentorRows.find((m: RolePersonMap) => m.id === mentorId);
       if (!mentor) return { error: 'mentor_not_found' };
       const mentees = parseMentees(mentor.mentees);
@@ -486,19 +511,13 @@ export async function listDashboardRows(
   }
 
   const shaped = rows.map(toMentoringRow);
-  const computedAt =
-    shaped
-      .map((r) => r.computedAt)
-      .filter((x): x is string => !!x)
-      .sort()
-      .at(-1) ?? null;
   return {
     view: effectiveView,
     scope: scope.kind,
     rows: shaped,
     summary: summarizeRows(shaped),
     mentors,
-    computedAt,
+    computedAt: latestComputedAt(shaped),
   };
 }
 

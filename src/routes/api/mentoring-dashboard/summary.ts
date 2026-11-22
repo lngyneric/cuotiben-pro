@@ -46,8 +46,6 @@ async function GET({ request }: { request: Request }) {
 
   const result = await listDashboardRows(scope, view, mentorIdParam);
   if ('error' in result) {
-    if (result.error === 'mentor_required')
-      return respErr('mentorId required', { status: 400 });
     if (result.error === 'mentor_not_found')
       return respErr('Mentor not found', { status: 400 });
     return respErr('Forbidden', { status: 403 });
