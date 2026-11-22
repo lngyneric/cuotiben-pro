@@ -7,6 +7,10 @@ export function Header() {
     { href: '/ai-assistant', label: m['landing.nav.ai_assistant']() },
     { href: '/graph', label: m['landing.nav.graph']() },
     { href: '/growth', label: m['landing.nav.growth']() },
+    {
+      href: '/mentoring-dashboard',
+      label: m['landing.nav.mentoring_dashboard'](),
+    },
     { href: '/blog', label: m['landing.nav.blog']() },
     { href: '/html', label: m['landing.nav.html']() },
     { href: '/sign-in', label: m['landing.nav.sign_in']() },
