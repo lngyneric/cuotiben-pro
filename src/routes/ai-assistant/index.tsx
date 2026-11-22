@@ -42,7 +42,7 @@ import {
   storePptJob,
   type PptJobRecord,
   type PptJobStatus,
-} from './ai-assistant/-ppt-shared';
+} from './-ppt-shared';
 
 interface RecommendedCourse {
   slug: string;
@@ -209,7 +209,7 @@ function loadStoredMessages(): ChatMessage[] {
   }
 }
 
-export const Route = createFileRoute('/ai-assistant')({
+export const Route = createFileRoute('/ai-assistant/')({
   loader: async () => {
     const locale = getLocale();
     return { locale };

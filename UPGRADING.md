@@ -46,6 +46,11 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-22: 独立 PPT 页路由嵌套修复（/ai-assistant/ppt 曾渲染成对话页）
+
+- 根因：`/ai-assistant`（文件路由）与 `/ai-assistant/ppt`（子路由）共用父路由，但父组件（对话页）没有渲染 `<Outlet />`，子路由无处挂载——URL 与标题正确，内容却是对话页。修法：按 TanStack 惯例拆成布局路由 `src/routes/ai-assistant/route.tsx`（只渲染 `<Outlet />`）＋对话页移为 `src/routes/ai-assistant/index.tsx`（`createFileRoute('/ai-assistant/')`）＋`ppt.tsx` 不变。URL 不变（仍是 /ai-assistant/ppt），无 schema、无新权限。
+- 教训：点号文件名（`ai-assistant.ppt.tsx`）并不能把子路由变平，仍会挂在父路由下；要独立渲染必须用布局＋Outlet。本地冒烟只看状态码发现不了此类问题，须浏览器实测页面内容。
+
 ## 2026-11-22: 独立 PPT 页去掉「返回对话」链接（理解修正）
 
 - 独立 PPT 页（/ai-assistant/ppt）顶部的「返回对话」链接已去掉：它是把“返回大圆对话页面”误解成 wiki 页面内跳转才加的。大圆是企微助手，返回大圆靠 MCP 反馈流程（见上一条），不是 wiki 页内链接。独立页用新标签页打开，关掉标签即回对话页；登录提示卡（大圆卡片）不受影响，仍正常显示。
