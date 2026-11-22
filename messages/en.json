@@ -1537,5 +1537,8 @@
   "mentoring_dashboard.confirmations_title": "Mentor confirmations",
   "mentoring_dashboard.confirmations_empty": "No confirmations yet.",
   "mentoring_dashboard.node_ratings": "Node ratings",
-  "mentoring_dashboard.result": "Result"
+  "mentoring_dashboard.result": "Result",
+  "mentoring_dashboard.col_elearn_type": "E-learning type",
+  "mentoring_dashboard.scope_line": "Only learners whose mentoring started on or after {cutoff} are counted ({included} included, {excluded} out of scope).",
+  "mentoring_dashboard.scope_note": "Scope: only learners whose mentoring started on or after {cutoff} are counted; {excludedBefore} started earlier and {excludedNoStart} have no start date — {excluded} learners out of scope in total."
 }

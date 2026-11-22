@@ -51,8 +51,10 @@ function statusRow(over: Record<string, unknown>) {
     mentorLeadName: '导师甲',
     mentors: null,
     planType: '销售',
-    planStartDate: '2025-05-12',
-    planEndDate: '2025-11-12',
+    // 种子行须在统计口径内（带教开始时间 ≥ 2026-04-01），否则总表
+    // 统计不到；口径外的行由“统计口径”单测单独插。
+    planStartDate: '2026-05-12',
+    planEndDate: '2026-11-12',
     expectedDate: '2025-09-05',
     plan: JSON.stringify({
       nodes: [
@@ -110,6 +112,8 @@ before(async () => {
             },
           ],
           scores: { process: 88, gpa: 3.5, elearn: 96 },
+          // E-learning 类型与分值是同一考核的两面（智能表 `E-learning` 列）。
+          elearnType: '转岗',
           courses: [],
           progressRecords: 0,
           quizAttempts: 0,
@@ -350,6 +354,17 @@ test('总表：管理员看全部；导师只看自己名下学员（含无工�
   assert.equal(all.summary.pendingConfirm, 1);
   assert.equal(all.mentors.length, 2);
   assert.equal(all.computedAt, NOW.toISOString());
+  // E-learning 类型：有值原样透出（转岗），无值为空（同步未写该字段的老行）。
+  assert.equal(all.rows.find((r) => r.id === 'record:a')?.elearnType, '转岗');
+  assert.equal(all.rows.find((r) => r.id === 'record:c')?.elearnType, null);
+  // 统计口径信息：3 行都在范围内，无排除。
+  assert.deepEqual(all.scopeInfo, {
+    cutoff: '2026-04-01',
+    included: 3,
+    excluded: 0,
+    excludedBeforeCutoff: 0,
+    excludedNoStartDate: 0,
+  });
 
   const mentorA = await service.resolveDashboardScope({
     isAdmin: false,
@@ -419,6 +434,7 @@ test('个人页：管理员任意行；导师只看名下；学员只看自己�
     assert.equal(a.person.nodes[0].state, 'passed');
     assert.equal(a.person.nodes[2].state, 'pending');
     assert.equal(a.person.scores?.elearn, 96);
+    assert.equal(a.person.elearnType, '转岗');
   }
   // 不带 record: 前缀也能查。
   const bare = await service.getDashboardPerson(admin, 'b');
@@ -496,4 +512,119 @@ test('导师视角：总表查询不因未选导师而禁用（否则选择器�
   );
   assert.doesNotMatch(src, /enabled:\s*!!session\?\.user\s*&&\s*!needMentor/);
   assert.match(src, /enabled:\s*!!session\?\.user,/);
+});
+
+test('统计口径：带教开始时间 < 2026-04-01 或无开始时间的行不进 Dashboard', async () => {
+  // 用户 2026-11-22 定：只统计带教开始时间 ≥ 2026-04-01 的学员，
+  // 其他学员不做统计。口径在服务层过滤：总表、汇总、导师名下计数、
+  // 个人页一律只看范围内行；无开始时间的行无法证明在范围内，也排除。
+  assert.equal(service.isInScopeStartDate('2026-04-01'), true);
+  assert.equal(service.isInScopeStartDate('2026-04-02'), true);
+  assert.equal(service.isInScopeStartDate('2026-11-22'), true);
+  assert.equal(service.isInScopeStartDate('2026-03-31'), false);
+  assert.equal(service.isInScopeStartDate('2024-10-28'), false);
+  assert.equal(service.isInScopeStartDate(null), false);
+  assert.equal(service.isInScopeStartDate(''), false);
+  assert.deepEqual(
+    service.buildScopeInfo([
+      { planStartDate: '2026-04-01' },
+      { planStartDate: '2026-03-31' },
+      { planStartDate: null },
+      { planStartDate: '' },
+    ] as never),
+    {
+      cutoff: '2026-04-01',
+      included: 1,
+      excluded: 3,
+      excludedBeforeCutoff: 1,
+      excludedNoStartDate: 2,
+    }
+  );
+
+  // 插三行口径外/边界行：边界日纳入、前一天排除、无开始时间排除。
+  const extra = [
+    statusRow({
+      id: 'record:d1',
+      name: '学员丁',
+      employeeNo: 'sch00004',
+      planStartDate: '2026-04-01',
+      planEndDate: '2026-10-01',
+    }),
+    statusRow({
+      id: 'record:d2',
+      name: '学员戊',
+      employeeNo: 'sch00005',
+      planStartDate: '2026-03-31',
+      planEndDate: '2026-09-30',
+    }),
+    statusRow({
+      id: 'record:d3',
+      name: '学员己',
+      employeeNo: 'sch00006',
+      planStartDate: null,
+      planEndDate: null,
+    }),
+  ];
+  await db().insert(schema.userStatusSummary).values(extra);
+  try {
+    const admin = { kind: 'admin' } as const;
+    const all = await service.listDashboardRows(admin, 'admin');
+    assert.ok(!('error' in all));
+    if ('error' in all) return;
+    // 原 3 行在范围内 ＋ 边界日 1 行；前一天与无开始时间不进。
+    assert.deepEqual(all.rows.map((r) => r.id).sort(), [
+      'record:a',
+      'record:b',
+      'record:c',
+      'record:d1',
+    ]);
+    assert.equal(all.summary.total, 4);
+    assert.deepEqual(all.scopeInfo, {
+      cutoff: '2026-04-01',
+      included: 4,
+      excluded: 2,
+      excludedBeforeCutoff: 1,
+      excludedNoStartDate: 1,
+    });
+
+    // 个人页：边界日能看；口径外的行按 not_found（不在 Dashboard 范围内）。
+    assert.ok('person' in (await service.getDashboardPerson(admin, 'd1')));
+    assert.deepEqual(await service.getDashboardPerson(admin, 'd2'), {
+      error: 'not_found',
+    });
+    assert.deepEqual(await service.getDashboardPerson(admin, 'd3'), {
+      error: 'not_found',
+    });
+  } finally {
+    const { inArray } = await import('drizzle-orm');
+    await db()
+      .delete(schema.userStatusSummary)
+      .where(
+        inArray(schema.userStatusSummary.id, [
+          'record:d1',
+          'record:d2',
+          'record:d3',
+        ])
+      );
+  }
+});
+
+test('统计口径与 E-learning 类型在页面上可见（总表口径行＋类型列＋个人页类型）', async () => {
+  // 2026-11-22 定：总表页须写明统计范围，页底数据说明须记录 cutoff
+  // 与排除行数；E-learning 类型须在总表列与个人页都出现。
+  const { readFileSync } = await import('node:fs');
+  const indexSrc = readFileSync(
+    join(process.cwd(), 'src/routes/mentoring-dashboard/index.tsx'),
+    'utf8'
+  );
+  assert.match(indexSrc, /mentoring_dashboard\.scope_line/);
+  assert.match(indexSrc, /mentoring_dashboard\.scope_note/);
+  assert.match(indexSrc, /mentoring_dashboard\.col_elearn_type/);
+  assert.match(indexSrc, /scopeInfo/);
+  const personSrc = readFileSync(
+    join(process.cwd(), 'src/routes/mentoring-dashboard/$recordId.tsx'),
+    'utf8'
+  );
+  assert.match(personSrc, /mentoring_dashboard\.col_elearn_type/);
+  assert.match(personSrc, /elearnType/);
 });
