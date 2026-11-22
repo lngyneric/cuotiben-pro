@@ -284,6 +284,17 @@ const defaultPermissions = [
     description: 'Delete AI tasks',
   },
 
+  // Mentoring dashboard (read-only; admin + HR views, mentor view is
+  // scoped by role_person_map, not by this code).
+  {
+    code: 'admin.mentoring_dashboard.read',
+    resource: 'mentoring_dashboard',
+    action: 'read',
+    title: 'Read Mentoring Dashboard',
+    description:
+      'View the credit-system mentoring dashboard (per-person and overview)',
+  },
+
   // Wildcard permission for super admin
   {
     code: '*',
@@ -341,6 +352,8 @@ const defaultRoles = [
       // PPT 生成：两个操作各一个独立 code，不用通配符，agent 角色按需授予。
       'admin.presentations.read',
       'admin.presentations.generate',
+      // 带教 Dashboard：只读；管理员凭此看总表与个人页，导师范围另按角色人员表算。
+      'admin.mentoring_dashboard.read',
     ],
   },
   {
