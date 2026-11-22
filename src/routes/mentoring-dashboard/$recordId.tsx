@@ -75,6 +75,8 @@ interface MentoringPerson {
     gpa: number | null;
     elearn: number | null;
   } | null;
+  /** E-learning 类型（智能表 `E-learning` 列：通过 / 离职 / 待考核 / 转岗）。 */
+  elearnType: string | null;
   flags: string[];
   completedNodes: number;
   totalNodes: number;
@@ -333,6 +335,10 @@ function MentoringPersonPage() {
                     </div>
                     <div className="text-lg font-semibold">
                       {person.scores?.elearn ?? '—'}
+                    </div>
+                    <div className="text-muted-foreground text-xs">
+                      {m['mentoring_dashboard.col_elearn_type']()}：
+                      {person.elearnType ?? '—'}
                     </div>
                   </div>
                 </div>

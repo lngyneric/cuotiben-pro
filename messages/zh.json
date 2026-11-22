@@ -1537,5 +1537,8 @@
   "mentoring_dashboard.confirmations_title": "导师确认",
   "mentoring_dashboard.confirmations_empty": "暂无确认记录。",
   "mentoring_dashboard.node_ratings": "节点评定",
-  "mentoring_dashboard.result": "通过情况"
+  "mentoring_dashboard.result": "通过情况",
+  "mentoring_dashboard.col_elearn_type": "E-learning 类型",
+  "mentoring_dashboard.scope_line": "仅统计带教开始时间 ≥ {cutoff} 的学员（共 {included} 人，其余 {excluded} 人不在统计范围）",
+  "mentoring_dashboard.scope_note": "统计口径：仅统计带教开始时间 ≥ {cutoff} 的学员；{excludedBefore} 人带教开始时间早于 {cutoff}、{excludedNoStart} 人无带教开始时间，共 {excluded} 人不在统计范围。"
 }

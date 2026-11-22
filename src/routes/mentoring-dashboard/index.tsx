@@ -52,6 +52,8 @@ interface MentoringRow {
     gpa: number | null;
     elearn: number | null;
   } | null;
+  /** E-learning 类型（智能表 `E-learning` 列：通过 / 离职 / 待考核 / 转岗）。 */
+  elearnType: string | null;
   flags: string[];
   completedNodes: number;
   totalNodes: number;
@@ -84,6 +86,14 @@ interface SummaryData {
   };
   mentors: MentorOption[];
   computedAt: string | null;
+  /** 统计口径：cutoff 与按全表算的纳入/排除行数。 */
+  scopeInfo: {
+    cutoff: string;
+    included: number;
+    excluded: number;
+    excludedBeforeCutoff: number;
+    excludedNoStartDate: number;
+  };
 }
 
 const PAGE_SIZE = 20;
@@ -291,6 +301,10 @@ function MentoringDashboardPage() {
         },
       },
       {
+        header: m['mentoring_dashboard.col_elearn_type'](),
+        cell: (r) => r.elearnType ?? '—',
+      },
+      {
         header: m['mentoring_dashboard.col_overdue'](),
         cell: (r) =>
           r.flags.includes('overdue') ? (
@@ -363,6 +377,15 @@ function MentoringDashboardPage() {
           <p className="text-muted-foreground mt-1 text-sm">
             {m['mentoring_dashboard.description']()}
           </p>
+          {data?.scopeInfo && (
+            <p className="text-muted-foreground mt-1 text-sm">
+              {m['mentoring_dashboard.scope_line']({
+                cutoff: data.scopeInfo.cutoff,
+                included: data.scopeInfo.included,
+                excluded: data.scopeInfo.excluded,
+              })}
+            </p>
+          )}
         </div>
 
         {forbidden ? (
@@ -626,6 +649,18 @@ function MentoringDashboardPage() {
                   onRefresh={() => summaryQ.refetch()}
                 />
               </div>
+            )}
+
+            {/* 统计口径说明：cutoff 与排除行数（按全表算）。 */}
+            {data?.scopeInfo && (
+              <p className="text-muted-foreground mt-4 text-xs">
+                {m['mentoring_dashboard.scope_note']({
+                  cutoff: data.scopeInfo.cutoff,
+                  excludedBefore: data.scopeInfo.excludedBeforeCutoff,
+                  excludedNoStart: data.scopeInfo.excludedNoStartDate,
+                  excluded: data.scopeInfo.excluded,
+                })}
+              </p>
             )}
           </>
         )}

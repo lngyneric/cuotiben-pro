@@ -29,6 +29,47 @@ import {
 /** Dashboard 管理员权限码：管理员范围认这一个 code（init-rbac 显式授予 admin 角色）。 */
 export const MENTORING_DASHBOARD_PERMISSION = 'admin.mentoring_dashboard.read';
 
+/**
+ * 统计口径（用户 2026-11-22 定）：只统计带教开始时间在该日期及之后的学员；
+ * 开始时间早于该日期、或无开始时间的学员不在 Dashboard 统计范围内。
+ * plan_start_date 是 ISO 日期字符串（YYYY-MM-DD），字典序比较即日期比较。
+ */
+export const DASHBOARD_START_CUTOFF = '2026-04-01';
+
+export function isInScopeStartDate(planStartDate: string | null): boolean {
+  const d = (planStartDate ?? '').slice(0, 10);
+  return d >= DASHBOARD_START_CUTOFF;
+}
+
+/** 统计口径信息：随总表接口返回，供页面展示“仅统计……，其余多少人不在范围”。 */
+export interface DashboardScopeInfo {
+  cutoff: string;
+  /** 纳入统计的行数（带教开始时间 ≥ cutoff）。 */
+  included: number;
+  /** 不在统计范围的行数（开始时间早于 cutoff ＋ 无开始时间）。 */
+  excluded: number;
+  excludedBeforeCutoff: number;
+  excludedNoStartDate: number;
+}
+
+export function buildScopeInfo(rows: UserStatusSummary[]): DashboardScopeInfo {
+  let included = 0;
+  let excludedBeforeCutoff = 0;
+  let excludedNoStartDate = 0;
+  for (const r of rows) {
+    if (isInScopeStartDate(r.planStartDate)) included += 1;
+    else if ((r.planStartDate ?? '').trim() === '') excludedNoStartDate += 1;
+    else excludedBeforeCutoff += 1;
+  }
+  return {
+    cutoff: DASHBOARD_START_CUTOFF,
+    included,
+    excluded: excludedBeforeCutoff + excludedNoStartDate,
+    excludedBeforeCutoff,
+    excludedNoStartDate,
+  };
+}
+
 export type DashboardView = 'admin' | 'hr' | 'mentor';
 
 export interface MentorRef {
@@ -109,6 +150,12 @@ export interface MentoringRow {
   status: string | null;
   result: string | null;
   scores: Scores | null;
+  /**
+   * E-learning 类型（智能表 `E-learning` 列：通过 / 离职 / 待考核 / 转岗，
+   * 与 `E-learning考试得分` 是同一考核的两面——分值在 scores.elearn，类型
+   * 在此）。同步未写该字段的老行（或空值）为 null，页面显示 —。
+   */
+  elearnType: string | null;
   flags: string[];
   /** 已通过节点数 / 全部节点数（完成度 x/y 的分子分母）。 */
   completedNodes: number;
@@ -272,6 +319,7 @@ function toMentoringRow(row: UserStatusSummary): MentoringRow {
     status: asString(actual.status),
     result: asString(actual.result),
     scores: parseScores(actual),
+    elearnType: asString(actual.elearnType),
     flags,
     completedNodes: completions.filter((c) => c.state === 'passed').length,
     totalNodes: nodes.length,
@@ -437,6 +485,8 @@ export type ListDashboardResult =
       summary: DashboardSummary;
       mentors: MentorOption[];
       computedAt: string | null;
+      /** 统计口径：cutoff 与纳入/排除行数（按全表算，不受视角影响）。 */
+      scopeInfo: DashboardScopeInfo;
     }
   | { error: 'mentor_not_found' | 'forbidden' };
 
@@ -454,6 +504,10 @@ function latestComputedAt(rows: MentoringRow[]): string | null {
 /**
  * 总表数据：按 scope＋view 取行。行数少（同步上限 500），全量取回后在
  * JS 里过滤、汇总；筛选与分页在前端做。
+ *
+ * 统计口径（用户 2026-11-22 定）：只纳入带教开始时间 ≥ 2026-04-01 的行；
+ * 开始时间早于 cutoff 或无开始时间的行不进总表、不进汇总、不进导师
+ * 名下计数。scopeInfo 按全表算，供页面展示排除口径。
  */
 export async function listDashboardRows(
   scope: DashboardScope,
@@ -463,7 +517,11 @@ export async function listDashboardRows(
   if (scope.kind === 'self') return { error: 'forbidden' };
   const effectiveView: DashboardView =
     scope.kind === 'mentor' ? 'mentor' : view;
-  const statusRows = await db().select().from(userStatusSummary);
+  const allStatusRows = await db().select().from(userStatusSummary);
+  const scopeInfo = buildScopeInfo(allStatusRows);
+  const statusRows = allStatusRows.filter((r: UserStatusSummary) =>
+    isInScopeStartDate(r.planStartDate)
+  );
   const mentorRows = await db()
     .select()
     .from(rolePersonMap)
@@ -481,7 +539,7 @@ export async function listDashboardRows(
         // 若报 mentor_required，前端查询拿不到数据，isAdminScope 为
         // false 会导致视角切换器与选择器一起消失、页面只剩提示
         // （2026-11-22 实测）。汇总按空行算（页面未选导师时不展示
-        // 汇总卡片），computedAt 取全部行的最新值。
+        // 汇总卡片），computedAt 取在统计范围内的行的最新值。
         return {
           view: 'mentor',
           scope: 'admin',
@@ -489,6 +547,7 @@ export async function listDashboardRows(
           summary: summarizeRows([]),
           mentors,
           computedAt: latestComputedAt(statusRows.map(toMentoringRow)),
+          scopeInfo,
         };
       }
       const mentor = mentorRows.find((m: RolePersonMap) => m.id === mentorId);
@@ -518,6 +577,7 @@ export async function listDashboardRows(
     summary: summarizeRows(shaped),
     mentors,
     computedAt: latestComputedAt(shaped),
+    scopeInfo,
   };
 }
 
@@ -525,7 +585,9 @@ export type GetDashboardPersonResult =
   | { person: MentoringPerson }
   | { error: 'not_found' | 'forbidden' };
 
-/** 个人 Dashboard：一行（一个带教记录）。id 可带或不带 `record:` 前缀。 */
+/** 个人 Dashboard：一行（一个带教记录）。id 可带或不带 `record:` 前缀。
+ * 统计口径与总表一致：带教开始时间早于 2026-04-01 或无开始时间的行
+ * 不在 Dashboard 范围内，直接按 not_found 处理。 */
 export async function getDashboardPerson(
   scope: DashboardScope,
   recordId: string
@@ -537,6 +599,7 @@ export async function getDashboardPerson(
     .where(eq(userStatusSummary.id, id))
     .limit(1);
   if (!row) return { error: 'not_found' };
+  if (!isInScopeStartDate(row.planStartDate)) return { error: 'not_found' };
   if (scope.kind === 'admin') return { person: toMentoringPerson(row) };
   if (scope.kind === 'self') {
     const emp = scope.employeeNo.toLowerCase();
