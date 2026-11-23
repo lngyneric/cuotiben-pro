@@ -16,7 +16,7 @@ import { respData, respErr } from '@/lib/resp';
 // - 管理员（admin.mentoring_dashboard.read）：全部行；view 可选 admin/hr/mentor，
 //   mentor 视角须指定 mentorId（预览该导师看到的内容）。
 // - 导师（role_person_map 角色导师/两者都是，按 wiki 邮箱前缀工号匹配）：
-//   只能看导师视角、只看自己名下学员；传 admin/hr 也会被强制成 mentor。
+//   只能看导师视角、只看自己负责的带教记录；传 admin/hr 也会被强制成 mentor。
 // - 学员本人：总表不开放（403），只能看自己的个人 Dashboard。
 // - 其他人：403。
 // HR 在 wiki 里目前没有独立角色：hr 视角是展示形态（全部行＋HR 跟进列），

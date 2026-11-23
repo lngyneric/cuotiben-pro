@@ -1,17 +1,27 @@
 // 学分制带教 Dashboard：数据层（只读）。
 //
 // 数据源：blog 库 user_status_summary（每小时同步全量替换的派生快照，
-// 同一行含计划列与 actual JSON）＋ role_person_map（角色人员对应表，
-// 导师—学员对应关系以该表为准，不按姓名匹配）。
+// 同一行含计划列与 actual JSON）＋ role_person_map（角色人员对应表）。
 //
 // 权限：scope 由 API 路由算好传入（本模块不读会话、不判权限）。
 //   - admin：全部行；可预览 hr / mentor 视角（mentor 视角须指定一位导师）。
-//   - mentor：只看自己名下学员（按 role_person_map 的 mentees 列表，
-//     工号优先、工号为空时按姓名；导师本人也可用自己的工号看自己的行）。
+//   - mentor：只看自己负责的带教记录——行上的带教负责人姓名与导师
+//     姓名一致才可见（按记录过滤，不按学员过滤；同一学员的两条计划
+//     分属两位导师时，各导师只看到自己那条）。导师本人也可用自己的
+//     工号看自己的行。
 //   - self（学员）：只看自己的行；总表不对学员开放。
 // HR 在 wiki 里目前没有独立角色：hr 视角是展示形态（全部行＋HR 跟进列），
 // 仅管理员可切换预览；以后有了 HR 角色，授予 admin.mentoring_dashboard.read
 // 即可按 admin 范围走 hr 视角。
+//
+// 记录—导师的匹配键是姓名（唯一可用键）：行上的 mentor_lead_id 是企微
+// 数字内码（2026-11-23 实查：162/163 行为 1688… 数字串，与
+// role_person_map 的 wecom_user_id / id 零匹配），行上没有导师工号，
+// 纯导师在 role_person_map 里也没有工号。姓名在角色人员表里无重名
+// （2026-11-19 核查 210 行）；若将来出现同名导师，同名者的记录会
+// 同时落到两人名下（与学员姓名兜底同一类口径），须人工处理。
+// role_person_map 仍是“谁是导师”的权威（WHO 可用导师视角、选择器列
+// 哪些导师），只是行过滤不再走它的 mentees 名单。
 //
 // 不改写任何表；逾期只取同步算好的 flags（是否逾期字段或预计日期分支），
 // 本模块不重算逾期。
@@ -72,12 +82,6 @@ export function buildScopeInfo(rows: UserStatusSummary[]): DashboardScopeInfo {
 
 export type DashboardView = 'admin' | 'hr' | 'mentor';
 
-export interface MentorRef {
-  name: string;
-  wecomUserId?: string | null;
-  employeeNo?: string | null;
-}
-
 export type DashboardScope =
   | { kind: 'admin' }
   | {
@@ -86,7 +90,6 @@ export type DashboardScope =
       mentorName: string;
       /** 导师本人工号（role_person_map 行上的值；纯导师无工号时为空）。 */
       employeeNo: string | null;
-      mentees: MentorRef[];
     }
   | { kind: 'self'; employeeNo: string };
 
@@ -188,6 +191,7 @@ export interface MentorOption {
   id: string;
   name: string;
   employeeNo: string | null;
+  /** 该导师负责的记录数（按带教负责人姓名计数，与过滤后的行数一致）。 */
   menteeCount: number;
 }
 
@@ -388,34 +392,19 @@ export function hrFollowUpItems(row: MentoringRow): string[] {
   return order.filter((f) => row.flags.includes(f));
 }
 
-function parseMentees(raw: string | null): MentorRef[] {
-  const list = safeJson<unknown[]>(raw, []);
-  return list
-    .map((m) => {
-      const o = (m ?? {}) as Record<string, unknown>;
-      return {
-        name: asString(o.name) ?? '',
-        wecomUserId: asString(o.wecomUserId),
-        employeeNo: asString(o.employeeNo),
-      };
-    })
-    .filter((m) => m.name !== '');
-}
-
-/** 学员行是否属于某位导师的 mentees：工号优先，工号为空时按姓名（与图谱人员轴一致）。 */
-export function menteeMatchesRow(
-  mentee: MentorRef,
-  row: UserStatusSummary
+/**
+ * 某条带教记录是否由某位导师负责：行上的带教负责人姓名与导师姓名
+ * 一致（去首尾空白后精确相等）。姓名是唯一可用键——行上的
+ * mentor_lead_id 是企微数字内码（与 role_person_map 的 wecom_user_id /
+ * id 零匹配），行上没有导师工号。带教负责人为空的行不属于任何导师。
+ */
+export function rowMentorMatches(
+  mentorName: string | null | undefined,
+  row: Pick<UserStatusSummary, 'mentorLeadName'>
 ): boolean {
-  if (
-    mentee.employeeNo &&
-    row.employeeNo &&
-    mentee.employeeNo.toLowerCase() === row.employeeNo.toLowerCase()
-  )
-    return true;
-  if (!mentee.employeeNo && mentee.name && row.name === mentee.name)
-    return true;
-  return false;
+  const m = (mentorName ?? '').trim();
+  const lead = (row.mentorLeadName ?? '').trim();
+  return m !== '' && lead !== '' && m === lead;
 }
 
 /**
@@ -423,6 +412,8 @@ export function menteeMatchesRow(
  * 管理员：全部；导师：role_person_map 里 role=导师/两者都是且工号匹配的行
  * （55 名纯导师无工号，无法按邮箱匹配，不猜姓名）；学员：自己有行才给 self；
  * 其他人：null（路由回 403）。
+ * 导师能看到哪些行由 rowMentorMatches 按记录的带教负责人姓名判定，
+ * 不在这里——本函数只定“WHO 是导师”，不定“能看到哪些行”。
  */
 export async function resolveDashboardScope(params: {
   isAdmin: boolean;
@@ -446,7 +437,6 @@ export async function resolveDashboardScope(params: {
         mentorId: mine.id,
         mentorName: mine.name,
         employeeNo: mine.employeeNo,
-        mentees: parseMentees(mine.mentees),
       };
     }
     const own = await db()
@@ -459,22 +449,21 @@ export async function resolveDashboardScope(params: {
   return null;
 }
 
+/**
+ * 导师选择器选项：menteeCount 是该导师负责的记录数（按记录的带教负责人
+ * 姓名计数，与导师视角过滤后的行数一致），不是名下学员人数——同一学员
+ * 的两条计划分属两位导师时，各计 1 条。
+ */
 function mentorOptions(
   mentors: RolePersonMap[],
   statusRows: UserStatusSummary[]
 ): MentorOption[] {
-  return mentors.map((m) => {
-    const mentees = parseMentees(m.mentees);
-    const count = statusRows.filter((r) =>
-      mentees.some((x) => menteeMatchesRow(x, r))
-    ).length;
-    return {
-      id: m.id,
-      name: m.name,
-      employeeNo: m.employeeNo,
-      menteeCount: count,
-    };
-  });
+  return mentors.map((m) => ({
+    id: m.id,
+    name: m.name,
+    employeeNo: m.employeeNo,
+    menteeCount: statusRows.filter((r) => rowMentorMatches(m.name, r)).length,
+  }));
 }
 
 export type ListDashboardResult =
@@ -552,9 +541,10 @@ export async function listDashboardRows(
       }
       const mentor = mentorRows.find((m: RolePersonMap) => m.id === mentorId);
       if (!mentor) return { error: 'mentor_not_found' };
-      const mentees = parseMentees(mentor.mentees);
+      // 按记录过滤：只含带教负责人就是该导师的行；同一学员的另一条
+      // 计划（负责人是别的导师）不进。
       rows = statusRows.filter((r: UserStatusSummary) =>
-        mentees.some((x) => menteeMatchesRow(x, r))
+        rowMentorMatches(mentor.name, r)
       );
     } else {
       rows = statusRows;
@@ -565,7 +555,7 @@ export async function listDashboardRows(
       statusRows
     );
     rows = statusRows.filter((r: UserStatusSummary) =>
-      scope.mentees.some((x) => menteeMatchesRow(x, r))
+      rowMentorMatches(scope.mentorName, r)
     );
   }
 
@@ -607,12 +597,14 @@ export async function getDashboardPerson(
       return { person: toMentoringPerson(row) };
     return { error: 'forbidden' };
   }
-  const ownEmp = scope.mentees.some((x) => menteeMatchesRow(x, row));
+  // 按记录：带教负责人就是该导师才可见（同一学员的另一条计划，
+  // 负责人是别的导师时不可见）。
+  const ownRecord = rowMentorMatches(scope.mentorName, row);
   // 导师本人同时是学员时，按自己的工号可看自己的行（不按姓名猜）。
   const selfRow =
     !!scope.employeeNo &&
     !!row.employeeNo &&
     row.employeeNo.toLowerCase() === scope.employeeNo.toLowerCase();
-  if (ownEmp || selfRow) return { person: toMentoringPerson(row) };
+  if (ownRecord || selfRow) return { person: toMentoringPerson(row) };
   return { error: 'forbidden' };
 }
