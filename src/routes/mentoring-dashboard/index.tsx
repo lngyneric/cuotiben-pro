@@ -29,7 +29,7 @@ import {
 // 学分制带教 Dashboard —— 总表（管理员 / HR / 导师）。
 //
 // 数据取自 /api/mentoring-dashboard/summary（只读 user_status_summary）。
-// 视角：管理员可切管理员 / HR / 导师三个视角；导师只能看导师视角（自己名下学员）。
+// 视角：管理员可切管理员 / HR / 导师三个视角；导师只能看导师视角（自己负责的带教记录）。
 // HR 在 wiki 里目前没有独立角色，hr 视角仅管理员可预览。
 
 type DashboardView = 'admin' | 'hr' | 'mentor';

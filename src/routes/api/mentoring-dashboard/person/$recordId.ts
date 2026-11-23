@@ -12,7 +12,7 @@ import { respData, respErr } from '@/lib/resp';
 // GET /api/mentoring-dashboard/person/:recordId — 个人 Dashboard（一行带教记录）。
 //
 // recordId 是 user_status_summary 的 id（`record:<智能表行 id>`，也可只传行 id）。
-// 权限：管理员看任意行；导师只看自己名下学员的行（＋自己的行）；学员只看自己的行。
+// 权限：管理员看任意行；导师只看自己负责的带教记录（＋自己的行）；学员只看自己的行。
 async function GET({
   request,
   params,

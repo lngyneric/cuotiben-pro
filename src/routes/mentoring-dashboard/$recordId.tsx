@@ -238,11 +238,6 @@ function MentoringPersonPage() {
                   <Badge variant={statusBadgeVariant(person.status)}>
                     {person.status ?? '—'}
                   </Badge>
-                  {person.flags.includes('overdue') && (
-                    <Badge variant="destructive">
-                      {m['mentoring_dashboard.flag_overdue']()}
-                    </Badge>
-                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -309,6 +304,20 @@ function MentoringPersonPage() {
                         className="h-1.5 w-16"
                       />
                       {person.completedNodes}/{person.totalNodes}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">
+                      {m['mentoring_dashboard.col_overdue']()}
+                    </dt>
+                    <dd>
+                      {person.flags.includes('overdue') ? (
+                        <Badge variant="destructive">
+                          {m['mentoring_dashboard.flag_overdue']()}
+                        </Badge>
+                      ) : (
+                        '—'
+                      )}
                     </dd>
                   </div>
                 </dl>

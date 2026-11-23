@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 // 学分制带教 Dashboard：服务层单测（纯函数＋隔离 SQLite 库上的范围过滤）。
-// 权限口径：管理员全部；导师只看自己名下学员（role_person_map 为准，
-// 工号优先、工号为空时按姓名）；学员只看自己；其他人无范围。
+// 权限口径：管理员全部；导师只看自己负责的带教记录（按记录的带教负责人
+// 姓名，role_person_map 只定“谁是导师”）；学员只看自己；其他人无范围。
 // No application modules are loaded until the isolated environment is installed.
 const directory = await mkdtemp(
   join(tmpdir(), 'shipany-mentoring-dashboard-test-')
@@ -125,6 +125,9 @@ before(async () => {
         id: 'record:b',
         name: '学员乙',
         employeeNo: 'sch00002',
+        // 学员乙的行负责人是导师乙（不是默认的导师甲），否则导师甲的
+        // 视角会按负责人姓名把这行也算进来。
+        mentorLeadName: '导师乙',
         expectedDate: '2025-09-24',
         actual: JSON.stringify({
           status: '中断',
@@ -183,6 +186,10 @@ before(async () => {
         mentees: JSON.stringify([
           { name: '学员甲', wecomUserId: 'wo_a', employeeNo: 'sch00001' },
           { name: '陈三', wecomUserId: 'wo_c', employeeNo: null },
+          // 学员丁同时在两名导师的学员名单里（真实情况：谢艳芳同时在
+          // 宫本婕与史飞龙的名单里）。双计划单测用它覆盖旧规则会出错
+          // 的场景；服务层按记录的带教负责人过滤，不再读这份名单。
+          { name: '学员丁', wecomUserId: 'wo_d', employeeNo: 'sch00004' },
         ]),
         mentors: JSON.stringify([]),
         updatedAt: NOW,
@@ -196,6 +203,7 @@ before(async () => {
         mentorTypes: JSON.stringify(['带教负责人']),
         mentees: JSON.stringify([
           { name: '学员乙', wecomUserId: 'wo_b', employeeNo: 'sch00002' },
+          { name: '学员丁', wecomUserId: 'wo_d', employeeNo: 'sch00004' },
         ]),
         mentors: JSON.stringify([]),
         updatedAt: NOW,
@@ -278,32 +286,30 @@ test('HR 跟进项：只从 flags 派生，顺序固定', () => {
   assert.deepEqual(service.hrFollowUpItems({ flags: [] } as never), []);
 });
 
-test('学员—导师匹配：工号优先（不区分大小写），工号为空时按姓名', () => {
-  const row = { employeeNo: 'SCH00001', name: '学员甲' } as never;
+test('记录—导师匹配：按带教负责人姓名（唯一可用键）', () => {
+  // 行上的 mentor_lead_id 是企微数字内码（2026-11-23 实查：162/163 行
+  // 为 1688… 数字串，与 role_person_map 的 wecom_user_id / id 零匹配），
+  // 行上没有导师工号；姓名是唯一共有键。角色人员表无重名（2026-11-19
+  // 核查 210 行），同名时两人记录会同时落到同名导师名下，须人工处理。
+  const row = { mentorLeadName: '导师甲' } as never;
+  assert.equal(service.rowMentorMatches('导师甲', row), true);
+  assert.equal(service.rowMentorMatches('导师乙', row), false);
+  assert.equal(service.rowMentorMatches(null, row), false);
+  assert.equal(service.rowMentorMatches('', row), false);
   assert.equal(
-    service.menteeMatchesRow({ name: '学员甲', employeeNo: 'sch00001' }, row),
-    true
-  );
-  assert.equal(
-    service.menteeMatchesRow({ name: '陈三', employeeNo: null }, {
-      employeeNo: null,
-      name: '陈三',
-    } as never),
-    true
-  );
-  // mentee 条目无工号时按姓名兜底（与图谱人员轴一致）：行有工号也不否决，
-  // 因为两张智能表的工号缺口不一致；但 mentee 条目有工号时工号说了算，
-  // 姓名不能推翻工号不匹配。
-  assert.equal(
-    service.menteeMatchesRow({ name: '陈三', employeeNo: null }, {
-      employeeNo: 'sch00003',
-      name: '陈三',
-    } as never),
-    true
-  );
-  assert.equal(
-    service.menteeMatchesRow({ name: '学员甲', employeeNo: 'sch00002' }, row),
+    service.rowMentorMatches('导师甲', { mentorLeadName: null } as never),
     false
+  );
+  assert.equal(
+    service.rowMentorMatches('导师甲', { mentorLeadName: '' } as never),
+    false
+  );
+  // 首尾空白不影响匹配。
+  assert.equal(
+    service.rowMentorMatches(' 导师甲 ', {
+      mentorLeadName: '导师甲',
+    } as never),
+    true
   );
 });
 
@@ -322,7 +328,8 @@ test('范围解析：管理员 / 导师 / 学员本人 / 其他人', async () =>
   assert.equal(mentor?.kind, 'mentor');
   if (mentor?.kind === 'mentor') {
     assert.equal(mentor.mentorId, 'wo_mentor_a');
-    assert.equal(mentor.mentees.length, 2);
+    assert.equal(mentor.mentorName, '导师甲');
+    assert.equal(mentor.employeeNo, 'sch00010');
   }
   assert.deepEqual(
     await service.resolveDashboardScope({
@@ -344,7 +351,7 @@ test('范围解析：管理员 / 导师 / 学员本人 / 其他人', async () =>
   );
 });
 
-test('总表：管理员看全部；导师只看自己名下学员（含无工号按姓名匹配的行）', async () => {
+test('总表：管理员看全部；导师只看自己负责的记录（按带教负责人姓名）', async () => {
   const all = await service.listDashboardRows({ kind: 'admin' }, 'admin');
   assert.ok(!('error' in all));
   if ('error' in all) return;
@@ -375,7 +382,7 @@ test('总表：管理员看全部；导师只看自己名下学员（含无工�
   const mine = await service.listDashboardRows(mentorA, 'mentor');
   assert.ok(!('error' in mine));
   if ('error' in mine) return;
-  // 学员甲（工号匹配）＋陈三（姓名兜底）；学员乙不在名下。
+  // 学员甲与陈三的行负责人都是导师甲；学员乙的行负责人是导师乙。
   assert.deepEqual(mine.rows.map((r) => r.id).sort(), ['record:a', 'record:c']);
   assert.equal(mine.summary.total, 2);
   assert.equal(mine.mentors.length, 1);
@@ -423,6 +430,115 @@ test('总表导师预览：未选导师返回空行＋导师列表（供选择�
   assert.equal(preview.view, 'mentor');
 });
 
+test('导师视角按记录过滤：同一学员的两条计划分属两位导师时各只看自己那条', async () => {
+  // 2026-11-22 实测：谢艳芳（sch01626）两条计划的负责人分别是宫本婕与
+  // 史飞龙，两位导师的学员名单里都有她；旧规则按学员过滤，两人都会看到
+  // 两条记录。新规则按记录的带教负责人过滤，各只看自己那条。
+  // 学员丁已在两名导师的学员名单里（before 种子），与真实情况一致。
+  const extra = [
+    statusRow({
+      id: 'record:e1',
+      name: '学员丁',
+      employeeNo: 'sch00004',
+      mentorLeadName: '导师甲',
+      planStartDate: '2026-05-12',
+    }),
+    statusRow({
+      id: 'record:e2',
+      name: '学员丁',
+      employeeNo: 'sch00004',
+      mentorLeadName: '导师乙',
+      planStartDate: '2026-06-01',
+    }),
+  ];
+  await db().insert(schema.userStatusSummary).values(extra);
+  try {
+    // 管理员预览：导师甲只看到 e1，导师乙只看到 e2。
+    const previewA = await service.listDashboardRows(
+      { kind: 'admin' },
+      'mentor',
+      'wo_mentor_a'
+    );
+    assert.ok(!('error' in previewA));
+    if ('error' in previewA) return;
+    assert.deepEqual(previewA.rows.map((r) => r.id).sort(), [
+      'record:a',
+      'record:c',
+      'record:e1',
+    ]);
+    const previewB = await service.listDashboardRows(
+      { kind: 'admin' },
+      'mentor',
+      'wo_mentor_b'
+    );
+    assert.ok(!('error' in previewB));
+    if ('error' in previewB) return;
+    assert.deepEqual(previewB.rows.map((r) => r.id).sort(), [
+      'record:b',
+      'record:e2',
+    ]);
+
+    // 选择器计数与过滤后的行数一致（记录数，不是学员人数）。
+    assert.equal(
+      previewA.mentors.find((m) => m.id === 'wo_mentor_a')?.menteeCount,
+      3
+    );
+    assert.equal(
+      previewA.mentors.find((m) => m.id === 'wo_mentor_b')?.menteeCount,
+      2
+    );
+
+    // 导师本人登录：同样只看自己那条。
+    const mentorA = await service.resolveDashboardScope({
+      isAdmin: false,
+      employeeNo: 'sch00010',
+    });
+    assert.ok(mentorA && mentorA.kind === 'mentor');
+    if (!mentorA || mentorA.kind !== 'mentor') return;
+    const mineA = await service.listDashboardRows(mentorA, 'mentor');
+    assert.ok(!('error' in mineA));
+    if ('error' in mineA) return;
+    assert.deepEqual(mineA.rows.map((r) => r.id).sort(), [
+      'record:a',
+      'record:c',
+      'record:e1',
+    ]);
+
+    const mentorB = await service.resolveDashboardScope({
+      isAdmin: false,
+      employeeNo: 'sch00020',
+    });
+    assert.ok(mentorB && mentorB.kind === 'mentor');
+    if (!mentorB || mentorB.kind !== 'mentor') return;
+    const mineB = await service.listDashboardRows(mentorB, 'mentor');
+    assert.ok(!('error' in mineB));
+    if ('error' in mineB) return;
+    assert.deepEqual(mineB.rows.map((r) => r.id).sort(), [
+      'record:b',
+      'record:e2',
+    ]);
+
+    // 个人页：导师甲能看 e1、看不到 e2；导师乙反之。
+    assert.ok(
+      'person' in (await service.getDashboardPerson(mentorA, 'record:e1'))
+    );
+    assert.deepEqual(await service.getDashboardPerson(mentorA, 'record:e2'), {
+      error: 'forbidden',
+    });
+    assert.ok(
+      'person' in (await service.getDashboardPerson(mentorB, 'record:e2'))
+    );
+    assert.deepEqual(await service.getDashboardPerson(mentorB, 'record:e1'), {
+      error: 'forbidden',
+    });
+  } finally {
+    const { inArray } = await import('drizzle-orm');
+    await db()
+      .delete(schema.userStatusSummary)
+      .where(inArray(schema.userStatusSummary.id, ['record:e1', 'record:e2']));
+  }
+});
+
 test('个人页：管理员任意行；导师只看名下；学员只看自己；不存在报 not_found', async () => {
   const admin = { kind: 'admin' } as const;
   const a = await service.getDashboardPerson(admin, 'record:a');
@@ -465,6 +581,29 @@ test('个人页：管理员任意行；导师只看名下；学员只看自己�
   assert.deepEqual(await service.getDashboardPerson(admin, 'record:nope'), {
     error: 'not_found',
   });
+});
+
+test('个人页：逾期字段与总表同源（flags 里的 overdue），始终可见', async () => {
+  // 总表逾期列与个人页逾期字段都取同步算好的 flags，不重算逾期规则。
+  // record:b 的 flags 含 overdue，record:a 不含。
+  const admin = { kind: 'admin' } as const;
+  const b = await service.getDashboardPerson(admin, 'record:b');
+  assert.ok('person' in b);
+  if ('person' in b) assert.ok(b.person.flags.includes('overdue'));
+  const a = await service.getDashboardPerson(admin, 'record:a');
+  assert.ok('person' in a);
+  if ('person' in a) assert.equal(a.person.flags.includes('overdue'), false);
+
+  // 个人页抬头须有逾期字段：逾期时徽章、未逾期时 —（与总表列一致），
+  // 而不是只在逾期时才出现一个徽章。
+  const { readFileSync } = await import('node:fs');
+  const personSrc = readFileSync(
+    join(process.cwd(), 'src/routes/mentoring-dashboard/$recordId.tsx'),
+    'utf8'
+  );
+  assert.match(personSrc, /mentoring_dashboard\.col_overdue/);
+  assert.match(personSrc, /mentoring_dashboard\.flag_overdue/);
+  assert.match(personSrc, /flags\.includes\('overdue'\)/);
 });
 
 test('路由结构：个人页能挂载（父路由只渲染 Outlet，总表在 index）', async () => {
