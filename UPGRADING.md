@@ -46,6 +46,11 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-23: RBAC 种子补 `admin.*` 通配码（`rbac:init` 不再删掉管理员判定）
+
+- 根因：`scripts/init-rbac.ts` 的“Clear and reassign permissions”会先删光角色的全部 `role_permission` 再按种子重授，但种子从未列出字面量 `admin.*` 这一行。2026-11-22 一次部署为授新码 `admin.mentoring_dashboard.read` 跑了 `rbac:init`，admin 角色被重授为 25 个种子码，`admin.*` 被删；客户端 `isAdmin` 判定（`hasPermission('admin.*')`，只认字面量 `admin.*` 或 `*`）随即变 false，`/admin` 被重定向到 `/settings`。修法：种子新增 `admin.*` 权限定义，并把它加进 admin 角色的种子清单；同时改了展开逻辑——本身就是已定义权限码的 `admin.*` 按字面量授予、不展开，避免把 `admin.passwords.reset` / `admin.payments.refund`（有意只留 super_admin）也显式授给 admin。
+- 对已有项目：此改只影响下次跑 `pnpm rbac:init` 时的种子内容，不改运行中的服务、不改数据库。若你的 admin 角色已在某次 `rbac:init` 后丢了 `admin.*`（表现为 `/admin` 跳 `/settings` 且 `/api/user/permissions` 返回 `isAdmin: false`），先直接给 admin 角色补一行 `admin.*`（`role_permission` 表），再取新种子防复发；也可以直接用新种子重跑一次 `rbac:init`（它会按新种子重授 admin 为 26 个码）。
+
 ## 2026-11-22: MCP 的 PPT 下载地址改为完整 URL（大圆不再反问站点地址）
 
 - 根因：`presentations_get` 返回的 `downloadUrl` 是相对路径（`/wiki/api/...`），MCP 客户端（企微大圆）是外部调用方，拿不到站点域名，拼不出可点击链接，只能反问用户“企业大学站点网址是什么”。修法：MCP 端的 `downloadUrl` 改为完整 URL（`VITE_APP_URL` 的 origin ＋ `withAppBase` 路径，内网即 `https://eu.sysmex.com.cn/wiki/api/...`）；skill 与 `presentations_get` 工具描述同步明确“`downloadUrl` 是完整地址、原样贴出、不要问用户要站点地址”。页面接口（`/api/ai-assistant/presentations`）的 `downloadUrl` 仍是相对路径，浏览器内使用不受影响。

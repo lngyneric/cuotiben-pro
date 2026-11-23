@@ -303,6 +303,18 @@ const defaultPermissions = [
     title: 'Super Admin',
     description: 'All permissions (super admin only)',
   },
+
+  // Literal admin.* wildcard code. The admin role holds this one row so the
+  // client-side isAdmin check (hasPermission 'admin.*') passes. It is granted
+  // literally, never expanded (see the role-assignment loop), so it does not
+  // hand out admin.passwords.reset / admin.payments.refund as explicit rows.
+  {
+    code: 'admin.*',
+    resource: 'admin',
+    action: 'all',
+    title: 'Admin wildcard',
+    description: 'Matches every admin.* permission (admin role only)',
+  },
 ];
 
 // Keep every exported management capability selectable in the RBAC editor.
@@ -335,6 +347,11 @@ const defaultRoles = [
     status: 'active',
     sort: 2,
     permissions: [
+      // Literal admin.* row: the client-side isAdmin check requires this exact
+      // code (hasPermission 'admin.*'). 2026-11-22 a rbac:init run wiped it
+      // because the seed never listed it, and /admin started redirecting to
+      // /settings. Granted literally, not expanded (see the loop below).
+      'admin.*',
       'admin.access',
       'admin.users.*',
       'admin.posts.*',
@@ -455,7 +472,12 @@ async function initializeRBAC() {
         .where(eq(schema.rolePermission.roleId, roleId));
 
       for (const permCode of roleData.permissions) {
-        if (permCode.endsWith('.*')) {
+        // A code that is itself a defined permission (e.g. the literal
+        // 'admin.*' row) is granted literally, not expanded. Expanding
+        // 'admin.*' would hand out every admin.* code as an explicit row,
+        // including admin.passwords.reset and admin.payments.refund, which
+        // stay with super_admin.
+        if (permCode.endsWith('.*') && !createdPermissions[permCode]) {
           const prefix = permCode.slice(0, -2);
           const matchingPerms = Object.entries(createdPermissions)
             .filter(([code]) => code.startsWith(prefix + '.'))
