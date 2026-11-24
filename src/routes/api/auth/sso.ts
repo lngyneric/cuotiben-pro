@@ -55,7 +55,9 @@ async function GET({ request }: { request: Request }) {
 
   const url = new URL(request.url);
   const next = buildWikiDestination(url.searchParams.get('next'));
-  const token = mintSsoJwt(secret, employeeNo);
+  // Pass the AAD display name so ai-shifu can record it in the user's
+  // profile on first bridge login (name is optional in the token).
+  const token = mintSsoJwt(secret, employeeNo, session.user.name);
   return respData({ ssoUrl: buildSsoUrl(token, next) });
 }
 
