@@ -56,16 +56,25 @@ function base64url(input: string | Buffer): string {
  *
  * Claims: iss "wiki", aud "ai-shifu", sub = employee number (lowercased),
  * iat now, exp now + 60 s, jti a random uuid (single-use binding on the
- * ai-shifu side).
+ * ai-shifu side). `name` (the AAD display name from the wiki session) is
+ * included when available so ai-shifu can record it in the user's profile
+ * on first bridge login instead of asking for it in a course; it is
+ * optional and older tokens without it still verify.
  */
-export function mintSsoJwt(secret: string, employeeNo: string): string {
+export function mintSsoJwt(
+  secret: string,
+  employeeNo: string,
+  name?: string | null
+): string {
   const now = Math.floor(Date.now() / 1000);
   const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const trimmedName = (name || '').trim();
   const payload = base64url(
     JSON.stringify({
       iss: SSO_JWT_ISSUER,
       aud: SSO_JWT_AUDIENCE,
       sub: employeeNo.toLowerCase(),
+      ...(trimmedName ? { name: trimmedName } : {}),
       iat: now,
       exp: now + SSO_JWT_TTL_SECONDS,
       jti: randomUUID(),
