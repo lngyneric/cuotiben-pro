@@ -79,6 +79,7 @@ export async function POST({ request, actor }: AdminHandlerContext) {
         sourceIds: body.sourceIds,
         outlineId: body.outlineId,
         images: body.images,
+        charts: body.charts,
       },
     });
     return respData({ jobId: job.id, status: job.status });
@@ -119,6 +120,10 @@ export async function GET({ params, actor }: AdminHandlerContext) {
         : {}),
       ...(provenance.imageAssignments
         ? { imageAssignments: provenance.imageAssignments }
+        : {}),
+      // 阶段 3：生成时登记的图表落图明细（页 + 类型 + 标签 + 数字卡）。
+      ...(provenance.chartAssignments
+        ? { chartAssignments: provenance.chartAssignments }
         : {}),
       ...(provenance.missingImagePages.length > 0
         ? {
@@ -429,6 +434,84 @@ export async function pageRevert({ request, actor }: AdminHandlerContext) {
     );
     return respData({
       ...result,
+      downloadUrl: absoluteDownloadUrl(job.id),
+    });
+  } catch (error) {
+    return presentonErrorResponse(error);
+  }
+}
+
+// ─── 阶段 3：图表与 Dashboard ───────────────────────────────────────────────
+
+/**
+ * presentations_chart_add：在已完成稿子的指定页插入一个原生图表
+ * （+ 可选 Dashboard 数字卡）。数据来源只限三路：直接贴数、上传
+ * csv/xlsx、当次传的 file；内容源数据须带 pageSourceRefs。无数据时
+ * 明确回“缺数据”并停止，不编示例数字。类型与数据形态明显不合时，
+ * 未带 confirm 先返回拟确认清单（requiresConfirmation=true，不写
+ * 文件）；带 confirm=true 再按指定类型执行。执行后返回改后单页预览
+ * （元素清单，非图片——服务器容器内无渲染工具）与新版本号。
+ */
+export async function chartAdd({ request, actor }: AdminHandlerContext) {
+  try {
+    const body = await request.json();
+    const job = await presentationsService.findOwnedJob(
+      String(body.jobId ?? ''),
+      actor
+    );
+    if (!job) return respErr('Presentation not found', { status: 404 });
+    if (job.status !== 'completed' || !job.exportPath)
+      return respErr('Presentation is not ready', { status: 409 });
+    const viewer = pageEditViewer(actor);
+    const result = await presentationsService.addChartToJob(
+      job,
+      Number(body.pageNo),
+      body,
+      viewer,
+      { confirm: body.confirm === true }
+    );
+    if (result.requiresConfirmation === true)
+      return respData({ ...result, executed: false });
+    return respData({
+      ...result,
+      executed: true,
+      downloadUrl: absoluteDownloadUrl(job.id),
+    });
+  } catch (error) {
+    return presentonErrorResponse(error);
+  }
+}
+
+/**
+ * presentations_chart_update：改已有图表（换数据、换类型、切数值标签
+ * 显隐）。只动该图表所在页：只改 chart 部件（+ 换数据时内嵌工作簿），
+ * slide XML 不动，其余页逐字节保留。标签切换只改标签层，数据与坐标
+ * 轴不变。类型软冲突未确认时先返回拟确认清单。
+ */
+export async function chartUpdate({ request, actor }: AdminHandlerContext) {
+  try {
+    const body = await request.json();
+    const job = await presentationsService.findOwnedJob(
+      String(body.jobId ?? ''),
+      actor
+    );
+    if (!job) return respErr('Presentation not found', { status: 404 });
+    if (job.status !== 'completed' || !job.exportPath)
+      return respErr('Presentation is not ready', { status: 409 });
+    const viewer = pageEditViewer(actor);
+    const result = await presentationsService.updateChartOnJob(
+      job,
+      Number(body.pageNo),
+      String(body.elementId ?? ''),
+      body,
+      viewer,
+      { confirm: body.confirm === true }
+    );
+    if (result.requiresConfirmation === true)
+      return respData({ ...result, executed: false });
+    return respData({
+      ...result,
+      executed: true,
       downloadUrl: absoluteDownloadUrl(job.id),
     });
   } catch (error) {

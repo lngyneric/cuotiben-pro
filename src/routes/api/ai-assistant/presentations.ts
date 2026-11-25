@@ -70,12 +70,14 @@ async function POST({ request }: { request: Request }) {
         instructions: String(body?.instructions ?? '').trim() || undefined,
         // 阶段 1：带来源生成（sourceIds + 已确认的 outlineId）与配图
         // （images），与 MCP 的 presentations_generate 同一套服务。
+        // 阶段 3：图表落图（charts）同样直通，校验在服务层做。
         sourceIds: Array.isArray(body?.sourceIds)
           ? body.sourceIds.map(String)
           : undefined,
         outlineId:
           typeof body?.outlineId === 'string' ? body.outlineId : undefined,
         images: Array.isArray(body?.images) ? body.images : undefined,
+        charts: Array.isArray(body?.charts) ? body.charts : undefined,
       },
     });
     return respData({ jobId: job.id, status: job.status });

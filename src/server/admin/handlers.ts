@@ -63,6 +63,8 @@ export const handlers: Record<
   presentations_page_get: presentations.pageGet,
   presentations_page_edit: presentations.pageEdit,
   presentations_page_revert: presentations.pageRevert,
+  presentations_chart_add: presentations.chartAdd,
+  presentations_chart_update: presentations.chartUpdate,
   invite_codes_list: invite_codes.GET,
   invite_codes_create: invite_codes.POST,
   invite_codes_delete: invite_codes.DELETE,

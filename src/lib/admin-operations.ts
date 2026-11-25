@@ -40,6 +40,85 @@ const funnelDimensions = [
 const funnelDimension = z.enum(funnelDimensions);
 const remove = z.object({ id }).strict();
 
+// ─── PPT 图表（阶段 3）：三路数据来源共用的输入形状 ──────────────────────────
+// 数据只限三路：inline（直接贴 categories + series）、file（当次传的
+// csv/xlsx）、content_source（贴数 + pageSourceRefs 出处）。无数据时
+// 服务端明确回“缺数据”，不编示例数字。
+const chartSourceRef = z
+  .object({
+    sourceId: z.string().min(1).max(191),
+    sourceKind: z.enum(['upload_text', 'reference_ppt', 'wiki_kb']),
+    locator: z.string().min(1).max(191),
+  })
+  .strict();
+const chartDataInput = z
+  .object({
+    title: z.string().min(1).max(200).optional(),
+    categories: z.array(z.string().min(1).max(100)).max(50).optional(),
+    series: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1).max(100),
+            values: z.array(z.number()).max(50),
+          })
+          .strict()
+      )
+      .max(8)
+      .optional(),
+    chartType: z.enum(['bar', 'line', 'pie', 'doughnut']).optional(),
+    valueLabels: z
+      .enum(['show_all', 'hide_all', 'total_only', 'percent_only'])
+      .optional(),
+    sourceKind: z.enum(['inline', 'file', 'content_source']).optional(),
+    pageSourceRefs: z.array(chartSourceRef).max(10).optional(),
+    file: z
+      .object({
+        name: z.string().min(1).max(191),
+        mime: z.string().max(191),
+        base64: z.string().min(1),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+const chartRect = z
+  .object({
+    x: z.number(),
+    y: z.number(),
+    width: z.number(),
+    height: z.number(),
+  })
+  .strict();
+const kpiCardInput = z
+  .object({
+    title: z.string().min(1).max(60),
+    value: z.number(),
+    unit: z.string().max(20).optional(),
+    fromData: z
+      .object({
+        series: z.string().min(1).max(100).optional(),
+        category: z.string().min(1).max(100).optional(),
+        agg: z.enum(['sum', 'value', 'total']).optional(),
+      })
+      .strict()
+      .optional(),
+    pageSourceRefs: z.array(chartSourceRef).max(10).optional(),
+    slotId: z.string().min(1).max(191).optional(),
+    rectIn: chartRect.optional(),
+  })
+  .strict();
+const chartAssignmentInput = z
+  .object({
+    pageNo: z.number().int().min(1).max(50),
+    slotId: z.string().min(1).max(191).optional(),
+    rectIn: chartRect.optional(),
+    chart: chartDataInput,
+    kpiCards: z.array(kpiCardInput).max(4).optional(),
+    confirm: z.boolean().optional(),
+  })
+  .strict();
+
 export interface AdminOperation {
   name: string;
   description: string;
@@ -566,7 +645,7 @@ export const adminOperations: AdminOperation[] = [
   ),
   op(
     'presentations_generate',
-    'Generate a PPT deck with the intranet wiki Presenton engine (Magpie LLM). Returns a job id immediately — generation takes roughly 1–2 minutes; poll presentations_get until completed/failed, then download. Materials: content text, inline base64 files (total decoded size at most 1.5 MB per call; larger files must be wiki posts), and/or wiki post slugs resolved server-side. At least one of content/files/postSlugs is required; nSlides is 1–50. Sourced generation (stage 1): pass sourceIds + outlineId from presentations_outline after the user confirms the outline — the deck is then built only from those sources, per page, with provenance in presentations_get (sourceMode, pageSourceRefs); without sources the result is marked sourceMode unsourced ("no-source generation"). Images: pass images [{imageId, pageNo, slotId}] from presentations_image_search/upload — at most 5 images per task, at most 3 pasted screenshots; slots come from the layout registry. Never paste raw personal data (ID numbers, phone numbers) — send summaries instead.',
+    'Generate a PPT deck with the intranet wiki Presenton engine (Magpie LLM). Returns a job id immediately — generation takes roughly 1–2 minutes; poll presentations_get until completed/failed, then download. Materials: content text, inline base64 files (total decoded size at most 1.5 MB per call; larger files must be wiki posts), and/or wiki post slugs resolved server-side. At least one of content/files/postSlugs is required; nSlides is 1–50. Sourced generation (stage 1): pass sourceIds + outlineId from presentations_outline after the user confirms the outline — the deck is then built only from those sources, per page, with provenance in presentations_get (sourceMode, pageSourceRefs); without sources the result is marked sourceMode unsourced ("no-source generation"). Images: pass images [{imageId, pageNo, slotId}] from presentations_image_search/upload — at most 5 images per task, at most 3 pasted screenshots; slots come from the layout registry. Charts (stage 3): pass charts [{pageNo, slotId | rectIn, chart {categories, series, chartType?, valueLabels?, sourceKind?, pageSourceRefs?, file?}, kpiCards?}] — requires a confirmed outlineId; the charts are embedded as native Office charts when the deck completes (at most 5 charts per task). Never paste raw personal data (ID numbers, phone numbers) — send summaries instead.',
     'presentations.generate',
     'POST',
     'presentations/generate',
@@ -605,6 +684,7 @@ export const adminOperations: AdminOperation[] = [
           )
           .max(5)
           .optional(),
+        charts: z.array(chartAssignmentInput).max(5).optional(),
       })
       .strict()
   ),
@@ -829,6 +909,71 @@ export const adminOperations: AdminOperation[] = [
       .object({
         jobId: z.string().min(1).max(191),
         version: z.number().int().min(0),
+      })
+      .strict()
+  ),
+  op(
+    'presentations_chart_add',
+    'Insert one native editable chart into one page of a completed PPT deck (stage 3): the chart is a real Office chart object (c:chart + embedded xlsx workbook) — in PowerPoint it can be double-clicked to edit the data or change the type; it is never a chart picture. Pass jobId, pageNo, and slotId (a layout-registry slot, e.g. a G/H main_image slot) or an explicit rectIn {x, y, width, height} in inches, plus chart {title?, categories, series [{name, values}], chartType? (bar/line/pie/doughnut — omitted means auto-selected by data shape and noted as auto), valueLabels? (show_all/hide_all/total_only/percent_only, default show_all), sourceKind? (inline/file/content_source, default inline), pageSourceRefs?, file?}. Data comes only from three sources: numbers pasted inline, a csv/xlsx file passed as file (first row = header with series names, first column = categories), or content-source data with pageSourceRefs [{sourceId, sourceKind, locator}] pointing at sources the caller registered. With no data the call is refused with "missing data" — no sample numbers are ever invented. A chart type that clearly mismatches the data (e.g. pie with many categories, line with non-time categories) first returns a proposal (requiresConfirmation=true with suggestedType) — show it to the user and re-call with confirm=true to proceed with the requested type; pie/doughnut with multiple series or negative values is rejected outright. Optional kpiCards [{title, value, unit?, fromData? {series?, category?, agg? sum|value|total}, pageSourceRefs?, slotId?, rectIn?}] add a Dashboard number strip on the same page (deep navy cards, white 26pt numbers, same style as the November one-pager data strip; Dashboard pages use layout A, G or H): each card value must come from the same page data (fromData) or cite a content source (pageSourceRefs) — a card with neither is rejected, so cards and charts never use two different sets of numbers. Only the named page is rewritten — all other pages stay byte-identical. Each executed insert bumps the version; the returned pagePreview is the edited page element list (not a rendered image — the server has no renderer) and downloadUrl points at the new full deck. Legacy decks without element ids are refused with a clear message.',
+    'presentations.generate',
+    'POST',
+    'presentations/charts',
+    z
+      .object({
+        jobId: z.string().min(1).max(191),
+        pageNo: z.number().int().min(1).max(50),
+        slotId: z.string().min(1).max(191).optional(),
+        rectIn: chartRect.optional(),
+        chart: chartDataInput,
+        kpiCards: z.array(kpiCardInput).max(4).optional(),
+        confirm: z.boolean().optional(),
+      })
+      .strict()
+  ),
+  op(
+    'presentations_chart_update',
+    'Change an existing native chart in a completed PPT deck (stage 3): replace its data, change its type, or switch its value labels. Pass jobId, pageNo, elementId (find it with presentations_page_get — type chart), and only what changes: data {categories, series} with sourceKind? (inline/file/content_source) + pageSourceRefs?/file? to replace the data (same three-source rule as presentations_chart_add — no data is ever invented), chartType? (bar/line/pie/doughnut), valueLabels? (show_all/hide_all/total_only/percent_only), title?. Switching valueLabels only changes the label layer — the data and axes stay untouched. A type that clearly mismatches the (new) data first returns a proposal (requiresConfirmation=true with suggestedType) — re-call with confirm=true to proceed. Only the chart part (and the embedded workbook when data changes) is rewritten — the slide XML is untouched and all other pages stay byte-identical. Each executed update bumps the version; pagePreview is the edited page element list (not a rendered image) and downloadUrl points at the new full deck.',
+    'presentations.generate',
+    'POST',
+    'presentations/charts/update',
+    z
+      .object({
+        jobId: z.string().min(1).max(191),
+        pageNo: z.number().int().min(1).max(50),
+        elementId: z.string().min(1).max(191),
+        data: z
+          .object({
+            categories: z.array(z.string().min(1).max(100)).max(50).optional(),
+            series: z
+              .array(
+                z
+                  .object({
+                    name: z.string().min(1).max(100),
+                    values: z.array(z.number()).max(50),
+                  })
+                  .strict()
+              )
+              .max(8)
+              .optional(),
+          })
+          .strict()
+          .optional(),
+        sourceKind: z.enum(['inline', 'file', 'content_source']).optional(),
+        pageSourceRefs: z.array(chartSourceRef).max(10).optional(),
+        file: z
+          .object({
+            name: z.string().min(1).max(191),
+            mime: z.string().max(191),
+            base64: z.string().min(1),
+          })
+          .strict()
+          .optional(),
+        chartType: z.enum(['bar', 'line', 'pie', 'doughnut']).optional(),
+        valueLabels: z
+          .enum(['show_all', 'hide_all', 'total_only', 'percent_only'])
+          .optional(),
+        title: z.string().max(200).optional(),
+        confirm: z.boolean().optional(),
       })
       .strict()
   ),
