@@ -14,6 +14,7 @@ import {
   mysqlTable,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
 } from 'drizzle-orm/mysql-core';
 
@@ -877,3 +878,41 @@ export const presentationImage = table(
 
 export type PresentationImage = typeof presentationImage.$inferSelect;
 export type NewPresentationImage = typeof presentationImage.$inferInsert;
+
+// ─── Presentations 阶段 2：单页编辑版本 ─────────────────────────────────────
+// 一行一个已确认的编辑版本：整套 PPTX 字节存在版本文件里（与库文件同目
+// 录的 ppt-edits/ 下，生产即 /app/data/ppt-edits，随命名卷持久化；
+// public/uploads 不进卷、重建会丢，所以不放那里），表里只记元数据与
+// 操作清单。version 从 1 递增；version 0 是 Presenton 原稿（不建行，
+// 实时向 Presenton 取）。回退不删行：另起一版、内容复制目标版本，
+// 审计链不断。下载始终取最大 version 的文件。
+export const presentationPageVersion = table(
+  'presentation_page_version',
+  {
+    id: varchar191('id').primaryKey(),
+    jobId: varchar191('job_id').notNull(),
+    version: int('version').notNull(),
+    pageNo: int('page_no').notNull(),
+    ops: text('ops').notNull().default('[]'), // JSON PageEditOp[]（回退行记 [{op:'revert',...}]）
+    fileName: varchar191('file_name').notNull().default(''),
+    createdAt: timestamp('created_at', { fsp: 3 }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { fsp: 3 })
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (t) => [
+    index('idx_presentation_page_version_job').on(t.jobId),
+    // 同一任务的版本号唯一：并发两次编辑同时抢下一个版本时，后一次
+    // 记行失败（文件已由 createPageVersion 清掉），不产生重号版本。
+    uniqueIndex('uq_presentation_page_version_job_version').on(
+      t.jobId,
+      t.version
+    ),
+  ]
+);
+
+export type PresentationPageVersion =
+  typeof presentationPageVersion.$inferSelect;
+export type NewPresentationPageVersion =
+  typeof presentationPageVersion.$inferInsert;

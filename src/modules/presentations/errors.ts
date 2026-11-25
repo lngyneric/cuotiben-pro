@@ -7,6 +7,7 @@ export type PresentonErrorCode =
   | 'invalid_input'
   | 'llm_quota_exceeded'
   | 'generation_timeout'
+  | 'legacy_not_supported'
   | 'presenton_error';
 
 export class PresentonError extends Error {

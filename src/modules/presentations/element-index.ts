@@ -54,6 +54,8 @@ interface ZipEntry {
   compressedSize: number;
   size: number;
   localHeaderOffset: number;
+  /** 中央目录里本条目的起始偏移（手术改写时原样复制中央记录用）。 */
+  centralOffset: number;
   modTime: number;
   modDate: number;
   /** 压缩后的原始字节（从 local header 后截取）。 */
@@ -115,6 +117,7 @@ function parseZip(bytes: Buffer): ZipEntry[] | null {
       compressedSize,
       size,
       localHeaderOffset,
+      centralOffset: p,
       modTime,
       modDate,
       raw: bytes.subarray(dataStart, dataStart + compressedSize),
@@ -378,4 +381,277 @@ export function stampElementIds(pptx: Buffer): {
   const check = buildElementIndex(bytes);
   if (!check) return null;
   return { bytes, index: { version: 1, pages } };
+}
+
+// ─── zip 级手术（阶段 2 单页编辑） ──────────────────────────────────────────
+//
+// 单页重写只改目标 slide 的 XML：其余条目的 local 记录（含压缩字节）逐字
+// 节原样复制，不经过重新压缩；中央目录只改目标条目的 crc/尺寸与被顶动
+// 的偏移量；其余中央记录原样复制。于是其余 slide 解压后的内容逐字节不
+// 变（验收口径“逐页导出比对”即以此为准），且 PowerPoint 打开不受影响。
+// 结构稍有异常（中央偏移对不上、重名、含注释等解析不出的情况）一律返回
+// null，调用方不交付半成品字节。
+
+const ELEMENT_ID_NAME_RE = /^el-p\d+-\d+$/;
+
+/** 读单个条目的解压后字节；不存在或解不开时返回 null。 */
+export function readZipEntry(bytes: Buffer, name: string): Buffer | null {
+  const entries = parseZip(bytes);
+  if (!entries) return null;
+  const entry = entries.find((e) => e.name === name);
+  if (!entry) return null;
+  return entryData(entry);
+}
+
+/** 某份 PPTX 是否每个形状的名字都已是 element_id（即已盖过章）。 */
+export function hasStampedElementIds(pptx: Buffer): boolean | null {
+  const entries = parseZip(pptx);
+  if (!entries) return null;
+  const slides = slideEntries(entries);
+  if (slides.length === 0) return null;
+  for (const { entry } of slides) {
+    const data = entryData(entry);
+    if (!data) return null;
+    const shapes = parseSlideShapes(data.toString('utf-8'));
+    if (shapes.length === 0) return null;
+    for (const s of shapes) {
+      if (!ELEMENT_ID_NAME_RE.test(s.name)) return false;
+    }
+  }
+  return true;
+}
+
+/** local 记录全长（header + 名 + extra + 压缩数据）。 */
+function localRecordLength(bytes: Buffer, entry: ZipEntry): number | null {
+  const off = entry.localHeaderOffset;
+  if (off + 30 > bytes.length) return null;
+  const nameLen = bytes.readUInt16LE(off + 26);
+  const extraLen = bytes.readUInt16LE(off + 28);
+  return 30 + nameLen + extraLen + entry.compressedSize;
+}
+
+/** 中央记录全长（header + 名 + extra + comment）。 */
+function centralRecordLength(bytes: Buffer, entry: ZipEntry): number | null {
+  const off = entry.centralOffset;
+  if (off + 46 > bytes.length) return null;
+  const nameLen = bytes.readUInt16LE(off + 28);
+  const extraLen = bytes.readUInt16LE(off + 30);
+  const commentLen = bytes.readUInt16LE(off + 32);
+  return 46 + nameLen + extraLen + commentLen;
+}
+
+function eocdInfo(bytes: Buffer): {
+  eocd: number;
+  totalEntries: number;
+  centralOffset: number;
+  centralSize: number;
+} | null {
+  const scanStart = Math.max(0, bytes.length - 65557);
+  for (let i = bytes.length - 22; i >= scanStart; i--) {
+    if (bytes.readUInt32LE(i) !== EOCD_SIG) continue;
+    return {
+      eocd: i,
+      totalEntries: bytes.readUInt16LE(i + 10),
+      centralOffset: bytes.readUInt32LE(i + 16),
+      centralSize: bytes.readUInt32LE(i + 12),
+    };
+  }
+  return null;
+}
+
+function buildLocalRecord(
+  entry: ZipEntry,
+  data: Buffer
+): { record: Buffer; crc: number; compressed: Buffer } {
+  const compressed =
+    entry.method === 8 ? deflateRawSync(data) : Buffer.from(data);
+  const crc = crc32(data);
+  const nameBuf = Buffer.from(entry.name, 'utf-8');
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(LOCAL_SIG, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt16LE(0, 6);
+  local.writeUInt16LE(entry.method, 8);
+  local.writeUInt16LE(entry.modTime, 10);
+  local.writeUInt16LE(entry.modDate, 12);
+  local.writeUInt32LE(crc, 14);
+  local.writeUInt32LE(compressed.length, 18);
+  local.writeUInt32LE(data.length, 22);
+  local.writeUInt16LE(nameBuf.length, 26);
+  local.writeUInt16LE(0, 28);
+  return {
+    record: Buffer.concat([local, nameBuf, compressed]),
+    crc,
+    compressed,
+  };
+}
+
+/**
+ * 只替换一个条目的内容，返回新 zip 字节；其余条目的 local 记录逐字节
+ * 原样保留。目标不存在或结构异常时返回 null。
+ */
+export function replaceZipEntry(
+  bytes: Buffer,
+  name: string,
+  newData: Buffer
+): Buffer | null {
+  const entries = parseZip(bytes);
+  const info = eocdInfo(bytes);
+  if (!entries || !info) return null;
+  const targetIdx = entries.findIndex((e) => e.name === name);
+  if (targetIdx < 0) return null;
+  const target = entries[targetIdx];
+  // 逐条拼 local 区：目标用新记录，其余原样切片；同时算出每条的新偏移。
+  const localParts: Buffer[] = [];
+  const newOffsets: number[] = [];
+  let offset = 0;
+  let newTarget: { crc: number; compressedSize: number; size: number } | null =
+    null;
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const len = localRecordLength(bytes, entry);
+    if (len === null) return null;
+    newOffsets.push(offset);
+    if (i === targetIdx) {
+      const built = buildLocalRecord(entry, newData);
+      localParts.push(built.record);
+      newTarget = {
+        crc: built.crc,
+        compressedSize: built.compressed.length,
+        size: newData.length,
+      };
+      offset += built.record.length;
+    } else {
+      localParts.push(
+        bytes.subarray(entry.localHeaderOffset, entry.localHeaderOffset + len)
+      );
+      offset += len;
+    }
+  }
+  if (!newTarget) return null;
+  const centralStart = offset;
+  const centralParts: Buffer[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const len = centralRecordLength(bytes, entry);
+    if (len === null) return null;
+    const record = Buffer.from(
+      bytes.subarray(entry.centralOffset, entry.centralOffset + len)
+    );
+    if (i === targetIdx) {
+      record.writeUInt32LE(newTarget.crc, 16);
+      record.writeUInt32LE(newTarget.compressedSize, 20);
+      record.writeUInt32LE(newTarget.size, 24);
+    }
+    if (newOffsets[i] !== entry.localHeaderOffset)
+      record.writeUInt32LE(newOffsets[i], 42);
+    centralParts.push(record);
+  }
+  const centralBuf = Buffer.concat(centralParts);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(EOCD_SIG, 0);
+  eocd.writeUInt16LE(0, 4);
+  eocd.writeUInt16LE(0, 6);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(centralBuf.length, 12);
+  eocd.writeUInt32LE(centralStart, 16);
+  eocd.writeUInt16LE(0, 20);
+  const out = Buffer.concat([...localParts, centralBuf, eocd]);
+  // 自检：新包能解析、目标内容一致、其余条目解压后不变。
+  const check = parseZip(out);
+  if (!check) return null;
+  for (const entry of check) {
+    const orig = entries.find((e) => e.name === entry.name);
+    if (!orig) return null;
+    const a = entryData(entry);
+    const b = entry.name === name ? newData : entryData(orig);
+    if (!a || !b || !a.equals(b)) return null;
+  }
+  return out;
+}
+
+/**
+ * 追加新条目（换图时加 ppt/media 与 rels 用）：新 local 记录插在中央
+ * 目录之前，旧条目的 local 记录与中央记录、偏移一律不动。
+ * 有重名或结构异常时返回 null。
+ */
+export function addZipEntries(
+  bytes: Buffer,
+  additions: Array<{ name: string; data: Buffer }>
+): Buffer | null {
+  const entries = parseZip(bytes);
+  const info = eocdInfo(bytes);
+  if (!entries || !info) return null;
+  const names = new Set(entries.map((e) => e.name));
+  for (const a of additions) {
+    if (names.has(a.name)) return null;
+    names.add(a.name);
+  }
+  const localParts: Buffer[] = [];
+  const centralParts: Buffer[] = [];
+  let offset = info.centralOffset;
+  for (const a of additions) {
+    const compressed = deflateRawSync(a.data);
+    const crc = crc32(a.data);
+    const nameBuf = Buffer.from(a.name, 'utf-8');
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(LOCAL_SIG, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt16LE(0, 10);
+    local.writeUInt16LE(0, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(compressed.length, 18);
+    local.writeUInt32LE(a.data.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    local.writeUInt16LE(0, 28);
+    localParts.push(local, nameBuf, compressed);
+    const header = Buffer.alloc(46);
+    header.writeUInt32LE(CENTRAL_SIG, 0);
+    header.writeUInt16LE(20, 4);
+    header.writeUInt16LE(20, 6);
+    header.writeUInt16LE(0, 8);
+    header.writeUInt16LE(8, 10);
+    header.writeUInt16LE(0, 12);
+    header.writeUInt16LE(0, 14);
+    header.writeUInt32LE(crc, 16);
+    header.writeUInt32LE(compressed.length, 20);
+    header.writeUInt32LE(a.data.length, 24);
+    header.writeUInt16LE(nameBuf.length, 28);
+    header.writeUInt16LE(0, 30);
+    header.writeUInt16LE(0, 32);
+    header.writeUInt16LE(0, 34);
+    header.writeUInt16LE(0, 36);
+    header.writeUInt32LE(0, 38);
+    header.writeUInt32LE(offset, 42);
+    centralParts.push(header, nameBuf);
+    offset += local.length + nameBuf.length + compressed.length;
+  }
+  const newCentralOffset = offset;
+  const oldCentral = bytes.subarray(
+    info.centralOffset,
+    info.centralOffset + info.centralSize
+  );
+  const newCentral = Buffer.concat([oldCentral, ...centralParts]);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(EOCD_SIG, 0);
+  eocd.writeUInt16LE(0, 4);
+  eocd.writeUInt16LE(0, 6);
+  const total = entries.length + additions.length;
+  eocd.writeUInt16LE(total, 8);
+  eocd.writeUInt16LE(total, 10);
+  eocd.writeUInt32LE(newCentral.length, 12);
+  eocd.writeUInt32LE(newCentralOffset, 16);
+  eocd.writeUInt16LE(0, 20);
+  const out = Buffer.concat([
+    bytes.subarray(0, info.centralOffset),
+    ...localParts,
+    newCentral,
+    eocd,
+  ]);
+  const check = parseZip(out);
+  if (!check || check.length !== total) return null;
+  return out;
 }

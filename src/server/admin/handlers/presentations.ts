@@ -30,10 +30,19 @@ export function presentonErrorResponse(error: unknown) {
             ? 400
             : error.code === 'generation_timeout'
               ? 504
-              : 502;
+              : error.code === 'legacy_not_supported'
+                ? 400
+                : 502;
     return respErr(error.message, { status });
   }
   return respErr(error instanceof Error ? error.message : 'Internal error');
+}
+
+/** MCP 用的完整下载地址（与 presentations_get 同口径：VITE_APP_URL origin）。 */
+function absoluteDownloadUrl(jobId: string): string {
+  return `${new URL(envConfigs.app_url).origin}${withAppBase(
+    `/api/admin/agent/presentations/download?id=${encodeURIComponent(jobId)}`
+  )}`;
 }
 
 /** 与客户端 isAdmin 同一口径：字面量 admin.*（或 *）才算管理员。 */
@@ -100,6 +109,8 @@ export async function GET({ params, actor }: AdminHandlerContext) {
       // 阶段 1：来源模式与留痕。无来源生成时 sourceMode 为 unsourced，
       // 调用方须在结果中标注“无来源生成”，不得假装有来源。
       sourceMode: provenance.sourceMode,
+      // 阶段 2：当前编辑版本号（0 = Presenton 原稿，未改过）。
+      currentVersion: await presentationsService.getJobPageVersion(current),
       ...(provenance.layoutAssignments
         ? { layoutAssignments: provenance.layoutAssignments }
         : {}),
@@ -293,6 +304,133 @@ export async function imageSearch({ request, actor }: AdminHandlerContext) {
       limit: body.limit,
     });
     return respData({ items });
+  } catch (error) {
+    return presentonErrorResponse(error);
+  }
+}
+
+// ─── 阶段 2：单页编辑 ───────────────────────────────────────────────────────
+
+function pageEditViewer(actor: AdminHandlerContext['actor']) {
+  return {
+    userId: actor.userId,
+    tokenId: actor.tokenId ?? null,
+    isAdmin: isAdminActor(actor),
+  };
+}
+
+/**
+ * presentations_page_get：取指定页的元素清单（element_id、类型、当前文字
+ * 或属性、所在槽位）。口述改稿先经此清单定位，不靠猜坐标。
+ * 未完成任务 409；不存在与非属主一律 404（与查询、下载同一口径）。
+ */
+export async function pageGet({ request, actor }: AdminHandlerContext) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const job = await presentationsService.findOwnedJob(
+      String(body.jobId ?? ''),
+      actor
+    );
+    if (!job) return respErr('Presentation not found', { status: 404 });
+    if (job.status !== 'completed' || !job.exportPath)
+      return respErr('Presentation is not ready', { status: 409 });
+    const view = await presentationsService.getPageElementList(
+      job,
+      Number(body.pageNo)
+    );
+    return respData(view);
+  } catch (error) {
+    return presentonErrorResponse(error);
+  }
+}
+
+/**
+ * presentations_page_edit：改一页（只重写该页，其余页逐字节保留）。
+ * - 口述 set_text / set_style / move / resize / add_element：直接执行。
+ * - 截图模式（referenceImageId）与删除/换图类操作：未带 confirm 时先返
+ *   回拟改动清单（requiresConfirmation=true，不写文件）；带 confirm=true
+ *   再执行。拟改动清单由调用方 agent 按参考图对照 page_get 清单识别后
+ *   下发 ops，服务端只校验 reference_image 存在且可见、ops 逐项可执行。
+ * 执行后返回改后单页预览（元素清单，非图片——服务器容器内无渲染工具，
+ * 见 service.ts 阶段 2 节头部）与新版本号；下载链接指向新版本整套文件。
+ */
+export async function pageEdit({ request, actor }: AdminHandlerContext) {
+  try {
+    const body = await request.json();
+    const job = await presentationsService.findOwnedJob(
+      String(body.jobId ?? ''),
+      actor
+    );
+    if (!job) return respErr('Presentation not found', { status: 404 });
+    if (job.status !== 'completed' || !job.exportPath)
+      return respErr('Presentation is not ready', { status: 409 });
+    const pageNo = Number(body.pageNo);
+    const viewer = pageEditViewer(actor);
+    const ops = body.ops;
+    const referenceImageId =
+      typeof body.referenceImageId === 'string' && body.referenceImageId
+        ? body.referenceImageId
+        : undefined;
+    const confirm = body.confirm === true;
+    const needsProposal =
+      !!referenceImageId ||
+      (Array.isArray(ops) &&
+        ops.some(
+          (o: unknown) =>
+            !!o &&
+            typeof o === 'object' &&
+            ((o as { op?: string }).op === 'delete_element' ||
+              (o as { op?: string }).op === 'replace_image')
+        ));
+    if (needsProposal && !confirm) {
+      const proposal = await presentationsService.planPageEdit(
+        job,
+        pageNo,
+        ops,
+        viewer,
+        referenceImageId
+      );
+      return respData({ ...proposal, executed: false });
+    }
+    const result = await presentationsService.applyPageEdit(
+      job,
+      pageNo,
+      ops,
+      viewer,
+      { referenceImageId }
+    );
+    return respData({
+      ...result,
+      executed: true,
+      downloadUrl: absoluteDownloadUrl(job.id),
+    });
+  } catch (error) {
+    return presentonErrorResponse(error);
+  }
+}
+
+/**
+ * presentations_page_revert：按版本号回退到改前一版（0 = 原稿）。
+ * 另起一版、内容复制目标版本，不删旧行；下载随之指向回退版。
+ */
+export async function pageRevert({ request, actor }: AdminHandlerContext) {
+  try {
+    const body = await request.json();
+    const job = await presentationsService.findOwnedJob(
+      String(body.jobId ?? ''),
+      actor
+    );
+    if (!job) return respErr('Presentation not found', { status: 404 });
+    if (job.status !== 'completed' || !job.exportPath)
+      return respErr('Presentation is not ready', { status: 409 });
+    const result = await presentationsService.revertPageEdit(
+      job,
+      Number(body.version)
+    );
+    return respData({
+      ...result,
+      downloadUrl: absoluteDownloadUrl(job.id),
+    });
   } catch (error) {
     return presentonErrorResponse(error);
   }
