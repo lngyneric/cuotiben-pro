@@ -106,7 +106,7 @@ test('stage0 theme: exactly the 8 checklist colors, single injection point', () 
     '#D9DEE6',
     '#F7F9FC',
   ]);
-  assert.equal(PPT_THEME_VERSION, '2026-11-v1');
+  assert.equal(PPT_THEME_VERSION, '2026-11-v2');
   // Logo 位与设计稿总览页一致：右上角 1.48×0.52 英寸。
   assert.deepEqual(PPT_LOGO_SLOT, {
     x: 11.55,

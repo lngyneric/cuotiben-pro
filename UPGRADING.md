@@ -46,6 +46,12 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-25: PPT Logo 改嵌模板——sysmex 模板，不再每次上传
+
+- 内容：① 新模板 `sysmex`（`presenton-templates/sysmex/`，`general` 的克隆）：Logo 以 `decorative: true` 的固定图片元素嵌在每页背景右上角（`PPT_LOGO_SLOT`：x=11.55in, y=0.12in, 1.48×0.52in），共 24 处（12 个背景组件变体＋12 个版式的背景拷贝）；`static/logo.png` 是 `public/logo.png` 转透明底后的版本（白底转透明，Logo 本体深蓝＋绿全不透明，可浮于任何底色上）。② wiki 侧不再上传 Logo：删 `tryResolveLogo()`（`src/modules/presentations/images.ts`）与 `service.ts` 的 Logo 上传块；`presentations_generate` 默认模板由 `general` 改为 `sysmex`（schema 默认值、`PRESENTATION_TEMPLATES` 白名单、`src/lib/ppt-templates.ts` 的 `PPT_DEFAULT_TEMPLATE` 与 AI 助手页面下拉）；`PPT_THEME_VERSION` 由 `2026-11-v1` 升到 `2026-11-v2`，主题指令改写为“Logo 已嵌在 sysmex 模板右上角，不要另外放 Logo”。③ 测试：`tests/presentations-logo.test.ts` 重写为模板内嵌契约（默认模板 sysmex、主题指令措辞、模板文件 24 处 Logo、透明底 PNG 断言）；`tests/presentations.test.ts` 改为断言只上传用户文件。
+- 对已有项目：无 migration、无新权限码；**部署时必须先把模板装进 Presenton**（`presenton-templates/deploy.sh`，拷进容器并重启——`/app/templates` 不是 volume，容器重建后须重装），否则默认模板 `sysmex` 在 Presenton 侧不存在、生成会失败。旧 `general` 模板仍在，可在生成时显式传 `template: 'general'` 回退（此时无 Logo）。
+- 背景：此前每次生成都把 `logo.png` 当文件上传，Presenton 对它跑文档解析／LiteParse OCR，任务 `495f3eca`（2026-11-25）因此 600 秒超时、成稿从未产出。
+
 ## 2026-11-25: 知识库抽取链——“已排查”状态＋草稿进图谱＋草稿仅管理员可见
 
 - 内容：① 新状态 `reviewed`（界面“已排查”）：`PostStatus.REVIEWED`、`admin/posts` 增加 tab／状态下拉／批量按钮与中英文文案；`posts_batch_status` 允许 `reviewed`。② 同步链路改语义：主机 `sync-kb-drafts-load.cjs` 对已存在的 `kb-draft-%` 稿子不再一律跳过——状态为 `reviewed` 时输出 FROZEN（不更新、消费掉 pending 行），其余状态输出 UPDATED（覆盖标题／描述／正文／标签＋更新时间，并附更新留痕行）；`sync_kb_drafts.py` 相应消费 UPDATED／FROZEN 行。上游 kb_extract 本就按 SharePoint `last_modified` 发现源文件变化并重新抽取（pending 行），本次未改 ai-shifu。③ 图谱关联同步（主机 `sync-graph-courses.py`）从只读已发布课改为读 `published/draft/reviewed` 三种状态，草稿课也获得节点关联。④ `/api/graph` 按管理员过滤：非管理员只返回已发布课及其关联（服务端过滤，不只靠页面藏），响应新增 `isAdmin`；图谱页管理员可见草稿／已排查课节点（带状态徽标），其他人仍只看已发布。

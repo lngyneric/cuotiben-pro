@@ -64,7 +64,6 @@ import {
   resolveImageBytes,
   resolveImageMappings,
   resolveImageRef,
-  tryResolveLogo,
   type ImageMappingInput,
   type ImageViewer,
 } from './images';
@@ -82,7 +81,6 @@ import {
   allSlots,
   buildThemeInstructions,
   findSlot,
-  PPT_LOGO_SLOT,
   PPT_THEME_VERSION,
   type LayoutCode,
 } from './layouts';
@@ -126,10 +124,12 @@ export const MAX_ASSEMBLED_CONTENT_CHARS = 100_000;
 /**
  * Presenton 版式（template）白名单：2026-11-22 对线上 Presenton
  * 0.9.12-beta 的 /api/v1/ppt/template/all 实测得到的 16 个内置版式
- *（id 即小写名）。generate/async 只认这些 id；smart 模式的 create
- * 接口不接受 template，版式只在标准模式生效。
+ *（id 即小写名），另加 wiki 自建的 sysmex 模板（见 presenton-templates/，
+ * general 的克隆 + 内嵌 Logo，默认版式）。generate/async 只认这些 id；
+ * smart 模式的 create 接口不接受 template，版式只在标准模式生效。
  */
 export const PRESENTATION_TEMPLATES = [
+  'sysmex',
   'general',
   'momentum',
   'dynamic',
@@ -877,8 +877,8 @@ export function validateGenerateInput(input: GenerateInput): void {
  * outline 每页的来源片段组装，版式与留痕（layoutAssignments /
  * pageSourceRefs）随任务保存；无来源时保持现行纯提示词，但结果中标注
  * “无来源生成”（presentations_get 的 sourceMode）。图片映射（images）
- * 必须有已确认的 outline（槽位取自该页版式）；Logo 按 tryResolveLogo
- * 的结果处理（见 images.ts：当前无光栅 Logo 文件可注）。
+ * 必须有已确认的 outline（槽位取自该页版式）；Logo 已嵌在 sysmex 模板
+ * 里（见 presenton-templates/），生成时不再上传。
  */
 export async function createJobAndStart(params: {
   ownerUserId: string;
@@ -1028,25 +1028,10 @@ export async function createJobAndStart(params: {
     if (lines.length > 0)
       chartInstructions = `【图表页要求】\n${lines.join('\n')}`;
   }
-  // Logo：有光栅文件时随图一起上传、按注册表 Logo 位落位；没有时不编造。
-  let logoInstruction = '';
-  const logo = await tryResolveLogo().catch(() => null);
-  if (logo) {
-    imageFiles.push({
-      name: logo.name,
-      mime: logo.mime,
-      base64: logo.bytes.toString('base64'),
-    });
-    logoInstruction =
-      `Logo 图片「${logo.name}」固定放在右上角（x=${PPT_LOGO_SLOT.x}in, ` +
-      `y=${PPT_LOGO_SLOT.y}in, ${PPT_LOGO_SLOT.width}×${PPT_LOGO_SLOT.height} 英寸），标题区不得压住 Logo。`;
-  }
-  const fullInstructions = [
-    instructions,
-    imageInstructions,
-    chartInstructions,
-    logoInstruction,
-  ]
+  // Logo：已嵌在 sysmex 模板里（见 presenton-templates/），生成时不再
+  // 上传——以前随图上传会让 Presenton 对它跑文档解析/LiteParse OCR，
+  // 2026-11-25 的 495f3eca 因此 600 秒超时、成稿从未产出。
+  const fullInstructions = [instructions, imageInstructions, chartInstructions]
     .filter(Boolean)
     .join('\n\n');
   const [job] = await db()
@@ -1082,7 +1067,7 @@ export async function createJobAndStart(params: {
       imageFiles.length > 0 ? await uploadFiles(imageFiles) : [];
     const allFilePaths = [...filePaths, ...imagePaths];
     const language = (input.language || 'Chinese').trim() || 'Chinese';
-    const template = (input.template || 'general').trim() || 'general';
+    const template = (input.template || 'sysmex').trim() || 'sysmex';
     if (input.mode === 'smart') {
       const created = await presentonJson<{ id: string }>(
         '/api/v1/ppt/presentation/create',

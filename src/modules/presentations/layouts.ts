@@ -18,7 +18,7 @@
 // 是提示词级的，成稿配色仍以 Presenton 实际出稿为准，阶段 0 只保证
 // 请求侧每次都带同一份主题描述。
 
-export const PPT_THEME_VERSION = '2026-11-v1';
+export const PPT_THEME_VERSION = '2026-11-v2';
 
 /** 主题 8 色（设计稿总览页为准，实施清单封面页清单一致）。 */
 export const PPT_THEME_COLORS = {
@@ -54,16 +54,14 @@ export const PPT_THEME_FONTS = {
 /** 幻灯片尺寸（英寸，设计稿实测 13.33×7.5）。 */
 export const PPT_SLIDE_SIZE_IN = { width: 13.33, height: 7.5 } as const;
 
-/** Logo 位：右上角固定矩形（英寸）。标题区不得压 Logo。 */
+/** Logo 位：右上角固定矩形（英寸）。Logo 已嵌在 sysmex 模板里（见
+ * presenton-templates/），此处只给主题指令写位置用，不再用于上传。 */
 export const PPT_LOGO_SLOT = {
   x: 11.55,
   y: 0.12,
   width: 1.48,
   height: 0.52,
 } as const;
-
-/** Logo 占位底色（设计稿总览页的 LOGO 矩形填充，仅作占位说明）。 */
-export const PPT_LOGO_PLACEHOLDER_FILL = '#E8EDF3';
 
 export interface SlotRectIn {
   x: number;
@@ -356,7 +354,7 @@ export function buildThemeInstructions(): string {
     `主题色：标题蓝 ${c.titleBlue}、深海军蓝 ${c.deepNavy}、亮蓝 ${c.brightBlue}、绿 ${c.green}、橙 ${c.orange}、浅蓝 ${c.lightBlue}、分隔灰蓝 ${c.dividerGrayBlue}、卡片底 ${c.cardBg}。`,
     `字体：${PPT_THEME_FONTS.title}；${PPT_THEME_FONTS.subtitle}；${PPT_THEME_FONTS.cardTitle}；${PPT_THEME_FONTS.body}；${PPT_THEME_FONTS.kpiNumber}；${PPT_THEME_FONTS.caption}。`,
     `页面尺寸 ${PPT_SLIDE_SIZE_IN.width}×${PPT_SLIDE_SIZE_IN.height} 英寸。页眉统一：标题在左上（x=0.30in, y=0.05in, 宽 10.50in），副标题在其下，分隔线用分隔灰蓝 ${c.dividerGrayBlue}。`,
-    `Logo 固定在右上角（x=${PPT_LOGO_SLOT.x}in, y=${PPT_LOGO_SLOT.y}in, ${PPT_LOGO_SLOT.width}×${PPT_LOGO_SLOT.height} 英寸），标题区不得压住 Logo。`,
+    `Logo 已嵌在 sysmex 模板右上角（x=${PPT_LOGO_SLOT.x}in, y=${PPT_LOGO_SLOT.y}in, ${PPT_LOGO_SLOT.width}×${PPT_LOGO_SLOT.height} 英寸），不要另外放 Logo，标题区不得压住 Logo。`,
     '数据条用深海军蓝底、白字；卡片底用卡片底色，卡片顶边按亮蓝/标题蓝/绿/橙循环着色；图片按比例裁切填充，不得拉伸变形。',
     `主题版本 ${PPT_THEME_VERSION}。`,
   ].join('\n');
