@@ -771,6 +771,13 @@ export const presentationJob = table(
     exportPath: text('export_path'), // Presenton 侧导出路径（相对路径或绝对 URL），只在服务端用，绝不返回给调用方
     error: text('error'),
     errorCode: varchar191('error_code'), // llm_quota_exceeded 等，见 presentations/service.ts
+    // 阶段 0 地基（presentations/layouts.ts、element-index.ts、job-meta.ts）：
+    // themeVersion 生成时写入；elementIndex 下载盖章时写入；另外两列由
+    // 阶段 1（内容源 + outline）写入，阶段 0 只定义结构、不写值。
+    themeVersion: text('theme_version'),
+    layoutAssignments: text('layout_assignments'), // JSON LayoutAssignment[]
+    elementIndex: text('element_index'), // JSON PptxElementIndex
+    pageSourceRefs: text('page_source_refs'), // JSON PageSourceRef[]
     createdAt: timestamp('created_at', { fsp: 3 }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { fsp: 3 })
       .defaultNow()

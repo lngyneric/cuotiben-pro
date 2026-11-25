@@ -60,6 +60,8 @@ export async function GET({ params, actor }: AdminHandlerContext) {
       status: current.status,
       title: current.title,
       slideCount: current.slideCount,
+      // 阶段 0：生成时写入的主题版本（layouts.ts 的单一主题来源）。
+      ...(current.themeVersion ? { themeVersion: current.themeVersion } : {}),
       ...(current.status === 'completed'
         ? {
             // Absolute URL: an MCP agent is an external client — a
