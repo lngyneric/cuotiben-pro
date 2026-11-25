@@ -31,17 +31,20 @@ import { getUuid } from '@/lib/hash';
 
 import {
   buildElementIndex,
+  hasStampedElementIds,
   stampElementIds,
   type PptxElementIndex,
 } from './element-index';
 import { PresentonError, type PresentonErrorCode } from './errors';
 import {
   markImagesUsed,
+  parseImageDimensions,
   resolveImageBytes,
   resolveImageMappings,
   resolveImageRef,
   tryResolveLogo,
   type ImageMappingInput,
+  type ImageViewer,
 } from './images';
 import {
   parseElementIndex,
@@ -56,9 +59,25 @@ import {
 import {
   allSlots,
   buildThemeInstructions,
+  findSlot,
   PPT_LOGO_SLOT,
   PPT_THEME_VERSION,
+  type LayoutCode,
 } from './layouts';
+import {
+  applyPageOps,
+  describePageOps,
+  getPageElements,
+  validateRectIn,
+  type PageEditOp,
+  type RectIn,
+} from './page-edit';
+import {
+  createPageVersion,
+  getCurrentPageVersion,
+  getPageVersion,
+  readPageVersionBytes,
+} from './page-versions';
 import {
   assembleOutlineContent,
   getOwnedOutline,
@@ -1147,6 +1166,9 @@ export async function refreshJob(
  * 并把逐页元素索引缓存到任务行的 element_index 列。盖章是 best-effort：
  * 盖不上（不是合法 PPTX）时原样返回原字节，下载不受影响；缓存写失败
  * 也不影响下载。
+ *
+ * 阶段 2：已有编辑版本时下载取最新版本的文件，不再向 Presenton 取原稿；
+ * 无编辑版本时走原逻辑（实时取原稿 + 盖章）。
  */
 export async function downloadJobPptx(job: PresentationJob): Promise<Buffer> {
   if (job.status !== 'completed' || !job.exportPath)
@@ -1154,13 +1176,64 @@ export async function downloadJobPptx(job: PresentationJob): Promise<Buffer> {
       'invalid_input',
       'Presentation is not ready for download'
     );
-  const bytes = await downloadPptxBytes(job.exportPath);
+  const currentVersion = await getCurrentPageVersion(job.id);
+  if (currentVersion > 0) {
+    const row = await getPageVersion(job.id, currentVersion);
+    const bytes = row ? await readPageVersionBytes(row) : null;
+    if (!bytes)
+      throw new PresentonError(
+        'presenton_error',
+        '已编辑的版本文件丢失，无法下载当前版本'
+      );
+    return bytes;
+  }
+  return downloadOriginalPptx(job);
+}
+
+/**
+ * 向 Presenton 取原稿并顺手盖 element_id（下载与单页编辑的共同入口）。
+ * 盖不上章时原样返回原字节——下载不受影响；编辑入口另有严格校验
+ * （getJobCurrentBytes 会明确拒绝无 element_id 的旧稿）。
+ */
+async function downloadOriginalPptx(job: PresentationJob): Promise<Buffer> {
+  const bytes = await downloadPptxBytes(job.exportPath!);
   const stamped = stampElementIds(bytes);
   if (!stamped) return bytes;
   await updateJob(job.id, {
     elementIndex: serializeJobMeta(stamped.index),
   }).catch(() => {});
   return stamped.bytes;
+}
+
+/**
+ * 单页编辑用的当前版本字节：有编辑版本时取最新版本文件；无编辑版本时
+ * 取原稿，但要求能确立 element_id——解析不出或未带 ID 的历史旧稿明确
+ * 拒绝（legacy_not_supported），不假装可改、不静默改文件。
+ */
+export async function getJobCurrentBytes(
+  job: PresentationJob
+): Promise<Buffer> {
+  const currentVersion = await getCurrentPageVersion(job.id);
+  if (currentVersion > 0) {
+    const row = await getPageVersion(job.id, currentVersion);
+    const bytes = row ? await readPageVersionBytes(row) : null;
+    if (!bytes)
+      throw new PresentonError(
+        'presenton_error',
+        '已编辑的版本文件丢失，无法读取当前版本'
+      );
+    return bytes;
+  }
+  const bytes = await downloadOriginalPptx(job);
+  // 能盖上章的一定已带 ID；盖不上（解析不出、或形状名里没有 ID）的一
+  // 律按历史旧稿处理：明确回不支持，不假装可改、不静默改文件。
+  const stamped = hasStampedElementIds(bytes);
+  if (stamped !== true)
+    throw new PresentonError(
+      'legacy_not_supported',
+      '旧稿不支持单页编辑：该稿未带 element_id 或无法解析元素结构，请用新生成的稿子再改'
+    );
+  return bytes;
 }
 
 /**
@@ -1176,6 +1249,27 @@ export async function listJobElements(
       'invalid_input',
       'Presentation is not ready for download'
     );
+  // 阶段 2：已有编辑版本时索引从最新版本文件现算，不再向 Presenton 取原稿。
+  const currentVersion = await getCurrentPageVersion(job.id);
+  if (currentVersion > 0) {
+    const row = await getPageVersion(job.id, currentVersion);
+    const bytes = row ? await readPageVersionBytes(row) : null;
+    if (!bytes)
+      throw new PresentonError(
+        'presenton_error',
+        '已编辑的版本文件丢失，无法读取元素'
+      );
+    const versionIndex = buildElementIndex(bytes);
+    if (!versionIndex)
+      throw new PresentonError(
+        'presenton_error',
+        'Cannot read elements from the presentation file'
+      );
+    await updateJob(job.id, {
+      elementIndex: serializeJobMeta(versionIndex),
+    }).catch(() => {});
+    return versionIndex;
+  }
   const cached = parseElementIndex(job.elementIndex);
   if (cached) return cached;
   const bytes = await downloadPptxBytes(job.exportPath);
@@ -1230,4 +1324,393 @@ export function jobProvenanceView(job: PresentationJob): {
     imageAssignments,
     missingImagePages,
   };
+}
+
+// ─── 阶段 2：单页编辑 ────────────────────────────────────────────────────────
+//
+// 流程（实施清单能力三）：
+// 1. presentations_page_get 取指定页的元素清单（element_id、类型、当前
+//    文字/属性、所在槽位），口述改稿先经此清单定位，不靠猜坐标。
+// 2. presentations_page_edit 改一页：口述 ops 直接执行；截图模式
+//    （referenceImageId）与删除/换图类操作先走 planPageEdit 产出拟改动
+//    清单，用户确认（confirm=true）后才执行。服务端只重写该页，其余页
+//    逐字节保留（page-edit.ts 的 zip 手术），执行后版本号递增。
+// 3. presentations_page_revert 按版本号回退：另起一版、内容复制目标版
+//    本，不删行，下载随之指向回退版。
+// 单页预览：服务器容器内没有 LibreOffice / pdftoppm 等渲染工具（2026-11-25
+// 实查：which soffice/libreoffice/pdftoppm 均无），所以 preview 不是图片，
+// 而是改后单页的元素清单 + 已应用的操作摘要——如实返回，不编造渲染图。
+// 截图识别：服务端没有视觉模型，参考图的版式/颜色/位置/文字差异由调用
+// 方 agent（有视觉能力）对照 page_get 清单识别后下发 ops；服务端只校验
+// reference_image 存在且调用方可见、ops 逐项可执行，并先出拟改动清单。
+
+function invalidInput(message: string): never {
+  throw new PresentonError('invalid_input', message);
+}
+
+function asNonEmptyString(value: unknown, what: string): string {
+  if (typeof value !== 'string' || !value.trim())
+    invalidInput(`${what}须为非空字符串`);
+  return (value as string).trim();
+}
+
+/** move/resize/add/replace_image 的目标矩形：slotId（查版式注册表）或明确 rectIn。 */
+function resolveTargetRect(
+  job: PresentationJob,
+  pageNo: number,
+  raw: Record<string, unknown>
+): RectIn {
+  if (typeof raw.slotId === 'string' && raw.slotId.trim()) {
+    const slotId = raw.slotId.trim();
+    const layouts = parseLayoutAssignments(job.layoutAssignments);
+    const layoutCode = layouts?.find((l) => l.pageNo === pageNo)?.layout;
+    if (!layoutCode)
+      invalidInput(
+        `第 ${pageNo} 页没有版式记录，无法按槽位 ${slotId} 定位：请给明确矩形 rectIn`
+      );
+    const slot = findSlot(layoutCode, slotId);
+    if (!slot)
+      invalidInput(`第 ${pageNo} 页的版式 ${layoutCode} 没有槽位 ${slotId}`);
+    return { ...slot.rectIn };
+  }
+  if (raw.rectIn !== undefined) return validateRectIn(raw.rectIn, '目标位置');
+  invalidInput('须给出 slotId（版式槽位）或 rectIn（明确矩形，英寸）');
+}
+
+const IMAGE_MIME_TO_EXT: Record<string, 'png' | 'jpg' | 'gif' | 'webp'> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+};
+
+/**
+ * 把 MCP / 页面传来的原始 ops 规整成 PageEditOp：逐项校验形态、把 slotId
+ * 解析成 rectIn、把 replace_image 的 image_id 解析成图片字节与尺寸。
+ * 不写任何文件（plan 与 apply 共用）。
+ */
+export async function normalizePageOps(
+  job: PresentationJob,
+  pageNo: number,
+  rawOps: unknown,
+  viewer: ImageViewer
+): Promise<PageEditOp[]> {
+  if (!Array.isArray(rawOps) || rawOps.length === 0 || rawOps.length > 20)
+    invalidInput('操作列表须为 1–20 个操作');
+  const out: PageEditOp[] = [];
+  for (const raw of rawOps as unknown[]) {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
+      invalidInput('每个操作须为对象');
+    const r = raw as Record<string, unknown>;
+    switch (r.op) {
+      case 'set_text': {
+        const text = r.text;
+        if (typeof text !== 'string' || text.length > 5000)
+          invalidInput('set_text 的文字须为字符串且不超过 5000 字');
+        out.push({
+          op: 'set_text',
+          elementId: asNonEmptyString(r.elementId, 'elementId'),
+          text,
+        });
+        break;
+      }
+      case 'set_style': {
+        const align = r.align;
+        if (
+          align !== undefined &&
+          align !== 'left' &&
+          align !== 'center' &&
+          align !== 'right'
+        )
+          invalidInput('align 只接受 left、center、right');
+        const fontSizePt = r.fontSizePt;
+        if (
+          fontSizePt !== undefined &&
+          (typeof fontSizePt !== 'number' || !Number.isFinite(fontSizePt))
+        )
+          invalidInput('fontSizePt 须为数字（单位 pt）');
+        out.push({
+          op: 'set_style',
+          elementId: asNonEmptyString(r.elementId, 'elementId'),
+          ...(typeof r.color === 'string' ? { color: r.color } : {}),
+          ...(r.explicitColor === true ? { explicitColor: true } : {}),
+          ...(fontSizePt !== undefined
+            ? { fontSizePt: fontSizePt as number }
+            : {}),
+          ...(typeof r.bold === 'boolean' ? { bold: r.bold } : {}),
+          ...(align !== undefined
+            ? { align: align as 'left' | 'center' | 'right' }
+            : {}),
+        });
+        break;
+      }
+      case 'move':
+      case 'resize': {
+        out.push({
+          op: r.op,
+          elementId: asNonEmptyString(r.elementId, 'elementId'),
+          rectIn: resolveTargetRect(job, pageNo, r),
+        });
+        break;
+      }
+      case 'replace_image': {
+        const imageId = asNonEmptyString(r.imageId, 'imageId');
+        const ref = await resolveImageRef(viewer, imageId);
+        const resolved = await resolveImageBytes(ref);
+        if (!resolved)
+          invalidInput(
+            `图片 ${imageId} 无法取到（存储不可达或外域地址），不能换图`
+          );
+        const ext = IMAGE_MIME_TO_EXT[resolved.mime];
+        if (!ext)
+          invalidInput(`图片 ${imageId} 的类型 ${resolved.mime} 不支持换图`);
+        const dims = parseImageDimensions(resolved.bytes, ext);
+        const rectIn =
+          typeof r.slotId === 'string' || r.rectIn !== undefined
+            ? resolveTargetRect(job, pageNo, r)
+            : undefined;
+        out.push({
+          op: 'replace_image',
+          elementId: asNonEmptyString(r.elementId, 'elementId'),
+          image: {
+            bytes: resolved.bytes,
+            ext,
+            width: dims?.width ?? null,
+            height: dims?.height ?? null,
+          },
+          ...(rectIn ? { rectIn } : {}),
+        });
+        break;
+      }
+      case 'add_element': {
+        const kind = r.kind === 'shape' ? 'shape' : 'text';
+        if (kind === 'text' && typeof r.text !== 'string')
+          invalidInput('新增文字元素须给出文字');
+        const fontSizePt = r.fontSizePt;
+        if (
+          fontSizePt !== undefined &&
+          (typeof fontSizePt !== 'number' || !Number.isFinite(fontSizePt))
+        )
+          invalidInput('fontSizePt 须为数字（单位 pt）');
+        out.push({
+          op: 'add_element',
+          kind,
+          ...(kind === 'text' ? { text: r.text as string } : {}),
+          rectIn: resolveTargetRect(job, pageNo, r),
+          ...(typeof r.color === 'string' ? { color: r.color } : {}),
+          ...(r.explicitColor === true ? { explicitColor: true } : {}),
+          ...(fontSizePt !== undefined
+            ? { fontSizePt: fontSizePt as number }
+            : {}),
+          ...(typeof r.bold === 'boolean' ? { bold: r.bold } : {}),
+        });
+        break;
+      }
+      case 'delete_element': {
+        out.push({
+          op: 'delete_element',
+          elementId: asNonEmptyString(r.elementId, 'elementId'),
+        });
+        break;
+      }
+      default:
+        invalidInput(`未知操作：${String(r.op)}`);
+    }
+  }
+  return out;
+}
+
+function jobLayoutCode(
+  job: PresentationJob,
+  pageNo: number
+): LayoutCode | null {
+  const layouts = parseLayoutAssignments(job.layoutAssignments);
+  return layouts?.find((l) => l.pageNo === pageNo)?.layout ?? null;
+}
+
+/** 取指定页的元素清单（page_get）：元素 + 所在槽位 + 是否可编辑 + 当前版本。 */
+export async function getPageElementList(
+  job: PresentationJob,
+  pageNo: number
+): Promise<{
+  jobId: string;
+  pageNo: number;
+  slideCount: number | null;
+  layout: string | null;
+  currentVersion: number;
+  editable: boolean;
+  editableNote: string | null;
+  elements: ReturnType<typeof getPageElements>['elements'];
+}> {
+  if (!Number.isInteger(pageNo) || pageNo < 1)
+    invalidInput('pageNo 须为正整数');
+  if (job.slideCount !== null && pageNo > job.slideCount)
+    invalidInput(`第 ${pageNo} 页不存在（本稿共 ${job.slideCount} 页）`);
+  const currentVersion = await getCurrentPageVersion(job.id);
+  const bytes =
+    currentVersion > 0
+      ? await getJobCurrentBytes(job)
+      : await downloadOriginalPptx(job);
+  const layoutCode = jobLayoutCode(job, pageNo);
+  const view = getPageElements(bytes, pageNo, layoutCode);
+  return {
+    jobId: job.id,
+    pageNo,
+    slideCount: job.slideCount,
+    layout: layoutCode,
+    currentVersion,
+    editable: view.editable,
+    editableNote: view.editable
+      ? null
+      : '该稿未带 element_id（历史旧稿），不支持单页编辑',
+    elements: view.elements,
+  };
+}
+
+/** 拟改动清单（不写文件）：校验 ops 逐项可执行，并回显每项改什么。 */
+export async function planPageEdit(
+  job: PresentationJob,
+  pageNo: number,
+  rawOps: unknown,
+  viewer: ImageViewer,
+  referenceImageId?: string
+): Promise<{
+  jobId: string;
+  pageNo: number;
+  currentVersion: number;
+  wouldBeVersion: number;
+  requiresConfirmation: true;
+  referenceImageId: string | null;
+  changes: Awaited<ReturnType<typeof describePageOps>>;
+}> {
+  if (referenceImageId) {
+    // 参考图只校验存在与可见性（走能力一的 image_id 体系）；图里“改什么”
+    // 由调用方 agent 对照 page_get 清单识别后下发 ops，服务端不猜。
+    await resolveImageRef(viewer, referenceImageId);
+  }
+  const ops = await normalizePageOps(job, pageNo, rawOps, viewer);
+  const bytes = await getJobCurrentBytes(job);
+  const changes = describePageOps(bytes, pageNo, ops);
+  const currentVersion = await getCurrentPageVersion(job.id);
+  return {
+    jobId: job.id,
+    pageNo,
+    currentVersion,
+    wouldBeVersion: currentVersion + 1,
+    requiresConfirmation: true,
+    referenceImageId: referenceImageId ?? null,
+    changes,
+  };
+}
+
+/**
+ * 执行单页编辑：只重写该页，写新版本文件 + 版本行，更新元素索引缓存，
+ * 返回改后单页预览（元素清单，非图片——见本节头部说明）与新版本号。
+ * 调用方须先确认：截图模式与删除/换图类操作在 handler 层先走 plan。
+ */
+export async function applyPageEdit(
+  job: PresentationJob,
+  pageNo: number,
+  rawOps: unknown,
+  viewer: ImageViewer,
+  opts?: { referenceImageId?: string }
+): Promise<{
+  jobId: string;
+  pageNo: number;
+  version: number;
+  applied: Awaited<ReturnType<typeof describePageOps>>;
+  pagePreview: {
+    rendered: false;
+    note: string;
+    elements: ReturnType<typeof getPageElements>['elements'];
+  };
+}> {
+  const ops = await normalizePageOps(job, pageNo, rawOps, viewer);
+  const bytes = await getJobCurrentBytes(job);
+  const { bytes: newBytes, applied, index } = applyPageOps(bytes, pageNo, ops);
+  const currentVersion = await getCurrentPageVersion(job.id);
+  const version = currentVersion + 1;
+  await createPageVersion({
+    jobId: job.id,
+    version,
+    pageNo,
+    ops,
+    bytes: newBytes,
+  });
+  await updateJob(job.id, {
+    elementIndex: serializeJobMeta(index),
+  }).catch(() => {});
+  const layoutCode = jobLayoutCode(job, pageNo);
+  const preview = getPageElements(newBytes, pageNo, layoutCode);
+  return {
+    jobId: job.id,
+    pageNo,
+    version,
+    applied,
+    pagePreview: {
+      rendered: false,
+      note: '服务端容器内无 LibreOffice 等渲染工具，单页预览为改后元素清单（非图片）；请在 PowerPoint 中打开下载文件核对',
+      elements: preview.elements,
+    },
+  };
+}
+
+/**
+ * 按版本号回退：另起一版、内容复制目标版本（targetVersion 0 = 原稿），
+ * 不删旧行；下载随之指向回退版。只能回退到比当前版本小的已有版本。
+ */
+export async function revertPageEdit(
+  job: PresentationJob,
+  targetVersion: number
+): Promise<{
+  jobId: string;
+  version: number;
+  revertedTo: number;
+  pageNo: number;
+}> {
+  if (!Number.isInteger(targetVersion) || targetVersion < 0)
+    invalidInput('回退版本号须为 ≥0 的整数');
+  const currentVersion = await getCurrentPageVersion(job.id);
+  if (currentVersion === 0) invalidInput('本稿还没有任何编辑版本，无可回退');
+  if (targetVersion >= currentVersion)
+    invalidInput(
+      `只能回退到比当前版本 ${currentVersion} 小的已有版本（0 = 原稿）`
+    );
+  let bytes: Buffer;
+  let pageNo = 0;
+  if (targetVersion === 0) {
+    bytes = await downloadOriginalPptx(job);
+  } else {
+    const row = await getPageVersion(job.id, targetVersion);
+    if (!row) invalidInput(`没有版本 ${targetVersion}`);
+    const found = await readPageVersionBytes(row);
+    if (!found)
+      throw new PresentonError(
+        'presenton_error',
+        `版本 ${targetVersion} 的文件丢失，无法回退`
+      );
+    bytes = found;
+    pageNo = row.pageNo;
+  }
+  const version = currentVersion + 1;
+  await createPageVersion({
+    jobId: job.id,
+    version,
+    pageNo,
+    ops: [
+      { op: 'revert', fromVersion: currentVersion, toVersion: targetVersion },
+    ],
+    bytes,
+  });
+  const index = buildElementIndex(bytes);
+  if (index)
+    await updateJob(job.id, {
+      elementIndex: serializeJobMeta(index),
+    }).catch(() => {});
+  return { jobId: job.id, version, revertedTo: targetVersion, pageNo };
+}
+
+/** 供 presentations_get 回显的当前编辑版本号（无编辑时为 0）。 */
+export async function getJobPageVersion(job: PresentationJob): Promise<number> {
+  return getCurrentPageVersion(job.id);
 }

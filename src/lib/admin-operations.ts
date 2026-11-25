@@ -754,6 +754,84 @@ export const adminOperations: AdminOperation[] = [
     'presentations/{id}',
     remove
   ),
+  op(
+    'presentations_page_get',
+    'List the elements of one page of a completed PPT deck (stage 2): element_id, type (text/shape/image/chart), current text or properties, and the layout slot each element sits in. Call this before any page edit to locate elements by id — never guess coordinates. Only the agent account that created the job can read it — other callers get a 404. editable=false means the deck has no element ids (a legacy deck): single-page editing is not supported for it, do not try to edit it.',
+    'presentations.read',
+    'POST',
+    'presentations/page',
+    z
+      .object({
+        jobId: z.string().min(1).max(191),
+        pageNo: z.number().int().min(1).max(50),
+      })
+      .strict()
+  ),
+  op(
+    'presentations_page_edit',
+    'Edit exactly one page of a completed PPT deck (stage 2, native editable objects only — text stays a text box, shapes stay shapes, pictures stay pictures). Pass jobId, pageNo, and an ops list (at most 20 ops): set_text {elementId, text} changes only the text (position, size and color are untouched unless the same request says otherwise); set_style {elementId, color?, fontSizePt?, bold?, align?} — color must be a theme color (#2F5597, #003266, #005B9F, #27AE60, #ED7D31, #9DC3E6, #D9DEE6, #F7F9FC) or a color the user explicitly gave (set explicitColor=true to assert so; never invent a color); move/resize {elementId, slotId | rectIn} — target by layout slot id or an explicit {x, y, width, height} rectangle in inches; out-of-bounds is rejected, never silently clipped; replace_image {elementId, imageId} swaps the picture for an image from presentations_image_search/upload (cover-cropped into the slot, never stretched); add_element {kind: text|shape, text?, slotId | rectIn, color?}; delete_element {elementId}. Only the named page is rewritten — all other pages stay byte-identical. Destructive ops (delete_element, replace_image) and screenshot mode (referenceImageId, an image_id from the image library) first return a proposed change list (requiresConfirmation=true, nothing is written) — show it to the user and re-call with confirm=true to execute. Plain spoken set_text/set_style/move/resize/add_element execute immediately. Each executed edit bumps the version; the returned pagePreview is the edited page element list (not a rendered image — the server has no renderer) and downloadUrl points at the new full deck. Legacy decks without element ids are refused with a clear message.',
+    'presentations.generate',
+    'POST',
+    'presentations/page/edit',
+    z
+      .object({
+        jobId: z.string().min(1).max(191),
+        pageNo: z.number().int().min(1).max(50),
+        ops: z
+          .array(
+            z
+              .object({
+                op: z.enum([
+                  'set_text',
+                  'set_style',
+                  'move',
+                  'resize',
+                  'replace_image',
+                  'add_element',
+                  'delete_element',
+                ]),
+                elementId: z.string().min(1).max(191).optional(),
+                text: z.string().max(5000).optional(),
+                color: z.string().max(20).optional(),
+                explicitColor: z.boolean().optional(),
+                fontSizePt: z.number().min(6).max(100).optional(),
+                bold: z.boolean().optional(),
+                align: z.enum(['left', 'center', 'right']).optional(),
+                slotId: z.string().min(1).max(191).optional(),
+                rectIn: z
+                  .object({
+                    x: z.number(),
+                    y: z.number(),
+                    width: z.number(),
+                    height: z.number(),
+                  })
+                  .strict()
+                  .optional(),
+                imageId: z.string().min(1).max(191).optional(),
+                kind: z.enum(['text', 'shape']).optional(),
+              })
+              .strict()
+          )
+          .min(1)
+          .max(20),
+        referenceImageId: z.string().min(1).max(191).optional(),
+        confirm: z.boolean().optional(),
+      })
+      .strict()
+  ),
+  op(
+    'presentations_page_revert',
+    'Roll back a PPT deck to an earlier single-page-edit version (stage 2): pass jobId and version (0 = the original Presenton deck). A new version is created copying that version — history is never deleted — and the download link then points at the rolled-back deck. Only the agent account that created the job can revert it — other callers get a 404.',
+    'presentations.generate',
+    'POST',
+    'presentations/page/revert',
+    z
+      .object({
+        jobId: z.string().min(1).max(191),
+        version: z.number().int().min(0),
+      })
+      .strict()
+  ),
 ];
 
 export const adminScopes = [
