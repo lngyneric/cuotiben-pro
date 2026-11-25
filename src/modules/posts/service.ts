@@ -25,6 +25,13 @@ export enum PostStatus {
   PENDING = 'pending',
   DRAFT = 'draft',
   ARCHIVED = 'archived',
+  /**
+   * 已排查（reviewed）：知识库抽取链的冻结状态。管理员在 /wiki/admin/posts
+   * 标为已排查后，抽取同步不再跟踪该文档的源文件、不再重复抽取（见
+   * /home/sysmex/kb-draft-sync/sync-kb-drafts-load.cjs 的 FROZEN 分支）；
+   * 除此之外的状态，源文件更新都会触发重新抽取并覆盖内容（附更新留痕）。
+   */
+  REVIEWED = 'reviewed',
 }
 
 type Post = typeof post.$inferSelect;
@@ -227,7 +234,7 @@ export async function remove(id: string) {
 
 export async function updateStatusMany(
   ids: string[],
-  status: PostStatus.DRAFT | PostStatus.PUBLISHED
+  status: PostStatus.DRAFT | PostStatus.PUBLISHED | PostStatus.REVIEWED
 ) {
   const rows = await db()
     .update(post)

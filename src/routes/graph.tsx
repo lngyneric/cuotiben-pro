@@ -173,12 +173,14 @@ const ROLES: { key: Role; labelKey: string }[] = [
 const STATUS_LABEL: Record<string, string> = {
   published: 'graph.status_published',
   draft: 'graph.status_draft',
+  reviewed: 'graph.status_reviewed',
 };
 
 function statusText(status: string | undefined, liveStatus?: string): string {
   const s = liveStatus ?? status;
   if (s === 'published') return m['graph.status_published']();
   if (s === 'draft') return m['graph.status_draft']();
+  if (s === 'reviewed') return m['graph.status_reviewed']();
   if (s === '未入库') return m['graph.status_not_in_library']();
   return m['graph.status_unknown']();
 }
@@ -238,6 +240,7 @@ function GraphPage() {
     queryKey: ['graph-overlay'],
     queryFn: () =>
       apiGet<{
+        isAdmin: boolean;
         courses: OverlayCourse[];
         links: OverlayLink[];
         counts: OverlayCounts;
@@ -246,6 +249,9 @@ function GraphPage() {
     staleTime: 60_000,
     retry: false,
   });
+  // 管理员才看得到草稿／已排查课（服务端 /api/graph 已按 isAdmin 过滤，
+  // 这里只决定可视化里画不画草稿节点；非管理员收不到草稿数据）。
+  const isGraphAdmin = overlayQ.data?.isAdmin ?? false;
   // 人员轴：管理员/导师才有数据；其他人 403，tab 自动隐藏。
   const peopleQ = useQuery({
     queryKey: ['graph-people'],
@@ -448,10 +454,11 @@ function GraphPage() {
         continue;
       links.push({ source: e.source, target: e.target, kind: 'rel' });
     }
-    // 课程节点：静态边＋动态关联，只取已发布课。
+    // 课程节点：静态边＋动态关联，管理员可见草稿／已排查课，其他人只看已发布课。
     const addCourse = (nodeId: string, bid: string) => {
       const c = liveCourseByBid.get(bid);
-      if (!c || c.status !== 'published') return;
+      if (!c) return;
+      if (c.status !== 'published' && !isGraphAdmin) return;
       if (courseSeen.has(bid)) return;
       courseSeen.add(bid);
       items.push({
@@ -474,7 +481,13 @@ function GraphPage() {
       for (const l of list) addCourse(nodeId, l.courseBid);
     }
     return { items, links };
-  }, [visibleDomains, visibleNodeIds, dynamicLinksByNode, liveCourseByBid]);
+  }, [
+    visibleDomains,
+    visibleNodeIds,
+    dynamicLinksByNode,
+    liveCourseByBid,
+    isGraphAdmin,
+  ]);
 
   // 每节点已发布课数（静态边＋动态关联去重），阶段轴用。
   const nodeCourseCount = useMemo(() => {

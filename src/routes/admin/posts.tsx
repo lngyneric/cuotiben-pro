@@ -71,7 +71,7 @@ interface CategoryOption {
 }
 
 const PAGE_SIZE = 20;
-const TABS = ['all', 'published', 'draft'] as const;
+const TABS = ['all', 'published', 'draft', 'reviewed'] as const;
 type Tab = (typeof TABS)[number];
 
 const postSchema = z.object({
@@ -196,7 +196,7 @@ function PostsPage() {
   });
 
   const batchStatusMutation = useMutation({
-    mutationFn: (status: 'published' | 'draft') =>
+    mutationFn: (status: 'published' | 'draft' | 'reviewed') =>
       apiPost<{ updated: number }>('/api/admin/posts/batch-status', {
         ids: [...selectedIds],
         status,
@@ -232,7 +232,16 @@ function PostsPage() {
   const statusVariant = (s: string) => {
     if (s === 'published') return 'default' as const;
     if (s === 'draft') return 'secondary' as const;
+    if (s === 'reviewed') return 'outline' as const;
     return 'outline' as const;
+  };
+
+  // 状态徽标显示本地化文案（不再直接显示 DB 原值）。
+  const statusLabel = (s: string) => {
+    if (s === 'published') return m['admin.posts.status_published']();
+    if (s === 'draft') return m['admin.posts.status_draft']();
+    if (s === 'reviewed') return m['admin.posts.status_reviewed']();
+    return s;
   };
 
   const pageItems = listQuery.data?.items ?? [];
@@ -286,7 +295,9 @@ function PostsPage() {
     { header: m['admin.posts.author_col'](), cell: (p) => p.authorName || '—' },
     {
       header: m['admin.posts.status_col'](),
-      cell: (p) => <Badge variant={statusVariant(p.status)}>{p.status}</Badge>,
+      cell: (p) => (
+        <Badge variant={statusVariant(p.status)}>{statusLabel(p.status)}</Badge>
+      ),
     },
     {
       header: m['admin.posts.created_at'](),
@@ -423,6 +434,9 @@ function PostsPage() {
                   <SelectItem value="published">
                     {m['admin.posts.status_published']()}
                   </SelectItem>
+                  <SelectItem value="reviewed">
+                    {m['admin.posts.status_reviewed']()}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -544,6 +558,14 @@ function PostsPage() {
                     onClick={() => batchStatusMutation.mutate('draft')}
                   >
                     {m['admin.posts.batch_draft']()}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={batchStatusMutation.isPending}
+                    onClick={() => batchStatusMutation.mutate('reviewed')}
+                  >
+                    {m['admin.posts.batch_reviewed']()}
                   </Button>
                   <Button
                     size="sm"
