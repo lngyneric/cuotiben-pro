@@ -531,7 +531,17 @@ test('postSlugs resolve server-side and files upload through Presenton', async (
   );
   assert.ok(asyncCall, 'expected a generate/async call');
   const asyncBody = JSON.parse(asyncCall.body);
-  assert.deepEqual(asyncBody.files, ['/tmp/presenton/test/x.txt']);
+  // 用户文件 note.txt 先传、Logo（public/logo.png）随后上传；桩对每次
+  // 上传都回同一假路径，故两项相同；第二通上传的文件名须是 logo.png。
+  assert.deepEqual(asyncBody.files, [
+    '/tmp/presenton/test/x.txt',
+    '/tmp/presenton/test/x.txt',
+  ]);
+  const uploads = stub.calls.filter((c) =>
+    c.url.endsWith('/api/v1/ppt/files/mcp-upload')
+  );
+  assert.equal(uploads.length, 2);
+  assert.equal(JSON.parse(uploads[1].body).files[0].filename, 'logo.png');
   assert.match(asyncBody.content, /Test Post Title/);
   assert.match(asyncBody.content, /Post body used as PPT source material/);
 });
