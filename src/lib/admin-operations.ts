@@ -660,7 +660,7 @@ export const adminOperations: AdminOperation[] = [
         content: z.string().max(10_000).optional(),
         nSlides: z.number().int().min(1).max(50).optional(),
         language: z.string().max(50).default('Chinese'),
-        template: z.string().max(191).default('general'),
+        template: z.string().max(191).default('sysmex'),
         mode: z.enum(['standard', 'smart']).default('standard'),
         instructions: z.string().max(2000).optional(),
         files: z

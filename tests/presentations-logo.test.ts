@@ -1,12 +1,16 @@
-// Logo 注入单测：tryResolveLogo 双路径解析（public/ 与 .output/public/）。
-// 容器里 cwd 是 /app，静态资源只在 /app/.output/public/ 下；只读 public/
-// 会使容器里永远返回 null（2026-11-25 实测定位）。测试用 process.chdir
-// 切换到临时目录，不依赖仓库真实的 public/logo.png。
+// Logo 模板内嵌单测：Logo 不再随每次生成上传，改嵌在 sysmex 模板里。
+// 2026-11-25 之前是每次生成都把 public/logo.png 当文件上传给 Presenton，
+// Presenton 对它跑文档解析/LiteParse OCR，任务 495f3eca 因此 600 秒超时、
+// 成稿从未产出。改为模板内嵌后：
+//   1. presentations_generate 默认模板是 sysmex（不再是 general）；
+//   2. 主题指令写明 Logo 已嵌在模板右上角，不再要求另外放 Logo；
+//   3. 仓库里的 presenton-templates/sysmex/template.json 确实含 Logo
+//      （24 处：12 个背景组件变体 + 12 个版式的背景拷贝），
+//      static/logo.png 是透明底 PNG（275×110），可浮于任何底色上。
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 
 // 最小环境：只让模块加载（db() 是惰性的，导入不建连）。
 Object.assign(process.env, {
@@ -17,92 +21,45 @@ Object.assign(process.env, {
   VITE_APP_URL: 'http://localhost:3000',
 });
 
-const { tryResolveLogo } = await import('../src/modules/presentations/images');
+const { findOperation } = await import('../src/server/admin/execute');
+const { buildThemeInstructions, PPT_LOGO_SLOT } =
+  await import('../src/modules/presentations/layouts');
 
-// 1x1 透明 PNG（合法 PNG 头，供真实字节断言）。
-const PNG_1X1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-  'base64'
-);
-
-let root = '';
-const origCwd = process.cwd();
-
-before(async () => {
-  root = await mkdtemp(join(tmpdir(), 'shipany-ppt-logo-test-'));
+test('logo: presentations_generate 默认模板是 sysmex', () => {
+  const op = findOperation('presentations_generate');
+  const parsed = op.schema.parse({});
+  assert.equal(parsed.template, 'sysmex');
 });
 
-after(async () => {
-  process.chdir(origCwd);
-  await rm(root, { recursive: true, force: true });
+test('logo: 主题指令写明 Logo 已嵌在模板右上角', () => {
+  const text = buildThemeInstructions();
+  assert.match(text, /Logo 已嵌在 sysmex 模板右上角/);
+  assert.match(text, new RegExp(String(PPT_LOGO_SLOT.x)));
+  assert.match(text, /不要另外放 Logo/);
 });
 
-async function withCwd(dir: string, fn: () => Promise<void>): Promise<void> {
-  process.chdir(dir);
-  try {
-    await fn();
-  } finally {
-    process.chdir(origCwd);
-  }
-}
-
-async function makeCase(
-  name: string,
-  files: Record<string, Buffer>
-): Promise<string> {
-  const dir = join(root, name);
-  for (const [rel, bytes] of Object.entries(files)) {
-    const full = join(dir, rel);
-    await mkdir(join(full, '..'), { recursive: true });
-    await writeFile(full, bytes);
-  }
-  return dir;
-}
-
-test('logo: public/logo.png 优先解析', async () => {
-  const dir = await makeCase('public-only', {
-    'public/logo.png': PNG_1X1,
-  });
-  await withCwd(dir, async () => {
-    const logo = await tryResolveLogo();
-    assert.ok(logo, 'should resolve from public/');
-    assert.equal(logo.name, 'logo.png');
-    assert.equal(logo.mime, 'image/png');
-    assert.deepEqual(logo.bytes, PNG_1X1);
-  });
+test('logo: sysmex 模板文件含 24 处 Logo 元素', async () => {
+  const tplPath = join(
+    process.cwd(),
+    'presenton-templates/sysmex/template.json'
+  );
+  const tpl = JSON.parse(await readFile(tplPath, 'utf-8'));
+  assert.equal(tpl.id, 'sysmex');
+  const placements =
+    JSON.stringify(tpl).match(/"name":\s*"sysmex_logo"/g) ?? [];
+  assert.equal(placements.length, 24);
 });
 
-test('logo: 只有 .output/public/logo.png 时走容器路径', async () => {
-  const dir = await makeCase('output-only', {
-    '.output/public/logo.png': PNG_1X1,
-  });
-  await withCwd(dir, async () => {
-    const logo = await tryResolveLogo();
-    assert.ok(logo, 'should resolve from .output/public/');
-    assert.equal(logo.name, 'logo.png');
-    assert.equal(logo.mime, 'image/png');
-    assert.deepEqual(logo.bytes, PNG_1X1);
-  });
-});
-
-test('logo: 两处都有时优先 public/', async () => {
-  const dir = await makeCase('both', {
-    'public/logo.png': Buffer.from('from-public'),
-    '.output/public/logo.png': Buffer.from('from-output'),
-  });
-  await withCwd(dir, async () => {
-    const logo = await tryResolveLogo();
-    assert.ok(logo, 'should resolve');
-    assert.deepEqual(logo.bytes, Buffer.from('from-public'));
-  });
-});
-
-test('logo: 两处都没有返回 null', async () => {
-  const dir = await makeCase('none', {
-    'public/other.png': PNG_1X1,
-  });
-  await withCwd(dir, async () => {
-    const logo = await tryResolveLogo();
-    assert.equal(logo, null);
-  });
+test('logo: 模板 Logo 是透明底 PNG（275×110）', async () => {
+  const bytes = await readFile(
+    join(process.cwd(), 'presenton-templates/sysmex/static/logo.png')
+  );
+  // PNG 签名 + IHDR：宽 275、高 110、颜色类型 6（RGBA）。
+  assert.deepEqual(
+    [...bytes.subarray(0, 8)],
+    [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+  );
+  assert.equal(bytes.readUInt32BE(16), 275);
+  assert.equal(bytes.readUInt32BE(20), 110);
+  assert.equal(bytes[25], 6);
 });

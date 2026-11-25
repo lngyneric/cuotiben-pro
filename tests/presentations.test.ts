@@ -531,17 +531,13 @@ test('postSlugs resolve server-side and files upload through Presenton', async (
   );
   assert.ok(asyncCall, 'expected a generate/async call');
   const asyncBody = JSON.parse(asyncCall.body);
-  // 用户文件 note.txt 先传、Logo（public/logo.png）随后上传；桩对每次
-  // 上传都回同一假路径，故两项相同；第二通上传的文件名须是 logo.png。
-  assert.deepEqual(asyncBody.files, [
-    '/tmp/presenton/test/x.txt',
-    '/tmp/presenton/test/x.txt',
-  ]);
+  // 用户文件 note.txt 是唯一上传；Logo 已嵌在 sysmex 模板里，不再上传。
+  assert.deepEqual(asyncBody.files, ['/tmp/presenton/test/x.txt']);
   const uploads = stub.calls.filter((c) =>
     c.url.endsWith('/api/v1/ppt/files/mcp-upload')
   );
-  assert.equal(uploads.length, 2);
-  assert.equal(JSON.parse(uploads[1].body).files[0].filename, 'logo.png');
+  assert.equal(uploads.length, 1);
+  assert.equal(JSON.parse(uploads[0].body).files[0].filename, 'note.txt');
   assert.match(asyncBody.content, /Test Post Title/);
   assert.match(asyncBody.content, /Post body used as PPT source material/);
 });
@@ -665,12 +661,12 @@ test('stage0: generation injects the single-source theme block and records theme
   );
   assert.ok(asyncCall, 'expected a generate/async call');
   const asyncBody = JSON.parse(asyncCall.body);
-  // 用户自填的 instructions 在前，主题块在后；主题块含全部 8 色与 Logo 位。
+  // 用户自填的 instructions 在前，主题块在后；主题块含全部 8 色与 Logo 位（模板内嵌）。
   assert.match(asyncBody.instructions, /User instruction here/);
   assert.match(asyncBody.instructions, /#2F5597/);
   assert.match(asyncBody.instructions, /#003266/);
   assert.match(asyncBody.instructions, /#F7F9FC/);
-  assert.match(asyncBody.instructions, /Logo 固定在右上角/);
+  assert.match(asyncBody.instructions, /Logo 已嵌在 sysmex 模板右上角/);
   assert.match(asyncBody.instructions, new RegExp(PPT_THEME_VERSION));
   const job = await presentationsService.getJob(jobId);
   assert.equal(job?.themeVersion, PPT_THEME_VERSION);

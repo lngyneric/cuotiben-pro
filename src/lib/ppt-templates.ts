@@ -2,7 +2,8 @@
 //
 // 与服务端 src/modules/presentations/service.ts 的 PRESENTATION_TEMPLATES
 // 一致（2026-11-22 对线上 Presenton 0.9.12-beta 的
-// /api/v1/ppt/template/all 实测得到的 16 个内置版式，id 即小写名）。
+// /api/v1/ppt/template/all 实测得到的 16 个内置版式，id 即小写名；另加
+// wiki 自建的 sysmex 模板，见 presenton-templates/，为默认版式）。
 // label 是按 Presenton 官方英文描述译的中文简称；服务端只校验 id，
 // 这里改 label 不影响生成。版式只在标准模式生效，智能模式由系统自动选。
 export interface PptTemplateOption {
@@ -11,7 +12,8 @@ export interface PptTemplateOption {
 }
 
 export const PPT_TEMPLATES: PptTemplateOption[] = [
-  { id: 'general', label: '通用（默认）' },
+  { id: 'sysmex', label: 'Sysmex（默认）' },
+  { id: 'general', label: '通用' },
   { id: 'momentum', label: '动势 · 商务策略' },
   { id: 'dynamic', label: '动感 · 故事感' },
   { id: 'executive', label: '行政 · 战略决策' },
@@ -29,4 +31,4 @@ export const PPT_TEMPLATES: PptTemplateOption[] = [
   { id: 'verdant', label: '翠绿 · 叙事绿调' },
 ];
 
-export const PPT_DEFAULT_TEMPLATE = 'general';
+export const PPT_DEFAULT_TEMPLATE = 'sysmex';
