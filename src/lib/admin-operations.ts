@@ -9,7 +9,13 @@ const page = {
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
 };
 const search = { ...page, search: short.optional() };
-const postStatus = z.enum(['draft', 'pending', 'published', 'archived']);
+const postStatus = z.enum([
+  'draft',
+  'pending',
+  'published',
+  'archived',
+  'reviewed',
+]);
 const ticketStatus = z.enum(['open', 'replied', 'closed']);
 const postFields = {
   slug: z.string().min(1).max(191),
@@ -401,14 +407,14 @@ export const adminOperations: AdminOperation[] = [
   ),
   op(
     'posts_batch_status',
-    'Set the status of multiple database posts at once (published or draft).',
+    'Set the status of multiple database posts at once (published, draft or reviewed).',
     'posts.write',
     'POST',
     'posts/batch-status',
     z
       .object({
         ids: z.array(id).min(1).max(100),
-        status: z.enum(['published', 'draft']),
+        status: z.enum(['published', 'draft', 'reviewed']),
       })
       .strict()
   ),

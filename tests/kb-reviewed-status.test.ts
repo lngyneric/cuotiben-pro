@@ -38,6 +38,7 @@ const { getUuid } = await import('@/lib/hash');
 const { PostStatus } = await import('@/modules/posts/service');
 const { batchStatus } = await import('@/server/admin/handlers/posts');
 const { filterGraphOverlayForViewer } = await import('@/routes/api/graph');
+const { adminOperations } = await import('@/lib/admin-operations');
 
 const authorId = getUuid();
 await db().insert(user).values({
@@ -121,4 +122,34 @@ test('filterGraphOverlayForViewer：非管理员只看已发布', () => {
   const admin = filterGraphOverlayForViewer(courses, links, true);
   assert.equal(admin.courses.length, 3);
   assert.equal(admin.links.length, 3);
+});
+
+test('admin 操作 schema 层接受 reviewed（回归：executeAdmin 入口 zod 曾漏 reviewed）', () => {
+  // PR #64 只改了 handler 与前端，漏了 src/lib/admin-operations.ts 的
+  // 入口 schema：executeAdmin 先跑 operation.schema.parse()，'reviewed'
+  // 在此被拒，前端就报 Invalid option。必须走到 schema 层测，不要只测 handler。
+  const byName = new Map(adminOperations.map((op) => [op.name, op]));
+  const schemaOf = (name: string) => byName.get(name)!.schema;
+  // ① posts_list 接受 status=reviewed（“已排查” tab 列表加载）
+  schemaOf('posts_list').parse({ status: 'reviewed' });
+  // ② posts_create / posts_update 接受 status=reviewed（编辑框选已排查再保存）
+  schemaOf('posts_create').parse({
+    slug: 'x',
+    title: 't',
+    status: 'reviewed',
+  });
+  schemaOf('posts_update').parse({ id: 'x', status: 'reviewed' });
+  // ③ posts_batch_status 接受 status=reviewed（批量“标为已排查”）
+  schemaOf('posts_batch_status').parse({
+    ids: ['x'],
+    status: 'reviewed',
+  });
+  // ④ 非法状态仍被拒绝
+  assert.throws(() => schemaOf('posts_list').parse({ status: 'bogus' }));
+  assert.throws(() =>
+    schemaOf('posts_batch_status').parse({
+      ids: ['x'],
+      status: 'archived',
+    })
+  );
 });

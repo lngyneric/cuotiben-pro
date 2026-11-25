@@ -51,6 +51,7 @@ exports, permission codes, and behavior that changes for end users.
 - 内容：① 新状态 `reviewed`（界面“已排查”）：`PostStatus.REVIEWED`、`admin/posts` 增加 tab／状态下拉／批量按钮与中英文文案；`posts_batch_status` 允许 `reviewed`。② 同步链路改语义：主机 `sync-kb-drafts-load.cjs` 对已存在的 `kb-draft-%` 稿子不再一律跳过——状态为 `reviewed` 时输出 FROZEN（不更新、消费掉 pending 行），其余状态输出 UPDATED（覆盖标题／描述／正文／标签＋更新时间，并附更新留痕行）；`sync_kb_drafts.py` 相应消费 UPDATED／FROZEN 行。上游 kb_extract 本就按 SharePoint `last_modified` 发现源文件变化并重新抽取（pending 行），本次未改 ai-shifu。③ 图谱关联同步（主机 `sync-graph-courses.py`）从只读已发布课改为读 `published/draft/reviewed` 三种状态，草稿课也获得节点关联。④ `/api/graph` 按管理员过滤：非管理员只返回已发布课及其关联（服务端过滤，不只靠页面藏），响应新增 `isAdmin`；图谱页管理员可见草稿／已排查课节点（带状态徽标），其他人仍只看已发布。
 - 更新语义（已定）：重新抽取覆盖内容时，已发布稿也会被覆盖（已排查是唯一的冻结手段）；覆盖动作在正文末尾留痕（含更新时间与冻结提示）。管理员在 admin/posts 改过草稿又被源文件更新覆盖时，以抽取内容为准，留痕行是唯一记录。
 - 对已有项目：无 migration（`post.status` 是自由字符串列）、无新权限码；部署后下次图谱同步（每小时 :25）与抽取同步（每小时 :40）即按新语义跑；已存在的草稿不受影响，直到其源文件下次变化。
+- 补丁（同日）：PR #64 上线后发现 `src/lib/admin-operations.ts` 的入口 zod schema 漏了 `reviewed`——`executeAdmin` 先跑 `operation.schema.parse()`，故 admin/posts 上选“已排查”（tab 列表、`posts_create`/`posts_update` 保存、批量“标为已排查”）均报 `Invalid option`。已在 `postStatus` 与 `posts_batch_status` 的 status enum 里补 `reviewed`；回归测试走 schema 层（`tests/kb-reviewed-status.test.ts`）。
 
 ## 2026-11-25: PPT Logo 注入——真实 Sysmex Logo + 容器路径修复
 
