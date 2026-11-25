@@ -723,13 +723,23 @@ export async function markImagesUsed(imageIds: string[]): Promise<void> {
 // ─── Logo ───────────────────────────────────────────────────────────────────
 
 /**
- * Logo 图片解析（阶段 0 遗留）：Presenton 的生成接口不接受 Logo 参数，
- * 唯一能尝试的路径是把 Logo 当文件上传、再用 instructions 指定落位。
- * 仓库里只有 public/logo.svg（ShipAny 默认占位，SVG 且非企业 Logo），
- * 图片上传通道不接受 SVG；两份用户模板 PPT（11 月单页与设计稿）的
- * Logo 位都是空占位矩形、未嵌任何光栅图。所以当前无可注入的光栅 Logo：
- * 本函数只认 public/logo.{png,jpg,jpeg,webp}，不存在即返回 null，
- * 由调用方如实记录“未配置 Logo 图片”，不编造、不拿占位图顶替。
+ * Logo 图片解析：Presenton 的生成接口不接受 Logo 参数，唯一能尝试的
+ * 路径是把 Logo 当文件上传、再用 instructions 指定落位（见 service.ts
+ * 的 logoInstruction，按 layouts.ts 的 PPT_LOGO_SLOT 落右上角）。
+ *
+ * 查找顺序（同一文件名先找开发路径、再找容器路径）：
+ *   1. <cwd>/public/logo.{png,jpg,jpeg,webp} —— 本地开发（vite dev /
+ *      直接跑 node），静态资源就在仓库的 public/ 下。
+ *   2. <cwd>/.output/public/logo.{png,jpg,jpeg,webp} —— 生产容器：
+ *      容器 cwd 是 /app，但最终镜像只从 builder 拷了 .output，/app/public
+ *      根本不存在；静态资源实际在 /app/.output/public/。只读 public/
+ *      会使容器里永远返回 null（2026-11-25 实测定位）。
+ *
+ * 仓库里已放真实 Sysmex Logo：public/logo.png（275×110，2026-11-25
+ * 用户给的 https://eu.sysmex.com.cn/logo.png）。public/logo.svg 仍是
+ * ShipAny 默认占位（黑方块＋S），SVG 不被上传通道接受、永不使用。
+ * 两个位置都没有光栅 Logo 时返回 null，由调用方如实记录
+ * “未配置 Logo 图片”，不编造、不拿占位图顶替。
  */
 export async function tryResolveLogo(): Promise<{
   bytes: Buffer;
@@ -739,14 +749,16 @@ export async function tryResolveLogo(): Promise<{
   const { readFile } = await import('node:fs/promises');
   const { join } = await import('node:path');
   for (const file of ['logo.png', 'logo.jpg', 'logo.jpeg', 'logo.webp']) {
-    try {
-      const bytes = await readFile(join(process.cwd(), 'public', file));
-      const ext = extOf(file);
-      const mime = IMAGE_EXTS[ext];
-      if (!mime) continue;
-      return { bytes, mime, name: file };
-    } catch {
-      continue;
+    for (const dir of ['public', join('.output', 'public')]) {
+      try {
+        const bytes = await readFile(join(process.cwd(), dir, file));
+        const ext = extOf(file);
+        const mime = IMAGE_EXTS[ext];
+        if (!mime) continue;
+        return { bytes, mime, name: file };
+      } catch {
+        continue;
+      }
     }
   }
   return null;

@@ -83,6 +83,8 @@ function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
       },
     });
   }
+  if (url.endsWith('/api/v1/ppt/files/mcp-upload'))
+    return json({ file_paths: ['/tmp/presenton/test/x.txt'] });
   if (url.includes('/api/v1/ppt/presentation/status/')) {
     stub.statusCalls += 1;
     if (stub.mode === 'error-quota')
