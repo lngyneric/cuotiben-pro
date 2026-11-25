@@ -625,6 +625,53 @@ export async function notifyLlmQuotaExceeded(params: {
   }
 }
 
+/**
+ * Push a generation-timeout alert for a PPT job (阶段 1 超时告警）。
+ * 与 Magpie 额度告警同路：同一 Notify 渠道、同一 notify_llm_quota_enabled
+ * 开关，不新起一套告警系统。超时本身另有结构化日志（service.ts 的
+ * logGenerationTimeout），本函数只负责提醒管理员。
+ */
+export async function notifyGenerationTimeout(params: {
+  jobId: string;
+  title: string;
+  elapsedMs: number;
+  stage: string;
+}): Promise<void> {
+  try {
+    const configs = await getAllConfigs();
+    if (configs.notify_llm_quota_enabled === 'false') return;
+
+    const channels = getNotifyChannelConfig(configs);
+    if (Object.keys(channels).length === 0) return;
+
+    const language = normalizeNotifyLanguage(configs.notify_language);
+    const seconds = Math.round(params.elapsedMs / 1000);
+    const text =
+      language === 'zh'
+        ? `【PPT 生成】生成超时：任务 ${params.jobId}${params.title ? `（${params.title}）` : ''}在${params.stage}卡了 ${seconds} 秒未完成，已置失败。请检查 wiki Presenton 与 Magpie 状态后重试。`
+        : `[PPT] Generation timeout: job ${params.jobId}${params.title ? ` (${params.title})` : ''} stuck at ${params.stage} for ${seconds}s and was marked failed. Check wiki Presenton and Magpie, then retry.`;
+    const results = await sendToChannels(channels, text, {
+      event: 'presentations.generation_timeout',
+      data: {
+        job_id: params.jobId,
+        title: params.title,
+        elapsed_ms: String(params.elapsedMs),
+        stage: params.stage,
+      },
+    });
+    for (const r of results) {
+      if (!r.success) {
+        console.error(
+          `[notify] ${r.channel} failed for ppt job ${params.jobId}:`,
+          r.error
+        );
+      }
+    }
+  } catch (error) {
+    console.error('[notify] generation timeout notification failed', error);
+  }
+}
+
 /** Admin "Test" button for the ticket group: send a sample ticket. */
 export async function sendTestTicketNotification(
   configs: Record<string, string>

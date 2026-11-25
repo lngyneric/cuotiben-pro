@@ -43,6 +43,19 @@ export interface PageSourceRef {
   sources: PageSource[];
 }
 
+/** 图片映射（阶段 1）：每页哪个槽位放哪张图，cover-crop，不拉伸。 */
+export interface ImageAssignment {
+  pageNo: number;
+  slotId: string;
+  imageId: string;
+  fileName: string;
+  fitMode: 'cover';
+  lowRes: boolean;
+  /** 取不到图字节时记 missing（槽位留空，任务结果列明缺图页）。 */
+  missing?: boolean;
+  missingReason?: string;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -115,6 +128,37 @@ export function parsePageSourceRefs(
       });
     }
     out.push({ pageNo: item.pageNo, sources });
+  }
+  return out;
+}
+
+/** 校验并解析 image_assignments；结构不对返回 null。 */
+export function parseImageAssignments(
+  value: string | null | undefined
+): ImageAssignment[] | null {
+  const arr = parseJsonArray(value);
+  if (!arr) return null;
+  const out: ImageAssignment[] = [];
+  for (const item of arr) {
+    if (!isRecord(item)) return null;
+    if (!isPositiveInt(item.pageNo)) return null;
+    if (typeof item.slotId !== 'string' || !item.slotId) return null;
+    if (typeof item.imageId !== 'string' || !item.imageId) return null;
+    if (typeof item.fileName !== 'string') return null;
+    if (item.fitMode !== 'cover') return null;
+    if (typeof item.lowRes !== 'boolean') return null;
+    out.push({
+      pageNo: item.pageNo,
+      slotId: item.slotId,
+      imageId: item.imageId,
+      fileName: item.fileName,
+      fitMode: 'cover',
+      lowRes: item.lowRes,
+      ...(item.missing === true ? { missing: true } : {}),
+      ...(typeof item.missingReason === 'string' && item.missingReason
+        ? { missingReason: item.missingReason }
+        : {}),
+    });
   }
   return out;
 }

@@ -136,6 +136,24 @@ function entryData(entry: ZipEntry): Buffer | null {
   }
 }
 
+/**
+ * 读 zip 全部条目（名 + 解压后字节），供阶段 1 的 PPTX 文本抽取复用
+ * （pptx-text.ts）。不是合法 zip 或任一条目解不开时返回 null。
+ */
+export function readZipEntries(
+  bytes: Buffer
+): Array<{ name: string; data: Buffer }> | null {
+  const entries = parseZip(bytes);
+  if (!entries) return null;
+  const out: Array<{ name: string; data: Buffer }> = [];
+  for (const entry of entries) {
+    const data = entryData(entry);
+    if (!data) return null;
+    out.push({ name: entry.name, data });
+  }
+  return out;
+}
+
 interface SlideShape {
   name: string;
   type: PptxElementType;

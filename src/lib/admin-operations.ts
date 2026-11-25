@@ -566,7 +566,7 @@ export const adminOperations: AdminOperation[] = [
   ),
   op(
     'presentations_generate',
-    'Generate a PPT deck with the intranet Presenton engine (Magpie LLM). Returns a job id immediately — generation takes roughly 1–2 minutes; poll presentations_get until completed/failed, then download. Materials: content text, inline base64 files (total decoded size at most 1.5 MB per call; larger files must be wiki posts), and/or wiki post slugs resolved server-side. At least one of content/files/postSlugs is required; nSlides is 1–50. Never paste raw personal data (ID numbers, phone numbers) — send summaries instead.',
+    'Generate a PPT deck with the intranet wiki Presenton engine (Magpie LLM). Returns a job id immediately — generation takes roughly 1–2 minutes; poll presentations_get until completed/failed, then download. Materials: content text, inline base64 files (total decoded size at most 1.5 MB per call; larger files must be wiki posts), and/or wiki post slugs resolved server-side. At least one of content/files/postSlugs is required; nSlides is 1–50. Sourced generation (stage 1): pass sourceIds + outlineId from presentations_outline after the user confirms the outline — the deck is then built only from those sources, per page, with provenance in presentations_get (sourceMode, pageSourceRefs); without sources the result is marked sourceMode unsourced ("no-source generation"). Images: pass images [{imageId, pageNo, slotId}] from presentations_image_search/upload — at most 5 images per task, at most 3 pasted screenshots; slots come from the layout registry. Never paste raw personal data (ID numbers, phone numbers) — send summaries instead.',
     'presentations.generate',
     'POST',
     'presentations/generate',
@@ -591,6 +591,158 @@ export const adminOperations: AdminOperation[] = [
           .max(10)
           .optional(),
         postSlugs: z.array(z.string().min(1).max(191)).max(10).optional(),
+        sourceIds: z.array(z.string().min(1).max(191)).max(10).optional(),
+        outlineId: z.string().min(1).max(191).optional(),
+        images: z
+          .array(
+            z
+              .object({
+                imageId: z.string().min(1).max(191),
+                pageNo: z.number().int().min(1).max(50),
+                slotId: z.string().min(1).max(191).optional(),
+              })
+              .strict()
+          )
+          .max(5)
+          .optional(),
+      })
+      .strict()
+  ),
+  op(
+    'presentations_source_add',
+    'Register one PPT content source (stage 1). kind upload_text: a text file (txt/md/csv/pdf/docx/xls/xlsx) is extracted server-side — single file at most 8000 chars, all sources together at most 16000 chars, over the limit is rejected, never silently truncated. kind reference_ppt: a .pptx file is extracted per slide (titles + theme colors); single file at most 25 MB — over 25 MB is rejected with a hint to convert to PDF (as a content source) or images (as a layout reference); use is content, style, or both. kind wiki_kb: pass keyword to search only published wiki content visible to the caller (drafts and content the caller cannot view never appear) and get a hit list to select from; pass postIds [{refType: post|html, refId}] to register the selected hits. Empty extraction registers as status empty and cannot enter an outline. Only extracted/retrieved content is used for generation — nothing is invented.',
+    'presentations.generate',
+    'POST',
+    'presentations/sources',
+    z
+      .object({
+        kind: z.enum(['upload_text', 'reference_ppt', 'wiki_kb']),
+        file: z
+          .object({
+            name: z.string().min(1).max(191),
+            mime: z.string().max(191),
+            base64: z.string().min(1),
+          })
+          .strict()
+          .optional(),
+        keyword: z.string().max(200).optional(),
+        postIds: z
+          .array(
+            z
+              .object({
+                refType: z.enum(['post', 'html']),
+                refId: z.string().min(1).max(191),
+              })
+              .strict()
+          )
+          .max(10)
+          .optional(),
+        use: z.enum(['content', 'style', 'both']).optional(),
+      })
+      .strict()
+  ),
+  op(
+    'presentations_outline',
+    'Build a page-split draft from registered PPT content sources (stage 1): one page per topic (upload text split by headings/paragraphs, one reference-PPT slide per page, one wiki article per page), each page with title, key points, chosen layout (A–H) with reason, and its source refs. Upload sources take priority over wiki_kb (supplementary only). Pages whose source fragment is too thin are marked insufficient (title + points only, never expanded). Returns outlineId + pages as a draft — the user must confirm it (presentations_outline_confirm) before presentations_generate accepts it.',
+    'presentations.generate',
+    'POST',
+    'presentations/outline',
+    z
+      .object({
+        sourceIds: z.array(z.string().min(1).max(191)).min(1).max(10),
+      })
+      .strict()
+  ),
+  op(
+    'presentations_outline_confirm',
+    'Confirm a PPT page-split draft (stage 1). Optionally pass the full pages array to adjust titles, points, or layouts (page numbers must stay 1..N consecutive; sources must be the registered ones); confirming without pages accepts the draft as-is. Only a confirmed outline may be used by presentations_generate. Confirming bumps the version; the previous version is not kept as a separate row.',
+    'presentations.generate',
+    'POST',
+    'presentations/outline/confirm',
+    z
+      .object({
+        outlineId: z.string().min(1).max(191),
+        pages: z
+          .array(
+            z
+              .object({
+                pageNo: z.number().int().min(1).max(50),
+                title: z.string().min(1).max(200),
+                points: z.array(z.string().max(500)).max(10),
+                layout: z.enum(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']),
+                layoutReason: z.string().max(500),
+                sources: z
+                  .array(
+                    z
+                      .object({
+                        sourceId: z.string().min(1).max(191),
+                        sourceKind: z.enum([
+                          'upload_text',
+                          'reference_ppt',
+                          'wiki_kb',
+                        ]),
+                        locator: z.string().min(1).max(191),
+                      })
+                      .strict()
+                  )
+                  .min(1),
+                primaryKind: z.enum([
+                  'upload_text',
+                  'reference_ppt',
+                  'wiki_kb',
+                ]),
+                insufficient: z.boolean().optional(),
+                note: z.string().max(500).optional(),
+                styleRef: z
+                  .object({
+                    sourceId: z.string().min(1).max(191),
+                    note: z.string().max(500),
+                  })
+                  .strict()
+                  .optional(),
+              })
+              .strict()
+          )
+          .max(50)
+          .optional(),
+      })
+      .strict()
+  ),
+  op(
+    'presentations_image_upload',
+    'Upload an image or paste a screenshot for PPT use (stage 1, no image generation). The file is stored in the wiki file storage (R2 or local uploads) and only metadata is kept; returns image_id. Accepts png/jpg/jpeg/gif/webp (no SVG), single file at most 5 MB decoded. Per-task limits: at most 5 images total, at most 3 pasted screenshots — library picks and new uploads count together.',
+    'presentations.generate',
+    'POST',
+    'presentations/images',
+    z
+      .object({
+        file: z
+          .object({
+            name: z.string().min(1).max(191),
+            mime: z.string().max(191),
+            base64: z.string().min(1),
+          })
+          .strict(),
+        sourceType: z.enum(['upload', 'paste']).default('upload'),
+        tags: z.string().max(500).optional(),
+      })
+      .strict()
+  ),
+  op(
+    'presentations_image_search',
+    "Search existing images for PPT use (stage 1, no image generation): the caller's own uploads/pastes, cover images of published blog articles, and images embedded in /wiki/html pages the caller may view. Filter by filename/tag text (q), tags, or source type (wiki_blog/wiki_html/upload/paste); sort recent orders by last use. Images the caller cannot view never appear. Returns image_id, source ref, dimensions, and owner for each candidate.",
+    'presentations.read',
+    'POST',
+    'presentations/images/search',
+    z
+      .object({
+        q: z.string().max(200).optional(),
+        tags: z.string().max(500).optional(),
+        sourceType: z
+          .enum(['wiki_blog', 'wiki_html', 'upload', 'paste'])
+          .optional(),
+        sort: z.enum(['recent', 'newest']).optional(),
+        limit: z.number().int().min(1).max(50).optional(),
       })
       .strict()
   ),

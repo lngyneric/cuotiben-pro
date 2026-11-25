@@ -23,7 +23,10 @@ import {
   type PresentationJob,
 } from '@/config/db/schema';
 import { getConfig } from '@/modules/config/service';
-import { notifyLlmQuotaExceeded } from '@/modules/notify/service';
+import {
+  notifyGenerationTimeout,
+  notifyLlmQuotaExceeded,
+} from '@/modules/notify/service';
 import { getUuid } from '@/lib/hash';
 
 import {
@@ -31,8 +34,39 @@ import {
   stampElementIds,
   type PptxElementIndex,
 } from './element-index';
-import { parseElementIndex, serializeJobMeta } from './job-meta';
-import { buildThemeInstructions, PPT_THEME_VERSION } from './layouts';
+import { PresentonError, type PresentonErrorCode } from './errors';
+import {
+  markImagesUsed,
+  resolveImageBytes,
+  resolveImageMappings,
+  resolveImageRef,
+  tryResolveLogo,
+  type ImageMappingInput,
+} from './images';
+import {
+  parseElementIndex,
+  parseImageAssignments,
+  parseLayoutAssignments,
+  parsePageSourceRefs,
+  serializeJobMeta,
+  type ImageAssignment,
+  type LayoutAssignment,
+  type PageSourceRef,
+} from './job-meta';
+import {
+  allSlots,
+  buildThemeInstructions,
+  PPT_LOGO_SLOT,
+  PPT_THEME_VERSION,
+} from './layouts';
+import {
+  assembleOutlineContent,
+  getOwnedOutline,
+  getOwnedSources,
+  parseOutlinePages,
+} from './sources';
+
+export { PresentonError, type PresentonErrorCode } from './errors';
 
 export type PresentationMode = 'standard' | 'smart';
 export type PresentationJobStatus =
@@ -40,8 +74,6 @@ export type PresentationJobStatus =
   | 'generating'
   | 'completed'
   | 'failed';
-
-export const PRESENTON_DEFAULT_BASE_URL = 'http://presenton-trial:80';
 export const MAX_SLIDES = 50;
 export const MAX_FILES = 10;
 /** MCP/Execute 请求上限 2MB，base64 解码后总量不超 1.5MB。 */
@@ -77,6 +109,16 @@ export type PresentationTemplate = (typeof PRESENTATION_TEMPLATES)[number];
 const CONTROL_TIMEOUT_MS = 30_000;
 const UPLOAD_TIMEOUT_MS = 120_000;
 const STREAM_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * 生成超时（阶段 1）：从任务受理起 600 秒未完成即置失败。600 秒取自跟踪器
+ * 历史（2026-11-21 两次 smart 超时均为 600 秒整）。超时由 presentations_get
+ * 的 refreshJob 发现（轮询时检查），smart 流中断由 runSmartStream 发现。
+ * wiki 不配置模型名：Presenton/Magpie 用哪路模型由服务端定，日志里只记
+ * 'magpie (Presenton default)'，不编一个具体模型 id。
+ */
+export const GENERATION_TIMEOUT_MS = 600_000;
+export const PRESENTON_MODEL_LABEL = 'magpie (Presenton default)';
 
 /**
  * Presenton 瞬时失败只重试一次，间隔 1 秒。2026-11-20 实测：smart /create
@@ -127,21 +169,7 @@ const ALLOWED_FILE_TYPES: Record<string, string[]> = {
   webp: ['image/webp'],
 };
 
-export type PresentonErrorCode =
-  | 'not_configured'
-  | 'invalid_input'
-  | 'llm_quota_exceeded'
-  | 'presenton_error';
-
-export class PresentonError extends Error {
-  constructor(
-    public code: PresentonErrorCode,
-    message: string,
-    public status = 400
-  ) {
-    super(message);
-  }
-}
+export const PRESENTON_DEFAULT_BASE_URL = 'http://presenton-trial:80';
 
 export interface PresentationFileInput {
   name: string;
@@ -158,6 +186,12 @@ export interface GenerateInput {
   instructions?: string;
   files?: PresentationFileInput[];
   postSlugs?: string[];
+  /** 阶段 1 内容源：已登记的来源 id；带来源生成必须同时给已确认的 outlineId。 */
+  sourceIds?: string[];
+  /** 阶段 1：已确认的页面划分草稿 id。 */
+  outlineId?: string;
+  /** 阶段 1 图片映射：imageId + 目标页 + 槽位（slotId 省略时用版式默认图片槽）。 */
+  images?: ImageMappingInput[];
 }
 
 function isQuotaSignal(status: number | undefined, text: string): boolean {
@@ -469,6 +503,17 @@ async function consumeSmartStream(presentationId: string): Promise<void> {
       }
     );
   } catch (error) {
+    // 流超时（AbortSignal.timeout 10 分钟）按生成超时处理，不归为笼统
+    // 的 presenton_error：runSmartStream 据此走 generation_timeout 分支。
+    if (
+      error instanceof Error &&
+      (error.name === 'TimeoutError' || error.name === 'AbortError')
+    )
+      throw new PresentonError(
+        'generation_timeout',
+        `Smart generation stream timed out after ${STREAM_TIMEOUT_MS / 1000}s`,
+        504
+      );
     throw new PresentonError(
       'presenton_error',
       `Cannot reach Presenton (${baseUrl}): ${error instanceof Error ? error.message : 'network error'}`,
@@ -574,7 +619,8 @@ async function updateJob(
 
 async function failJob(
   job: PresentationJob,
-  error: unknown
+  error: unknown,
+  opts?: { timeoutStage?: string }
 ): Promise<PresentationJob | undefined> {
   let code: PresentonErrorCode = 'presenton_error';
   let message = 'Presentation generation failed';
@@ -598,7 +644,48 @@ async function failJob(
       detail: message,
     }).catch(() => {});
   }
+  if (code === 'generation_timeout') {
+    // 超时告警与额度告警同路（Notify + 每小时跟踪器扫 failed 任务），
+    // 另落一条结构化日志，凭 job_id 可查（见 logGenerationTimeout）。
+    const elapsedMs = Date.now() - new Date(job.createdAt).getTime();
+    const stage = opts?.timeoutStage ?? 'polling';
+    logGenerationTimeout({
+      jobId: job.id,
+      elapsedMs,
+      promptChars: job.promptChars ?? null,
+      stage,
+    });
+    await notifyGenerationTimeout({
+      jobId: job.id,
+      title: job.title || '',
+      elapsedMs,
+      stage,
+    }).catch(() => {});
+  }
   return updated;
+}
+
+/**
+ * 超时结构化日志（阶段 1 清单字段）：job_id、耗时（受理到超时）、
+ * 提示长度、所用模型；有阶段信息时记下卡在哪一步。跟踪器（每小时扫
+ * presentation_job 的新失败任务）与 Notify 告警另走 failJob 的分支。
+ */
+export function logGenerationTimeout(params: {
+  jobId: string;
+  elapsedMs: number;
+  promptChars: number | null;
+  stage: string;
+}): void {
+  console.error(
+    `[presentations][generation_timeout] ${JSON.stringify({
+      job_id: params.jobId,
+      elapsed_ms: params.elapsedMs,
+      prompt_chars: params.promptChars,
+      prompt_length: params.promptChars,
+      model: PRESENTON_MODEL_LABEL,
+      stage: params.stage,
+    })}`
+  );
 }
 
 async function completeJob(
@@ -647,15 +734,28 @@ async function assembleContent(input: GenerateInput): Promise<{
 }
 
 export function validateGenerateInput(input: GenerateInput): void {
+  const sourced = !!input.sourceIds && input.sourceIds.length > 0;
   if (
     !input.content?.trim() &&
     (!input.files || input.files.length === 0) &&
-    (!input.postSlugs || input.postSlugs.length === 0)
+    (!input.postSlugs || input.postSlugs.length === 0) &&
+    !sourced &&
+    !input.outlineId
   )
     throw new PresentonError(
       'invalid_input',
-      'Provide content, files, or postSlugs'
+      'Provide content, files, postSlugs, or a confirmed outline (sourceIds + outlineId)'
     );
+  if (
+    sourced &&
+    (input.content?.trim() || input.files?.length || input.postSlugs?.length)
+  )
+    throw new PresentonError(
+      'invalid_input',
+      '带来源生成时不要同时传 content/files/postSlugs：成稿只用已确认 outline 的来源片段'
+    );
+  if (input.images && input.images.length > 5)
+    throw new PresentonError('invalid_input', '单次任务最多引用 5 张图片');
   if (
     input.nSlides !== undefined &&
     (input.nSlides < 1 || input.nSlides > MAX_SLIDES)
@@ -683,20 +783,144 @@ export function validateGenerateInput(input: GenerateInput): void {
 /**
  * 建任务行并启动生成，立即返回（不等待生成完成）。
  * 启动失败时任务行置 failed 并抛出错误；额度类错误会触发管理员提醒。
+ *
+ * 阶段 1：带来源生成（sourceIds + 已确认的 outlineId）时，内容只用
+ * outline 每页的来源片段组装，版式与留痕（layoutAssignments /
+ * pageSourceRefs）随任务保存；无来源时保持现行纯提示词，但结果中标注
+ * “无来源生成”（presentations_get 的 sourceMode）。图片映射（images）
+ * 必须有已确认的 outline（槽位取自该页版式）；Logo 按 tryResolveLogo
+ * 的结果处理（见 images.ts：当前无光栅 Logo 文件可注）。
  */
 export async function createJobAndStart(params: {
   ownerUserId: string;
   ownerTokenId?: string | null;
+  isAdmin?: boolean;
   input: GenerateInput;
 }): Promise<PresentationJob> {
   const { ownerUserId, ownerTokenId, input } = params;
+  const owner = { userId: ownerUserId, tokenId: ownerTokenId ?? null };
+  const viewer = { ...owner, isAdmin: params.isAdmin ?? false };
   validateGenerateInput(input);
-  const { content, postTitles } = await assembleContent(input);
+  let content: string;
+  let title: string;
+  let layoutAssignments: LayoutAssignment[] | null = null;
+  let pageSourceRefs: PageSourceRef[] | null = null;
+  let outlinePages: ReturnType<typeof parseOutlinePages> = null;
+  if (input.outlineId || (input.sourceIds && input.sourceIds.length > 0)) {
+    if (!input.outlineId)
+      throw new PresentonError(
+        'invalid_input',
+        '带来源生成须先调用 presentations_outline 生成并确认页面划分，再带 outline_id 生成'
+      );
+    const outline = await getOwnedOutline(input.outlineId, owner);
+    if (outline.status !== 'confirmed')
+      throw new PresentonError(
+        'invalid_input',
+        '页面划分草稿尚未确认：请先确认 outline 再生成'
+      );
+    const outlineSourceIds = JSON.parse(outline.sourceIds) as string[];
+    if (input.sourceIds && input.sourceIds.length > 0) {
+      const a = [...input.sourceIds].sort();
+      const b = [...outlineSourceIds].sort();
+      if (a.length !== b.length || a.some((v, i) => v !== b[i]))
+        throw new PresentonError(
+          'invalid_input',
+          'source_ids 与已确认 outline 登记的来源不一致'
+        );
+    }
+    const sources = await getOwnedSources(outlineSourceIds, owner);
+    const sourcesById = new Map(sources.map((s) => [s.id, s]));
+    const assembled = assembleOutlineContent(outline, sourcesById);
+    content = assembled.content;
+    layoutAssignments = assembled.layoutAssignments;
+    pageSourceRefs = assembled.pageSourceRefs;
+    outlinePages = parseOutlinePages(outline.pages);
+    if (!outlinePages)
+      throw new PresentonError('invalid_input', '页面划分草稿数据损坏');
+    if (input.nSlides !== undefined && input.nSlides !== outlinePages.length)
+      throw new PresentonError(
+        'invalid_input',
+        `nSlides（${input.nSlides}）与已确认的页面划分（${outlinePages.length} 页）不一致`
+      );
+    title = outlinePages[0]?.title ?? 'PPT';
+  } else {
+    const assembled = await assembleContent(input);
+    content = assembled.content;
+    title = deriveTitle(input, assembled.postTitles);
+  }
+  if (input.images && input.images.length > 0 && !outlinePages)
+    throw new PresentonError(
+      'invalid_input',
+      '配图须先确认 outline：请先调用 presentations_outline 生成并确认页面划分，再带 images 生成'
+    );
   // 主题与 Logo 注入（唯一注入点，见 layouts.ts）：Presenton 的生成接口
   // 不接受主题色/Logo 参数，注入只能走 instructions 文本。用户自填的
   // instructions 在前，主题块在后；标准与 smart 两个模式共用同一份。
   const themeInstructions = buildThemeInstructions();
   const instructions = [input.instructions?.trim(), themeInstructions]
+    .filter(Boolean)
+    .join('\n\n');
+  // 图片：先解析映射（槽位校验 + low_res 判定），生成时再取字节上传。
+  let imageAssignments: ImageAssignment[] = [];
+  let imageFiles: PresentationFileInput[] = [];
+  let imageInstructions = '';
+  if (input.images && input.images.length > 0 && outlinePages) {
+    const mapped = await resolveImageMappings(
+      viewer,
+      outlinePages,
+      input.images
+    );
+    imageAssignments = mapped.assignments;
+    const instructionLines: string[] = [];
+    for (const a of imageAssignments) {
+      const ref = await resolveImageRef(viewer, a.imageId);
+      const bytes = await resolveImageBytes(ref);
+      if (!bytes) {
+        // 取不到图字节：该槽位留空，任务结果列明缺图，不拿别图顶替。
+        a.missing = true;
+        a.missingReason = '图片文件无法取到（存储不可达或外域地址），槽位留空';
+        continue;
+      }
+      const uploadName = `img-p${a.pageNo}-${a.slotId}-${a.fileName}`.replace(
+        /[^A-Za-z0-9._-]+/g,
+        '_'
+      );
+      imageFiles.push({
+        name: uploadName,
+        mime: bytes.mime,
+        base64: bytes.bytes.toString('base64'),
+      });
+      const slot = allSlots(
+        outlinePages.find((p) => p.pageNo === a.pageNo)!.layout
+      ).find((s) => s.id === a.slotId)!;
+      instructionLines.push(
+        `第 ${a.pageNo} 页：图片「${uploadName}」放入 ${a.slotId} 槽位（x=${slot.rectIn.x}in, y=${slot.rectIn.y}in, ${slot.rectIn.width}×${slot.rectIn.height} 英寸），按比例裁切填充（cover），禁止拉伸变形。` +
+          (a.lowRes
+            ? '注意：该图分辨率低于槽位要求（low_res），请勿放大，居中放置。'
+            : '')
+      );
+    }
+    if (instructionLines.length > 0) {
+      imageInstructions = `【配图要求】\n${instructionLines.join('\n')}`;
+    }
+    await markImagesUsed(
+      imageAssignments.filter((a) => !a.missing).map((a) => a.imageId)
+    ).catch(() => {});
+  }
+  // Logo：有光栅文件时随图一起上传、按注册表 Logo 位落位；没有时不编造。
+  let logoInstruction = '';
+  const logo = await tryResolveLogo().catch(() => null);
+  if (logo) {
+    imageFiles.push({
+      name: logo.name,
+      mime: logo.mime,
+      base64: logo.bytes.toString('base64'),
+    });
+    logoInstruction =
+      `Logo 图片「${logo.name}」固定放在右上角（x=${PPT_LOGO_SLOT.x}in, ` +
+      `y=${PPT_LOGO_SLOT.y}in, ${PPT_LOGO_SLOT.width}×${PPT_LOGO_SLOT.height} 英寸），标题区不得压住 Logo。`;
+  }
+  const fullInstructions = [instructions, imageInstructions, logoInstruction]
     .filter(Boolean)
     .join('\n\n');
   const [job] = await db()
@@ -706,8 +930,18 @@ export async function createJobAndStart(params: {
       ownerUserId,
       ownerTokenId: ownerTokenId ?? null,
       status: 'queued',
-      title: deriveTitle(input, postTitles),
+      title,
       themeVersion: PPT_THEME_VERSION,
+      ...(layoutAssignments
+        ? { layoutAssignments: serializeJobMeta(layoutAssignments) }
+        : {}),
+      ...(pageSourceRefs
+        ? { pageSourceRefs: serializeJobMeta(pageSourceRefs) }
+        : {}),
+      ...(imageAssignments.length > 0
+        ? { imageAssignments: serializeJobMeta(imageAssignments) }
+        : {}),
+      promptChars: content.length + fullInstructions.length,
     })
     .returning();
   try {
@@ -715,6 +949,9 @@ export async function createJobAndStart(params: {
       input.files && input.files.length > 0
         ? await uploadFiles(input.files)
         : [];
+    const imagePaths =
+      imageFiles.length > 0 ? await uploadFiles(imageFiles) : [];
+    const allFilePaths = [...filePaths, ...imagePaths];
     const language = (input.language || 'Chinese').trim() || 'Chinese';
     const template = (input.template || 'general').trim() || 'general';
     if (input.mode === 'smart') {
@@ -724,10 +961,10 @@ export async function createJobAndStart(params: {
           content,
           n_slides: input.nSlides,
           language,
-          file_paths: filePaths,
+          file_paths: allFilePaths,
           tone: 'default',
           verbosity: 'standard',
-          instructions,
+          instructions: fullInstructions,
           generation_mode: 'smart',
         }
       );
@@ -749,8 +986,8 @@ export async function createJobAndStart(params: {
       nSlides: input.nSlides,
       language,
       template,
-      instructions,
-      filePaths,
+      instructions: fullInstructions,
+      filePaths: allFilePaths,
     });
     const updated = await updateJob(job.id, {
       status: 'generating',
@@ -792,7 +1029,17 @@ async function runSmartStream(
     });
   } catch (error) {
     const job = await getJob(jobId);
-    if (job && job.status === 'generating') await failJob(job, error);
+    if (!job || job.status !== 'generating') return;
+    // stream 超时（consumeSmartStream 已转成 generation_timeout）按生成
+    // 超时处理，阶段记 smart-stream；其余错误沿用原有失败路径。
+    if (
+      error instanceof PresentonError &&
+      error.code === 'generation_timeout'
+    ) {
+      await failJob(job, error, { timeoutStage: 'smart-stream' });
+      return;
+    }
+    await failJob(job, error);
   } finally {
     smartStreamsInFlight.delete(jobId);
   }
@@ -807,6 +1054,23 @@ export async function refreshJob(
   job: PresentationJob
 ): Promise<PresentationJob> {
   if (job.status === 'completed' || job.status === 'failed') return job;
+  // 超时判定（阶段 1）：受理超过 GENERATION_TIMEOUT_MS 仍未完成，置失败
+  // 并落结构化日志 + Notify（failJob 的 generation_timeout 分支）。
+  // 发现时机是下一次 presentations_get 轮询；每小时跟踪器扫到该失败
+  // 任务后上报，与 Magpie 额度告警同路。
+  if (Date.now() - new Date(job.createdAt).getTime() > GENERATION_TIMEOUT_MS) {
+    const elapsedMs = Date.now() - new Date(job.createdAt).getTime();
+    const failed = await failJob(
+      job,
+      new PresentonError(
+        'generation_timeout',
+        `Generation timed out after ${Math.round(elapsedMs / 1000)}s (limit ${GENERATION_TIMEOUT_MS / 1000}s)`,
+        504
+      ),
+      { timeoutStage: 'polling' }
+    );
+    return failed ?? job;
+  }
   try {
     if (job.presentonTaskId) {
       const task = await getTaskStatus(job.presentonTaskId);
@@ -926,4 +1190,44 @@ export async function listJobElements(
     elementIndex: serializeJobMeta(index),
   }).catch(() => {});
   return index;
+}
+
+// ─── 留痕视图（阶段 1） ─────────────────────────────────────────────────────
+
+/**
+ * 任务的来源/版式/图片留痕（MCP presentations_get 与页面查询共用）：
+ * - sourceMode：'sourced'（带已确认 outline 生成）或 'unsourced'
+ *   （纯提示词，結果中标注“无来源生成”）。
+ * - missingImagePages：有图片槽位、但未配上可用图的页码（“第 N 页缺图”）。
+ */
+export function jobProvenanceView(job: PresentationJob): {
+  sourceMode: 'sourced' | 'unsourced';
+  layoutAssignments: LayoutAssignment[] | null;
+  pageSourceRefs: PageSourceRef[] | null;
+  imageAssignments: ImageAssignment[] | null;
+  missingImagePages: number[];
+} {
+  const layoutAssignments = parseLayoutAssignments(job.layoutAssignments);
+  const pageSourceRefs = parsePageSourceRefs(job.pageSourceRefs);
+  const imageAssignments = parseImageAssignments(job.imageAssignments);
+  const missingImagePages: number[] = [];
+  if (layoutAssignments) {
+    const covered = new Set(
+      (imageAssignments ?? []).filter((a) => !a.missing).map((a) => a.pageNo)
+    );
+    for (const la of layoutAssignments) {
+      if (covered.has(la.pageNo)) continue;
+      const hasImageSlot = allSlots(la.layout).some(
+        (s) => s.type === 'main_image' || s.type === 'small_image'
+      );
+      if (hasImageSlot) missingImagePages.push(la.pageNo);
+    }
+  }
+  return {
+    sourceMode: pageSourceRefs ? 'sourced' : 'unsourced',
+    layoutAssignments,
+    pageSourceRefs,
+    imageAssignments,
+    missingImagePages,
+  };
 }
