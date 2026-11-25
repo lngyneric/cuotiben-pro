@@ -7,6 +7,7 @@ import {
 import { adminErrorResponse } from '@/server/admin/execute';
 import { presentonErrorResponse } from '@/server/admin/handlers/presentations';
 
+import { matchPermission } from '@/core/auth/rbac';
 import * as presentationsService from '@/modules/presentations/service';
 import { PresentonError } from '@/modules/presentations/service';
 import { withAppBase } from '@/lib/base-path';
@@ -60,12 +61,21 @@ async function POST({ request }: { request: Request }) {
     const job = await presentationsService.createJobAndStart({
       ownerUserId: actor.userId,
       ownerTokenId: actor.tokenId ?? null,
+      isAdmin: matchPermission('admin.*', actor.permissions),
       input: {
         content: String(body?.content ?? ''),
         nSlides,
         mode: body?.mode === 'smart' ? 'smart' : 'standard',
         template: String(body?.template ?? '').trim() || undefined,
         instructions: String(body?.instructions ?? '').trim() || undefined,
+        // 阶段 1：带来源生成（sourceIds + 已确认的 outlineId）与配图
+        // （images），与 MCP 的 presentations_generate 同一套服务。
+        sourceIds: Array.isArray(body?.sourceIds)
+          ? body.sourceIds.map(String)
+          : undefined,
+        outlineId:
+          typeof body?.outlineId === 'string' ? body.outlineId : undefined,
+        images: Array.isArray(body?.images) ? body.images : undefined,
       },
     });
     return respData({ jobId: job.id, status: job.status });
@@ -96,6 +106,7 @@ async function GET({ request }: { request: Request }) {
     } catch {
       // Refresh is best-effort; report the last known status instead.
     }
+    const provenance = presentationsService.jobProvenanceView(current);
     return respData({
       jobId: current.id,
       status: current.status,
@@ -103,6 +114,23 @@ async function GET({ request }: { request: Request }) {
       slideCount: current.slideCount,
       // 阶段 0：生成时写入的主题版本（layouts.ts 的单一主题来源）。
       ...(current.themeVersion ? { themeVersion: current.themeVersion } : {}),
+      // 阶段 1：来源模式与留痕（与 MCP presentations_get 同口径）。
+      sourceMode: provenance.sourceMode,
+      ...(provenance.layoutAssignments
+        ? { layoutAssignments: provenance.layoutAssignments }
+        : {}),
+      ...(provenance.pageSourceRefs
+        ? { pageSourceRefs: provenance.pageSourceRefs }
+        : {}),
+      ...(provenance.imageAssignments
+        ? { imageAssignments: provenance.imageAssignments }
+        : {}),
+      ...(provenance.missingImagePages.length > 0
+        ? {
+            missingImagePages: provenance.missingImagePages,
+            missingImagesNote: `第 ${provenance.missingImagePages.join('、')} 页缺图`,
+          }
+        : {}),
       ...(current.status === 'completed'
         ? {
             downloadUrl: withAppBase(

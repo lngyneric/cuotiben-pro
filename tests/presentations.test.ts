@@ -370,7 +370,10 @@ test('generate validates input: nSlides over 50 and empty materials rejected', a
 
   const empty = await generate({}, ownerToken, 'ppt-validate-2');
   assert.equal(empty.response.status, 400);
-  assert.match(empty.body.message, /content, files, or postSlugs/);
+  assert.match(
+    empty.body.message,
+    /content, files, postSlugs, or a confirmed outline/
+  );
 
   // Service-level: decoded files over 1.5 MB are rejected before any upload.
   assert.throws(

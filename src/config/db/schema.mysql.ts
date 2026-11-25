@@ -778,6 +778,9 @@ export const presentationJob = table(
     layoutAssignments: text('layout_assignments'), // JSON LayoutAssignment[]
     elementIndex: text('element_index'), // JSON PptxElementIndex
     pageSourceRefs: text('page_source_refs'), // JSON PageSourceRef[]
+    // 阶段 1：图片映射（JSON ImageAssignment[]）与下发提示长度（超时日志用）。
+    imageAssignments: text('image_assignments'),
+    promptChars: int('prompt_chars'),
     createdAt: timestamp('created_at', { fsp: 3 }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { fsp: 3 })
       .defaultNow()
@@ -792,3 +795,85 @@ export const presentationJob = table(
 
 export type PresentationJob = typeof presentationJob.$inferSelect;
 export type NewPresentationJob = typeof presentationJob.$inferInsert;
+
+// ─── Presentations 阶段 1：内容源 / 页面划分草稿 / 图片库 ──────────────────
+// 三张表只存元数据与抽取文本（不存二进制）：图片本体走 wiki 现有文件存储
+// （R2 或 public/uploads，见 presentations/images.ts 的核实记录）；来源
+// 抽取文本按附件口径截断上限（单文件 8000 字、合计 16000 字，超限拒绝不截断）。
+export const presentationSource = table(
+  'presentation_source',
+  {
+    id: varchar191('id').primaryKey(),
+    ownerUserId: varchar191('owner_user_id').notNull(),
+    ownerTokenId: varchar191('owner_token_id'),
+    kind: varchar191('kind').notNull(), // upload_text | reference_ppt | wiki_kb
+    name: varchar191('name').notNull().default(''),
+    status: varchar191('status').notNull().default('ready'), // ready | empty
+    extractChars: int('extract_chars').notNull().default(0),
+    pageCount: int('page_count'),
+    text: text('text').notNull().default(''),
+    meta: text('meta'), // JSON：参考 PPT 的逐页标题/主题色、知识库的条目清单
+    createdAt: timestamp('created_at', { fsp: 3 }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { fsp: 3 })
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (t) => [index('idx_presentation_source_owner').on(t.ownerUserId)]
+);
+
+export type PresentationSource = typeof presentationSource.$inferSelect;
+export type NewPresentationSource = typeof presentationSource.$inferInsert;
+
+export const presentationOutline = table(
+  'presentation_outline',
+  {
+    id: varchar191('id').primaryKey(),
+    ownerUserId: varchar191('owner_user_id').notNull(),
+    ownerTokenId: varchar191('owner_token_id'),
+    sourceIds: text('source_ids').notNull().default('[]'), // JSON string[]
+    pages: text('pages').notNull().default('[]'), // JSON OutlinePage[]
+    status: varchar191('status').notNull().default('draft'), // draft | confirmed
+    version: int('version').notNull().default(1),
+    createdAt: timestamp('created_at', { fsp: 3 }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { fsp: 3 })
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (t) => [index('idx_presentation_outline_owner').on(t.ownerUserId)]
+);
+
+export type PresentationOutline = typeof presentationOutline.$inferSelect;
+export type NewPresentationOutline = typeof presentationOutline.$inferInsert;
+
+export const presentationImage = table(
+  'presentation_image',
+  {
+    id: varchar191('id').primaryKey(),
+    ownerUserId: varchar191('owner_user_id').notNull(),
+    ownerTokenId: varchar191('owner_token_id'),
+    sourceType: varchar191('source_type').notNull(), // wiki_blog | wiki_html | upload | paste
+    sourceRef: text('source_ref').notNull().default(''),
+    fileName: varchar191('file_name').notNull().default(''),
+    tags: text('tags').notNull().default(''),
+    width: int('width'),
+    height: int('height'),
+    fileSize: int('file_size').notNull().default(0),
+    storageKey: varchar191('storage_key').notNull().default(''),
+    storageUrl: text('storage_url').notNull().default(''),
+    createdAt: timestamp('created_at', { fsp: 3 }).defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at', { fsp: 3 }),
+    updatedAt: timestamp('updated_at', { fsp: 3 })
+      .defaultNow()
+      .onUpdateNow()
+      .notNull(),
+  },
+  (t) => [
+    index('idx_presentation_image_owner').on(t.ownerUserId),
+    index('idx_presentation_image_source').on(t.sourceType),
+  ]
+);
+
+export type PresentationImage = typeof presentationImage.$inferSelect;
+export type NewPresentationImage = typeof presentationImage.$inferInsert;

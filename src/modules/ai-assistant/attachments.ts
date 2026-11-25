@@ -167,6 +167,51 @@ interface DecodedFile {
 }
 
 /**
+ * 单文件原文抽取（阶段 1 内容源复用）：与 processAttachments 共用同一套
+ * 类型/MIME/解码/大小校验，但不截断、不拼参考资料块——返回抽到的全部
+ * 文本与字数，由调用方按字数口径（单文件 8000 字、合计 16000 字）决定
+ * 是登记还是明确报错。图片返回空文本（图片不抽文字）。
+ */
+export async function extractSingleTextFile(
+  file: AttachmentInput
+): Promise<{ name: string; ext: string; text: string; chars: number }> {
+  const name = truncateName(String(file.name ?? '').trim());
+  if (!name) throw new AttachmentError('附件缺少文件名');
+  const ext = extOf(name);
+  const mime = String(file.mime ?? '').toLowerCase();
+  const allowed = ALLOWED_FILE_TYPES[ext];
+  if (!allowed) {
+    const unsupported = UNSUPPORTED_EXTS[ext];
+    throw new AttachmentError(
+      unsupported
+        ? `「${name}」暂不支持${unsupported}解析。${SUPPORTED_TEXT}。`
+        : `「${name}」是不支持的文件类型。${SUPPORTED_TEXT}。`
+    );
+  }
+  if (mime && mime !== 'application/octet-stream' && !allowed.includes(mime)) {
+    throw new AttachmentError(
+      `「${name}」的文件类型与扩展名不符。${SUPPORTED_TEXT}。`
+    );
+  }
+  const buf = decodeBase64(file);
+  if (buf.length === 0) {
+    throw new AttachmentError(`「${name}」是空文件`);
+  }
+  if (buf.length > MAX_FILE_DECODED_BYTES) {
+    throw new AttachmentError(`「${name}」超过 5MB，请拆小再传`);
+  }
+  if (IMAGE_EXTS.has(ext)) return { name, ext, text: '', chars: 0 };
+  let text: string;
+  try {
+    text = await extractText(ext, buf);
+  } catch {
+    throw new AttachmentError(`「${name}」解析失败，请换一份文件再试`);
+  }
+  text = (text ?? '').replace(/\r\n?/g, '\n').trim();
+  return { name, ext, text, chars: text.length };
+}
+
+/**
  * 校验并处理一次请求里的附件：抽取文字类附件的文本、直通图片。
  * 失败抛 AttachmentError（中文、带文件名）；成功返回拼好的参考资料
  * 文本与图片。调用方负责把 context 带回给前端、把 images 传给模型。

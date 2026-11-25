@@ -356,7 +356,10 @@ test('completed job downloadUrl carries the /wiki app base when APP_BASE_PATH is
 test('empty content and nSlides=51 → 400', async () => {
   const empty = await postPpt({}, ownerToken);
   assert.equal(empty.response.status, 400);
-  assert.match(empty.body.message, /content, files, or postSlugs/);
+  assert.match(
+    empty.body.message,
+    /content, files, postSlugs, or a confirmed outline/
+  );
 
   const over = await postPpt({ content: 'x', nSlides: 51 }, ownerToken);
   assert.equal(over.response.status, 400);
