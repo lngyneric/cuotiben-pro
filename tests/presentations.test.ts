@@ -33,10 +33,19 @@ const access = await import('../src/modules/admin-access/service');
 const { saveConfigs } = await import('../src/modules/config/service');
 const presentationsService =
   await import('../src/modules/presentations/service');
+const { PPT_THEME_VERSION } =
+  await import('../src/modules/presentations/layouts');
+const { parseElementIndex } =
+  await import('../src/modules/presentations/job-meta');
+const { buildElementIndex } =
+  await import('../src/modules/presentations/element-index');
+const { buildFixturePptx } = await import('./pptx-fixture');
 const { runAdminRoute, findOperation } =
   await import('../src/server/admin/execute');
 const { Route: downloadRoute } =
   await import('../src/routes/api/admin/agent/presentations/download');
+const { Route: elementsRoute } =
+  await import('../src/routes/api/ai-assistant/presentations/elements');
 
 const PPTX_BYTES = Buffer.concat([
   Buffer.from([0x50, 0x4b, 0x03, 0x04]),
@@ -61,6 +70,8 @@ const stub = {
   asyncCalls: 0,
   createFail: 'none' as 'none' | '401-once' | '400' | 'quota-429',
   asyncThrowOnce: false,
+  /** Presenton 导出端点返回的字节；默认是假字节（非合法 zip，盖章直通）。 */
+  pptxBytes: PPTX_BYTES as Buffer,
 };
 
 function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
@@ -177,9 +188,9 @@ function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
   if (url.endsWith('/api/v1/ppt/presentation/pres-1'))
     return json({ id: 'pres-1', title: 'Test Deck', slides: [{ id: 's1' }] });
   if (url.endsWith('/app_data/exports/test.pptx'))
-    return Promise.resolve(new Response(PPTX_BYTES as unknown as BodyInit));
+    return Promise.resolve(new Response(stub.pptxBytes as unknown as BodyInit));
   if (url.endsWith('/app_data/exports/smart.pptx'))
-    return Promise.resolve(new Response(PPTX_BYTES as unknown as BodyInit));
+    return Promise.resolve(new Response(stub.pptxBytes as unknown as BodyInit));
   return Promise.resolve(new Response('not found', { status: 404 }));
 }
 
@@ -620,4 +631,130 @@ test('dropped connection on standard start is retried once', async () => {
   await waitForJob(jobId, 'generating');
   assert.equal(stub.asyncCalls, 2);
   stub.asyncThrowOnce = false;
+});
+
+test('stage0: generation injects the single-source theme block and records themeVersion', async () => {
+  stub.mode = 'pending-then-completed';
+  stub.statusCalls = 0;
+  stub.calls = [];
+  const { body } = await generate(
+    {
+      content: 'Theme injection test',
+      nSlides: 1,
+      instructions: 'User instruction here',
+    },
+    ownerToken,
+    'ppt-theme-1'
+  );
+  const jobId = body.data.jobId as string;
+  const asyncCall = stub.calls.find((c) =>
+    c.url.endsWith('/api/v1/ppt/presentation/generate/async')
+  );
+  assert.ok(asyncCall, 'expected a generate/async call');
+  const asyncBody = JSON.parse(asyncCall.body);
+  // 用户自填的 instructions 在前，主题块在后；主题块含全部 8 色与 Logo 位。
+  assert.match(asyncBody.instructions, /User instruction here/);
+  assert.match(asyncBody.instructions, /#2F5597/);
+  assert.match(asyncBody.instructions, /#003266/);
+  assert.match(asyncBody.instructions, /#F7F9FC/);
+  assert.match(asyncBody.instructions, /Logo 固定在右上角/);
+  assert.match(asyncBody.instructions, new RegExp(PPT_THEME_VERSION));
+  const job = await presentationsService.getJob(jobId);
+  assert.equal(job?.themeVersion, PPT_THEME_VERSION);
+  // MCP 查询回 themeVersion；smart 模式同样带主题块。
+  stub.calls = [];
+  const smart = await generate(
+    { content: 'Theme smart test', nSlides: 1, mode: 'smart' },
+    ownerToken,
+    'ppt-theme-2'
+  );
+  const smartJobId = (smart.body as any).data.jobId as string;
+  await waitForJob(smartJobId, 'completed');
+  const createCall = stub.calls.find((c) =>
+    c.url.endsWith('/api/v1/ppt/presentation/create')
+  );
+  assert.ok(createCall, 'expected a smart create call');
+  assert.match(JSON.parse(createCall.body).instructions, /#2F5597/);
+  const got = await request('presentations_get', { id: jobId }, ownerToken);
+  assert.equal(
+    ((await got.json()) as any).data.themeVersion,
+    PPT_THEME_VERSION
+  );
+});
+
+test('stage0: downloaded pptx carries stamped element ids; elements listable per page', async () => {
+  stub.mode = 'pending-then-completed';
+  stub.statusCalls = 0;
+  stub.pptxBytes = buildFixturePptx(8);
+  try {
+    const { body } = await generate(
+      { content: 'Stamp test', nSlides: 1 },
+      ownerToken,
+      'ppt-stamp-1'
+    );
+    const jobId = body.data.jobId as string;
+    await request('presentations_get', { id: jobId }, ownerToken);
+    const got = await request('presentations_get', { id: jobId }, ownerToken);
+    assert.equal(((await got.json()) as any).data.status, 'completed');
+
+    const file = await download(jobId, ownerToken);
+    assert.equal(file.status, 200);
+    const bytes = Buffer.from(await file.arrayBuffer());
+    assert.notDeepEqual(bytes, stub.pptxBytes);
+    const index = buildElementIndex(bytes);
+    assert.ok(index, 'downloaded pptx must be a stamped, parseable pptx');
+    assert.equal(index!.pages.length, 2);
+    assert.deepEqual(
+      index!.pages[0].elements.map((e) => e.elementId),
+      ['el-p1-1', 'el-p1-2', 'el-p1-3']
+    );
+    assert.deepEqual(
+      index!.pages[1].elements.map((e) => e.elementId),
+      ['el-p2-1', 'el-p2-2']
+    );
+    // 下载时索引已缓存到任务行；服务层按 ID 列出与缓存一致。
+    // 注意：缓存的 name 是盖章前原名（Title），重读盖章后文件的 name 是
+    // el-id；两者 ID/类型/文字一致，只比这些。
+    const job = await presentationsService.getJob(jobId);
+    const cached = parseElementIndex(job?.elementIndex);
+    assert.ok(cached);
+    const slim = (idx: {
+      pages: {
+        pageNo: number;
+        elements: { elementId: string; type: string; text: string }[];
+      }[];
+    }) =>
+      idx.pages.map((p) =>
+        p.elements.map((e) => [e.elementId, e.type, e.text])
+      );
+    assert.deepEqual(slim(cached!), slim(index!));
+    const listed = await presentationsService.listJobElements(job!);
+    assert.deepEqual(slim(listed), slim(index!));
+
+    // elements 路由：属主可查，非属主 404。
+    const handlers = elementsRoute.options.server!.handlers as {
+      GET: (context: { request: Request }) => Promise<Response>;
+    };
+    const mine = await handlers.GET({
+      request: new Request(
+        `http://localhost/api/ai-assistant/presentations/elements?id=${encodeURIComponent(jobId)}`,
+        { headers: { Authorization: `Bearer ${ownerToken}` } }
+      ),
+    });
+    assert.equal(mine.status, 200);
+    const mineBody = (await mine.json()) as any;
+    assert.equal(mineBody.data.pages.length, 2);
+    assert.equal(mineBody.data.themeVersion, PPT_THEME_VERSION);
+    // 路由有 200ms/ IP 的限流，两次调用之间等一下再调非属主。
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const foreign = await handlers.GET({
+      request: new Request(
+        `http://localhost/api/ai-assistant/presentations/elements?id=${encodeURIComponent(jobId)}`,
+        { headers: { Authorization: `Bearer ${otherToken}` } }
+      ),
+    });
+    assert.equal(foreign.status, 404);
+  } finally {
+    stub.pptxBytes = PPTX_BYTES;
+  }
 });

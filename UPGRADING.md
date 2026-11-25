@@ -46,6 +46,12 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-25: PPT 阶段 0 地基——版式注册表、主题单点注入、element_id、留痕字段
+
+- 内容：①版式 A–H 注册表（`src/modules/presentations/layouts.ts`）：槽位定义（类型/英寸坐标/比例坐标）按设计稿（`PPT模板设计稿-版式确认.pptx`，13.33×7.5 英寸）实测抄入，页眉与 Logo 位全版式统一；②主题与 Logo 收口到一处：8 色 + 字体 + Logo 位只在 `layouts.ts`，生成时由 `service.ts` 把 `buildThemeInstructions()` 追加进 Presenton 请求的 `instructions`（标准与 smart 共用），任务行记 `themeVersion`（`2026-11-v1`）；③element_id：Presenton 接口不接受元素 ID，wiki 在下载时把稳定 ID（`el-p<页>-<序号>`）写进每个形状的 `<p:cNvPr name>`，索引缓存到任务行 `element_index`，新接口 `GET /api/ai-assistant/presentations/elements?id=` 逐页列出；盖不上时原样返回原字节；④留痕结构落库：`presentation_job` 新增 `theme_version` / `layout_assignments` / `element_index` / `page_source_refs`（三方言模板 + migration `drizzle/0000_right_gamma_corps.sql`）。
+- 对已有项目：部署时跑 `pnpm db:migrate`（本仓库第一份 migration；生产库早于迁移系统存在，0000 只含本次 4 条 `ALTER TABLE`，不含全库建表——全新库仍用 `db:push`）。旧任务的 4 列为空：下载旧稿时会现算 element_id 并写回；`layout_assignments` / `page_source_refs` 仍空，等阶段 1 写入；无 element_id 的旧稿调用阶段 2 编辑时仍按清单回“不支持”。
+- 注意：主题注入是提示词级的——Presenton 的 generate/async 与 create 接口都没有主题色/Logo 参数，成稿配色以 Presenton 实际出稿为准；Logo 图片本身尚未注入（等阶段 1 的图片槽位映射）。
+
 ## 2026-11-23: RBAC 种子补 `admin.*` 通配码（`rbac:init` 不再删掉管理员判定）
 
 - 根因：`scripts/init-rbac.ts` 的“Clear and reassign permissions”会先删光角色的全部 `role_permission` 再按种子重授，但种子从未列出字面量 `admin.*` 这一行。2026-11-22 一次部署为授新码 `admin.mentoring_dashboard.read` 跑了 `rbac:init`，admin 角色被重授为 25 个种子码，`admin.*` 被删；客户端 `isAdmin` 判定（`hasPermission('admin.*')`，只认字面量 `admin.*` 或 `*`）随即变 false，`/admin` 被重定向到 `/settings`。修法：种子新增 `admin.*` 权限定义，并把它加进 admin 角色的种子清单；同时改了展开逻辑——本身就是已定义权限码的 `admin.*` 按字面量授予、不展开，避免把 `admin.passwords.reset` / `admin.payments.refund`（有意只留 super_admin）也显式授给 admin。

@@ -26,6 +26,14 @@ import { getConfig } from '@/modules/config/service';
 import { notifyLlmQuotaExceeded } from '@/modules/notify/service';
 import { getUuid } from '@/lib/hash';
 
+import {
+  buildElementIndex,
+  stampElementIds,
+  type PptxElementIndex,
+} from './element-index';
+import { parseElementIndex, serializeJobMeta } from './job-meta';
+import { buildThemeInstructions, PPT_THEME_VERSION } from './layouts';
+
 export type PresentationMode = 'standard' | 'smart';
 export type PresentationJobStatus =
   | 'queued'
@@ -684,6 +692,13 @@ export async function createJobAndStart(params: {
   const { ownerUserId, ownerTokenId, input } = params;
   validateGenerateInput(input);
   const { content, postTitles } = await assembleContent(input);
+  // 主题与 Logo 注入（唯一注入点，见 layouts.ts）：Presenton 的生成接口
+  // 不接受主题色/Logo 参数，注入只能走 instructions 文本。用户自填的
+  // instructions 在前，主题块在后；标准与 smart 两个模式共用同一份。
+  const themeInstructions = buildThemeInstructions();
+  const instructions = [input.instructions?.trim(), themeInstructions]
+    .filter(Boolean)
+    .join('\n\n');
   const [job] = await db()
     .insert(presentationJob)
     .values({
@@ -692,6 +707,7 @@ export async function createJobAndStart(params: {
       ownerTokenId: ownerTokenId ?? null,
       status: 'queued',
       title: deriveTitle(input, postTitles),
+      themeVersion: PPT_THEME_VERSION,
     })
     .returning();
   try {
@@ -711,7 +727,7 @@ export async function createJobAndStart(params: {
           file_paths: filePaths,
           tone: 'default',
           verbosity: 'standard',
-          instructions: input.instructions,
+          instructions,
           generation_mode: 'smart',
         }
       );
@@ -733,7 +749,7 @@ export async function createJobAndStart(params: {
       nSlides: input.nSlides,
       language,
       template,
-      instructions: input.instructions,
+      instructions,
       filePaths,
     });
     const updated = await updateJob(job.id, {
@@ -859,12 +875,55 @@ export async function refreshJob(
   }
 }
 
-/** 下载已完成任务的 pptx（只在服务端向 Presenton 取字节流）。 */
+/**
+ * 下载已完成任务的 pptx（只在服务端向 Presenton 取字节流）。
+ *
+ * element_id 落地（阶段 0，见 element-index.ts）：Presenton 不提供给形状
+ * 写 ID 的接口，wiki 在下载时把稳定 ID 写进每个形状的 <p:cNvPr name>，
+ * 并把逐页元素索引缓存到任务行的 element_index 列。盖章是 best-effort：
+ * 盖不上（不是合法 PPTX）时原样返回原字节，下载不受影响；缓存写失败
+ * 也不影响下载。
+ */
 export async function downloadJobPptx(job: PresentationJob): Promise<Buffer> {
   if (job.status !== 'completed' || !job.exportPath)
     throw new PresentonError(
       'invalid_input',
       'Presentation is not ready for download'
     );
-  return downloadPptxBytes(job.exportPath);
+  const bytes = await downloadPptxBytes(job.exportPath);
+  const stamped = stampElementIds(bytes);
+  if (!stamped) return bytes;
+  await updateJob(job.id, {
+    elementIndex: serializeJobMeta(stamped.index),
+  }).catch(() => {});
+  return stamped.bytes;
+}
+
+/**
+ * 逐页元素可按 ID 列出（阶段 0 完成标志之一，供阶段 2 单页编辑定位）。
+ * 优先读任务行缓存的 element_index；没有缓存时现算一次并写回。
+ * 只对已完成任务提供；未完成时与下载一致报 not ready。
+ */
+export async function listJobElements(
+  job: PresentationJob
+): Promise<PptxElementIndex> {
+  if (job.status !== 'completed' || !job.exportPath)
+    throw new PresentonError(
+      'invalid_input',
+      'Presentation is not ready for download'
+    );
+  const cached = parseElementIndex(job.elementIndex);
+  if (cached) return cached;
+  const bytes = await downloadPptxBytes(job.exportPath);
+  const stamped = stampElementIds(bytes);
+  const index = stamped?.index ?? buildElementIndex(bytes);
+  if (!index)
+    throw new PresentonError(
+      'presenton_error',
+      'Cannot read elements from the presentation file'
+    );
+  await updateJob(job.id, {
+    elementIndex: serializeJobMeta(index),
+  }).catch(() => {});
+  return index;
 }
