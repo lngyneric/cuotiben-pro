@@ -116,8 +116,8 @@ export async function batchStatus({ request, actor }: AdminHandlerContext) {
     const { ids, status } = await request.json();
     if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100)
       return respErr('ids must be a non-empty array of at most 100');
-    if (status !== 'published' && status !== 'draft')
-      return respErr('status must be published or draft');
+    if (status !== 'published' && status !== 'draft' && status !== 'reviewed')
+      return respErr('status must be published, draft or reviewed');
     const updated = await postsService.updateStatusMany(ids, status);
     return respData({ updated });
   } catch (error: any) {
