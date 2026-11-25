@@ -781,6 +781,8 @@ export const presentationJob = table(
     pageSourceRefs: text('page_source_refs'), // JSON PageSourceRef[]
     // 阶段 1：图片映射（JSON ImageAssignment[]）与下发提示长度（超时日志用）。
     imageAssignments: text('image_assignments'),
+    // 阶段 3：图表落图（JSON ChartAssignment[]，生成时写入、完成时落图）。
+    chartAssignments: text('chart_assignments'),
     promptChars: int('prompt_chars'),
     createdAt: timestamp('created_at', { fsp: 3 }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { fsp: 3 })

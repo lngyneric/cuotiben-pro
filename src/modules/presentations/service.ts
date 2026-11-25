@@ -30,6 +30,28 @@ import {
 import { getUuid } from '@/lib/hash';
 
 import {
+  autoChartType,
+  CHART_TYPES,
+  chartSummary,
+  checkTypeMismatch,
+  insertChart,
+  insertKpiCards,
+  parseChartAssignments,
+  parseTableFile,
+  readChartInfo,
+  updateChart,
+  validateChartData,
+  validateKpiCards,
+  VALUE_LABELS,
+  type ChartAssignment,
+  type ChartData,
+  type ChartSpec,
+  type ChartType,
+  type KpiCard,
+  type PageSourceRefInput,
+  type ValueLabels,
+} from './charts';
+import {
   buildElementIndex,
   hasStampedElementIds,
   stampElementIds,
@@ -83,6 +105,8 @@ import {
   getOwnedOutline,
   getOwnedSources,
   parseOutlinePages,
+  type OutlinePage,
+  type SourceOwner,
 } from './sources';
 
 export { PresentonError, type PresentonErrorCode } from './errors';
@@ -196,6 +220,41 @@ export interface PresentationFileInput {
   base64: string;
 }
 
+export interface ChartInput {
+  pageNo: number;
+  slotId?: string;
+  rectIn?: RectIn;
+  chart: {
+    title?: string;
+    categories?: string[];
+    series?: Array<{ name: string; values: number[] }>;
+    chartType?: string;
+    valueLabels?: string;
+    sourceKind?: string;
+    pageSourceRefs?: Array<{
+      sourceId: string;
+      sourceKind: string;
+      locator: string;
+    }>;
+    file?: { name: string; mime: string; base64: string };
+  };
+  kpiCards?: Array<{
+    title: string;
+    value: number;
+    unit?: string;
+    fromData?: { series?: string; category?: string; agg?: string };
+    pageSourceRefs?: Array<{
+      sourceId: string;
+      sourceKind: string;
+      locator: string;
+    }>;
+    slotId?: string;
+    rectIn?: RectIn;
+  }>;
+  /** 软冲突（类型与数据形态不合）时确认仍按指定类型画。 */
+  confirm?: boolean;
+}
+
 export interface GenerateInput {
   content?: string;
   nSlides?: number;
@@ -211,6 +270,8 @@ export interface GenerateInput {
   outlineId?: string;
   /** 阶段 1 图片映射：imageId + 目标页 + 槽位（slotId 省略时用版式默认图片槽）。 */
   images?: ImageMappingInput[];
+  /** 阶段 3 图表落图：每项指定页 + 图表数据（须先确认 outline，见 validateGenerateInput）。 */
+  charts?: ChartInput[];
 }
 
 function isQuotaSignal(status: number | undefined, text: string): boolean {
@@ -775,6 +836,15 @@ export function validateGenerateInput(input: GenerateInput): void {
     );
   if (input.images && input.images.length > 5)
     throw new PresentonError('invalid_input', '单次任务最多引用 5 张图片');
+  if (input.charts && input.charts.length > 0) {
+    if (input.charts.length > 5)
+      throw new PresentonError('invalid_input', '单次任务最多落 5 个图表');
+    if (!input.outlineId)
+      throw new PresentonError(
+        'invalid_input',
+        '图表须先确认 outline：请先调用 presentations_outline 生成并确认页面划分，再带 charts 生成'
+      );
+  }
   if (
     input.nSlides !== undefined &&
     (input.nSlides < 1 || input.nSlides > MAX_SLIDES)
@@ -926,6 +996,38 @@ export async function createJobAndStart(params: {
       imageAssignments.filter((a) => !a.missing).map((a) => a.imageId)
     ).catch(() => {});
   }
+  // 阶段 3 图表：生成时只解析与校验（数据来源三选一、类型冲突、
+  // 数字卡同源），落图在任务完成时由 applyGenerateCharts 做（那时
+  // 才有 Presenton 成稿）；落图明细存 chart_assignments 列。
+  let chartAssignments: ChartAssignment[] = [];
+  let chartInstructions = '';
+  if (input.charts && input.charts.length > 0 && outlinePages) {
+    const layoutStub = {
+      layoutAssignments: serializeJobMeta(layoutAssignments ?? []),
+    } as PresentationJob;
+    const lines: string[] = [];
+    for (const raw of input.charts) {
+      const normalized = await normalizeChartAssignment(
+        raw,
+        layoutStub,
+        outlinePages,
+        owner,
+        raw.confirm === true
+      );
+      if ('proposal' in normalized)
+        throw new PresentonError(
+          'invalid_input',
+          `${normalized.proposal.reason}（建议类型：${normalized.proposal.suggestedType}）`
+        );
+      chartAssignments.push(normalized.assignment);
+      const a = normalized.assignment;
+      lines.push(
+        `第 ${a.pageNo} 页是图表页：只留标题与要点文字，不要画图表或配图（图表由 wiki 在生成后按数据落入：${a.chart.chartType}${a.chart.chartTypeAuto ? '（按数据形态自动选型）' : ''}，标签 ${a.chart.valueLabels}${a.kpiCards?.length ? `，另有 ${a.kpiCards.length} 张数字卡` : ''}）。`
+      );
+    }
+    if (lines.length > 0)
+      chartInstructions = `【图表页要求】\n${lines.join('\n')}`;
+  }
   // Logo：有光栅文件时随图一起上传、按注册表 Logo 位落位；没有时不编造。
   let logoInstruction = '';
   const logo = await tryResolveLogo().catch(() => null);
@@ -939,7 +1041,12 @@ export async function createJobAndStart(params: {
       `Logo 图片「${logo.name}」固定放在右上角（x=${PPT_LOGO_SLOT.x}in, ` +
       `y=${PPT_LOGO_SLOT.y}in, ${PPT_LOGO_SLOT.width}×${PPT_LOGO_SLOT.height} 英寸），标题区不得压住 Logo。`;
   }
-  const fullInstructions = [instructions, imageInstructions, logoInstruction]
+  const fullInstructions = [
+    instructions,
+    imageInstructions,
+    chartInstructions,
+    logoInstruction,
+  ]
     .filter(Boolean)
     .join('\n\n');
   const [job] = await db()
@@ -959,6 +1066,9 @@ export async function createJobAndStart(params: {
         : {}),
       ...(imageAssignments.length > 0
         ? { imageAssignments: serializeJobMeta(imageAssignments) }
+        : {}),
+      ...(chartAssignments.length > 0
+        ? { chartAssignments: serializeJobMeta(chartAssignments) }
         : {}),
       promptChars: content.length + fullInstructions.length,
     })
@@ -1046,6 +1156,18 @@ async function runSmartStream(
       slideCount,
       exportPath: exported.path,
     });
+    // 阶段 3：生成时登记的图表在成稿出来后落图。注意外层 catch 只处理
+    // generating 态的失败（任务已 completed 时它会直接 return），
+    // 所以落图失败在这里直接置 failed，不走外层 catch。
+    const freshSmartJob = await getJob(jobId);
+    if (freshSmartJob) {
+      try {
+        await applyGenerateCharts(freshSmartJob);
+      } catch (error) {
+        await failJob(freshSmartJob, error);
+        return;
+      }
+    }
   } catch (error) {
     const job = await getJob(jobId);
     if (!job || job.status !== 'generating') return;
@@ -1125,7 +1247,24 @@ export async function refreshJob(
         slideCount: pres.slides?.length ?? 0,
         exportPath,
       });
-      return completed ?? job;
+      // 阶段 3：生成时登记的图表在成稿出来后落图；落图失败则任务置
+      // failed（图表没落进去的稿子不冒充“带图完成”）。
+      const done = completed ?? job;
+      try {
+        await applyGenerateCharts(done);
+      } catch (error) {
+        const failed = await failJob(
+          done,
+          error instanceof PresentonError
+            ? error
+            : new PresentonError(
+                'presenton_error',
+                error instanceof Error ? error.message : '图表落图失败'
+              )
+        );
+        return failed ?? job;
+      }
+      return done;
     }
     if (job.presentonId) {
       const pres = await getPresentation(job.presentonId);
@@ -1137,7 +1276,22 @@ export async function refreshJob(
           slideCount,
           exportPath: exported.path,
         });
-        return completed ?? job;
+        const done = completed ?? job;
+        try {
+          await applyGenerateCharts(done);
+        } catch (error) {
+          const failed = await failJob(
+            done,
+            error instanceof PresentonError
+              ? error
+              : new PresentonError(
+                  'presenton_error',
+                  error instanceof Error ? error.message : '图表落图失败'
+                )
+          );
+          return failed ?? job;
+        }
+        return done;
       }
       // 还没出 slides：stream 可能随进程重启中断了，重新接上。
       void runSmartStream(job.id, job.presentonId);
@@ -1299,11 +1453,13 @@ export function jobProvenanceView(job: PresentationJob): {
   layoutAssignments: LayoutAssignment[] | null;
   pageSourceRefs: PageSourceRef[] | null;
   imageAssignments: ImageAssignment[] | null;
+  chartAssignments: ChartAssignment[] | null;
   missingImagePages: number[];
 } {
   const layoutAssignments = parseLayoutAssignments(job.layoutAssignments);
   const pageSourceRefs = parsePageSourceRefs(job.pageSourceRefs);
   const imageAssignments = parseImageAssignments(job.imageAssignments);
+  const chartAssignments = parseChartAssignments(job.chartAssignments);
   const missingImagePages: number[] = [];
   if (layoutAssignments) {
     const covered = new Set(
@@ -1322,6 +1478,7 @@ export function jobProvenanceView(job: PresentationJob): {
     layoutAssignments,
     pageSourceRefs,
     imageAssignments,
+    chartAssignments,
     missingImagePages,
   };
 }
@@ -1713,4 +1870,644 @@ export async function revertPageEdit(
 /** 供 presentations_get 回显的当前编辑版本号（无编辑时为 0）。 */
 export async function getJobPageVersion(job: PresentationJob): Promise<number> {
   return getCurrentPageVersion(job.id);
+}
+
+// ─── 阶段 3：图表与 Dashboard ───────────────────────────────────────────────
+//
+// 流程（实施清单能力四）：
+// 1. presentations_chart_add：在已完成稿子的指定页、指定槽位插入一个
+//    原生图表（charts.ts 的 zip 手术：chart 部件＋内嵌 xlsx 工作簿）。
+//    数据来源只限三路——用户直接贴数、上传 csv/xlsx 中指定的表、内容源
+//    中带出处的数据（须带 pageSourceRefs）；三者之外不取数，无数据时
+//    明确回“缺数据”并停止，不编示例数字。
+// 2. presentations_chart_update：改已有图表（换数据、换类型、切数值
+//    标签显隐），走单页编辑通道，只动该图表所在页（只改 chart 部件＋
+//    必要时内嵌工作簿，slide XML 不动，其余页逐字节保留）。
+// 3. 生成时带 charts：outline 里某页标记为 chart/dashboard 页时，
+//    生成阶段登记落图明细（chart_assignments 列），成稿一出就由
+//    applyGenerateCharts 落图并存为版本（与文字页同批产出）。
+// 类型冲突：指定类型与数据形态明显不合时先返回拟确认清单
+// （requiresConfirmation + suggestedType），带 confirm=true 才按指定
+// 执行，不静默换型；饼/环形多系列或负值是硬错，直接拒绝。
+// 单页预览与阶段 2 同口径：改后单页元素清单（非渲染图），服务器容器
+// 内无渲染工具，不编造渲染图。
+
+export interface ChartMismatchProposal {
+  requiresConfirmation: true;
+  requestedType: ChartType;
+  suggestedType: ChartType;
+  reason: string;
+}
+
+function asPageSourceRefs(value: unknown, what: string): PageSourceRefInput[] {
+  if (!Array.isArray(value) || value.length === 0)
+    invalidInput(
+      `${what}须给出非空的 page_source_refs（sourceId + sourceKind + locator）`
+    );
+  const out: PageSourceRefInput[] = [];
+  for (const r of value as unknown[]) {
+    if (typeof r !== 'object' || r === null || Array.isArray(r))
+      invalidInput(`${what}的每项来源引用须为对象`);
+    const rec = r as Record<string, unknown>;
+    if (
+      typeof rec.sourceId !== 'string' ||
+      !rec.sourceId.trim() ||
+      typeof rec.sourceKind !== 'string' ||
+      !['upload_text', 'reference_ppt', 'wiki_kb'].includes(rec.sourceKind) ||
+      typeof rec.locator !== 'string' ||
+      !rec.locator.trim()
+    )
+      invalidInput(
+        `${what}的来源引用格式不对：每项须为 {sourceId, sourceKind: upload_text|reference_ppt|wiki_kb, locator}`
+      );
+    out.push({
+      sourceId: (rec.sourceId as string).trim(),
+      sourceKind: rec.sourceKind as PageSourceRefInput['sourceKind'],
+      locator: (rec.locator as string).trim(),
+    });
+  }
+  return out;
+}
+
+/** 内容源出处归属校验：引用的来源须存在且属于调用方、类型须对上。 */
+async function assertRefsOwned(
+  refs: PageSourceRefInput[],
+  owner: SourceOwner,
+  what: string
+): Promise<void> {
+  const ids = [...new Set(refs.map((r) => r.sourceId))];
+  let rows: Awaited<ReturnType<typeof getOwnedSources>>;
+  try {
+    rows = await getOwnedSources(ids, owner);
+  } catch {
+    invalidInput(`${what}引用的内容源不存在或不属于调用方`);
+  }
+  const byId = new Map(rows!.map((r) => [r.id, r]));
+  for (const ref of refs) {
+    const row = byId.get(ref.sourceId);
+    if (!row)
+      invalidInput(`${what}引用的内容源 ${ref.sourceId} 不存在或不属于调用方`);
+    if (row.kind !== ref.sourceKind)
+      invalidInput(
+        `${what}引用的内容源 ${ref.sourceId} 类型是 ${row.kind}，不是 ${ref.sourceKind}`
+      );
+  }
+}
+
+/**
+ * 解析图表的数据来源（三路之外不取数）：
+ * - inline（默认）：categories + series 直接贴数。
+ * - file：当次传的 csv / xlsx 文件，服务端解析第一张表。
+ * - content_source：categories + series + pageSourceRefs（须归属调用方）。
+ * 返回已校验的数据与出处（inline 时出处为空）。
+ */
+async function resolveChartData(
+  raw: Record<string, unknown>,
+  owner: SourceOwner
+): Promise<{ data: ChartData; pageSourceRefs?: PageSourceRefInput[] }> {
+  const kind =
+    raw.sourceKind === 'file'
+      ? 'file'
+      : raw.sourceKind === 'content_source'
+        ? 'content_source'
+        : 'inline';
+  if (kind === 'file') {
+    const file = raw.file;
+    if (typeof file !== 'object' || file === null || Array.isArray(file))
+      invalidInput(
+        'sourceKind=file 时须传 file（{name, mime, base64}，csv / xlsx）'
+      );
+    const f = file as Record<string, unknown>;
+    if (
+      typeof f.name !== 'string' ||
+      typeof f.mime !== 'string' ||
+      typeof f.base64 !== 'string'
+    )
+      invalidInput('file 须为 {name, mime, base64}');
+    return {
+      data: parseTableFile({
+        name: f.name,
+        mime: f.mime,
+        base64: f.base64,
+      }),
+    };
+  }
+  const data = validateChartData({
+    categories: raw.categories,
+    series: raw.series,
+  });
+  if (kind === 'content_source') {
+    const refs = asPageSourceRefs(raw.pageSourceRefs, '内容源数据');
+    await assertRefsOwned(refs, owner, '内容源数据');
+    return { data, pageSourceRefs: refs };
+  }
+  if (raw.pageSourceRefs !== undefined) {
+    // inline 时附带出处也认（留痕用），但不强制。
+    const refs = asPageSourceRefs(raw.pageSourceRefs, '图表数据');
+    await assertRefsOwned(refs, owner, '图表数据');
+    return { data, pageSourceRefs: refs };
+  }
+  return { data };
+}
+
+/** 解析一个图表输入（数据＋类型＋标签），软冲突未确认时返回拟确认清单。 */
+async function normalizeChartSpec(
+  raw: Record<string, unknown>,
+  owner: SourceOwner,
+  confirm: boolean
+): Promise<{ spec: ChartSpec } | { proposal: ChartMismatchProposal }> {
+  if (typeof raw.title === 'string' && raw.title.trim().length > 200)
+    invalidInput('图表标题不超过 200 字');
+  const valueLabels =
+    typeof raw.valueLabels === 'string' &&
+    (VALUE_LABELS as readonly string[]).includes(raw.valueLabels)
+      ? (raw.valueLabels as ValueLabels)
+      : raw.valueLabels === undefined
+        ? 'show_all'
+        : invalidInput(`value_labels 只接受 ${VALUE_LABELS.join('、')}`);
+  const { data, pageSourceRefs } = await resolveChartData(raw, owner);
+  let chartType: ChartType;
+  let chartTypeAuto = false;
+  if (raw.chartType === undefined) {
+    const auto = autoChartType(data);
+    chartType = auto.chartType;
+    chartTypeAuto = true;
+  } else if (
+    typeof raw.chartType === 'string' &&
+    (CHART_TYPES as readonly string[]).includes(raw.chartType)
+  ) {
+    chartType = raw.chartType as ChartType;
+  } else {
+    invalidInput(`chart_type 只接受 ${CHART_TYPES.join('、')}`);
+  }
+  const mismatch = checkTypeMismatch(chartType, data);
+  if (mismatch && !confirm)
+    return {
+      proposal: {
+        requiresConfirmation: true,
+        requestedType: chartType,
+        suggestedType: mismatch.suggestedType,
+        reason: mismatch.reason,
+      },
+    };
+  return {
+    spec: {
+      ...(typeof raw.title === 'string' && raw.title.trim()
+        ? { title: raw.title.trim() }
+        : {}),
+      data,
+      chartType,
+      chartTypeAuto,
+      valueLabels,
+      ...(pageSourceRefs ? { pageSourceRefs } : {}),
+    },
+  };
+}
+
+/**
+ * 解析一份图表落图明细（页 + 槽位/矩形 + 图表 + 可选数字卡）。
+ * outlinePages 有值时（生成时）用它取版式；为 null 时（chart_add）
+ * 版式取自任务行 layout_assignments（无版式记录时 slotId 不可用）。
+ */
+export async function normalizeChartAssignment(
+  raw: unknown,
+  job: Pick<PresentationJob, 'layoutAssignments'>,
+  outlinePages: OutlinePage[] | null,
+  owner: SourceOwner,
+  confirm: boolean
+): Promise<
+  { assignment: ChartAssignment } | { proposal: ChartMismatchProposal }
+> {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
+    invalidInput('图表落图明细须为对象');
+  const r = raw as Record<string, unknown>;
+  const pageNo = r.pageNo;
+  if (typeof pageNo !== 'number' || !Number.isInteger(pageNo) || pageNo < 1)
+    invalidInput('图表目标页 pageNo 须为正整数');
+  if (typeof r.chart !== 'object' || r.chart === null || Array.isArray(r.chart))
+    invalidInput('图表落图明细须含 chart（数据 + 类型 + 标签）');
+  const specResult = await normalizeChartSpec(
+    r.chart as Record<string, unknown>,
+    owner,
+    confirm
+  );
+  if ('proposal' in specResult) return specResult;
+  const spec = specResult.spec;
+  const layoutCode =
+    outlinePages?.find((p) => p.pageNo === pageNo)?.layout ??
+    parseLayoutAssignments(job.layoutAssignments)?.find(
+      (l) => l.pageNo === pageNo
+    )?.layout ??
+    null;
+  // Dashboard：有数字卡时版式走 A（数据条加四卡）或 G / H 的分栏结构。
+  if (Array.isArray(r.kpiCards) && r.kpiCards.length > 0) {
+    if (
+      layoutCode &&
+      layoutCode !== 'A' &&
+      layoutCode !== 'G' &&
+      layoutCode !== 'H'
+    )
+      invalidInput(
+        `Dashboard 页（带数字卡）版式须为 A、G 或 H，当前第 ${pageNo} 页是 ${layoutCode}：请先在 outline 里把该页版式改成 A、G 或 H`
+      );
+  }
+  const rectIn =
+    typeof r.slotId === 'string' && r.slotId.trim()
+      ? resolveChartRect(job, pageNo, layoutCode, { slotId: r.slotId.trim() })
+      : r.rectIn !== undefined
+        ? validateRectIn(r.rectIn, '图表位置')
+        : invalidInput(
+            '图表须指定 slotId（版式槽位）或 rectIn（明确矩形，英寸）'
+          );
+  let kpiCards: KpiCard[] | undefined;
+  if (Array.isArray(r.kpiCards) && r.kpiCards.length > 0) {
+    // 数字卡先按数据口径校验（卡图同源），再解析落位。
+    for (const card of r.kpiCards as unknown[]) {
+      if (typeof card !== 'object' || card === null || Array.isArray(card))
+        invalidInput('每张数字卡须为对象');
+      const refs = (card as Record<string, unknown>).pageSourceRefs;
+      if (Array.isArray(refs) && refs.length > 0) {
+        const parsed = asPageSourceRefs(refs, '数字卡');
+        await assertRefsOwned(parsed, owner, '数字卡');
+      }
+    }
+    validateKpiCards(r.kpiCards, spec.data);
+    const autoSlots =
+      layoutCode === 'A'
+        ? allSlots('A')
+            .filter((s) => s.type === 'kpi_card')
+            .map((s) => s.id)
+        : [];
+    let autoIdx = 0;
+    kpiCards = [];
+    for (const card of r.kpiCards as unknown[]) {
+      const c = card as Record<string, unknown>;
+      let cardRect: RectIn;
+      if (typeof c.slotId === 'string' && c.slotId.trim()) {
+        cardRect = resolveChartRect(job, pageNo, layoutCode, {
+          slotId: c.slotId.trim(),
+        });
+      } else if (c.rectIn !== undefined) {
+        cardRect = validateRectIn(c.rectIn, '数字卡位置');
+      } else if (autoIdx < autoSlots.length) {
+        cardRect = resolveChartRect(job, pageNo, layoutCode, {
+          slotId: autoSlots[autoIdx],
+        });
+        autoIdx += 1;
+      } else {
+        invalidInput(
+          '数字卡须指定 slotId 或 rectIn（A 版式前 3 张卡可用默认数字卡槽位）'
+        );
+      }
+      kpiCards.push({
+        title: String(c.title).trim(),
+        value: c.value as number,
+        ...(typeof c.unit === 'string' && c.unit ? { unit: c.unit } : {}),
+        ...(typeof c.fromData === 'object' && c.fromData !== null
+          ? {
+              fromData: c.fromData as KpiCard['fromData'],
+            }
+          : {}),
+        ...(Array.isArray(c.pageSourceRefs) && c.pageSourceRefs.length > 0
+          ? {
+              pageSourceRefs: asPageSourceRefs(c.pageSourceRefs, '数字卡'),
+            }
+          : {}),
+        rectIn: cardRect,
+      });
+    }
+  }
+  return {
+    assignment: {
+      pageNo,
+      rectIn,
+      chart: spec,
+      ...(kpiCards ? { kpiCards } : {}),
+    },
+  };
+}
+
+/** 图表/数字卡的落位矩形：slotId 查版式注册表，rectIn 直接校验。 */
+function resolveChartRect(
+  job: Pick<PresentationJob, 'layoutAssignments'>,
+  pageNo: number,
+  layoutCode: LayoutCode | null,
+  raw: { slotId?: string }
+): RectIn {
+  if (raw.slotId) {
+    if (!layoutCode)
+      invalidInput(
+        `第 ${pageNo} 页没有版式记录，无法按槽位 ${raw.slotId} 定位：请给明确矩形 rectIn`
+      );
+    const slot = findSlot(layoutCode, raw.slotId);
+    if (!slot)
+      invalidInput(
+        `第 ${pageNo} 页的版式 ${layoutCode} 没有槽位 ${raw.slotId}`
+      );
+    return { ...slot.rectIn };
+  }
+  invalidInput('须给出 slotId（版式槽位）或 rectIn（明确矩形，英寸）');
+}
+
+/**
+ * 生成时登记的图表落图：成稿一出即执行（refreshJob / runSmartStream
+ * 在 completeJob 后调用）。每页落图存一个版本（ops 记 chart_add），
+ * 下载随之指向落图后的版本。任一页落图失败即抛错，调用方置任务 failed。
+ */
+export async function applyGenerateCharts(job: PresentationJob): Promise<void> {
+  const assignments = parseChartAssignments(job.chartAssignments);
+  if (!assignments || assignments.length === 0) return;
+  const fresh = await getJob(job.id);
+  const target = fresh ?? job;
+  if (target.status !== 'completed' || !target.exportPath) return;
+  let bytes = await downloadOriginalPptx(target);
+  let version = await getCurrentPageVersion(target.id);
+  for (const a of [...assignments].sort((x, y) => x.pageNo - y.pageNo)) {
+    if (target.slideCount !== null && a.pageNo > target.slideCount)
+      throw new PresentonError(
+        'invalid_input',
+        `图表目标页 ${a.pageNo} 超出成稿页数 ${target.slideCount}：图表未落入`
+      );
+    let out = bytes;
+    let kpiElementIds: string[] = [];
+    if (a.kpiCards && a.kpiCards.length > 0) {
+      const r = insertKpiCards(out, a.pageNo, a.kpiCards);
+      out = r.bytes;
+      kpiElementIds = r.elementIds;
+    }
+    const ins = insertChart(out, a.pageNo, a.rectIn, a.chart);
+    out = ins.bytes;
+    version += 1;
+    await createPageVersion({
+      jobId: target.id,
+      version,
+      pageNo: a.pageNo,
+      ops: [
+        {
+          op: 'chart_add',
+          pageNo: a.pageNo,
+          chartElementId: ins.elementId,
+          chartType: a.chart.chartType,
+          chartTypeAuto: a.chart.chartTypeAuto,
+          valueLabels: a.chart.valueLabels,
+          ...(kpiElementIds.length > 0
+            ? {
+                kpiCards: a.kpiCards!.length,
+                kpiCardElementIds: kpiElementIds,
+              }
+            : {}),
+        },
+      ],
+      bytes: out,
+    });
+    bytes = out;
+  }
+  const index = buildElementIndex(bytes);
+  if (index)
+    await updateJob(target.id, {
+      elementIndex: serializeJobMeta(index),
+    }).catch(() => {});
+}
+
+function chartPagePreview(bytes: Buffer, pageNo: number, job: PresentationJob) {
+  const layoutCode = jobLayoutCode(job, pageNo);
+  const preview = getPageElements(bytes, pageNo, layoutCode);
+  return {
+    rendered: false,
+    note: '服务端容器内无 LibreOffice 等渲染工具，单页预览为改后元素清单（含图表元素，非图片）；请在 PowerPoint 中打开下载文件核对',
+    elements: preview.elements,
+  };
+}
+
+export type ChartAddResult =
+  | {
+      requiresConfirmation: true;
+      requestedType: ChartType;
+      suggestedType: ChartType;
+      reason: string;
+    }
+  | {
+      requiresConfirmation?: false;
+      jobId: string;
+      pageNo: number;
+      version: number;
+      chartElementId: string;
+      chartType: ChartType;
+      chartTypeAuto: boolean;
+      valueLabels: ValueLabels;
+      kpiCardElementIds: string[];
+      chartSummary: ReturnType<typeof chartSummary>;
+      pagePreview: ReturnType<typeof chartPagePreview>;
+    };
+
+/**
+ * presentations_chart_add：在已完成稿子的指定页插入一个原生图表
+ * （+ 可选 Dashboard 数字卡）。软冲突未确认时返回拟确认清单，
+ * 不写文件；确认后（confirm=true）执行并存新版本。
+ */
+export async function addChartToJob(
+  job: PresentationJob,
+  pageNo: number,
+  raw: unknown,
+  viewer: ImageViewer,
+  opts?: { confirm?: boolean }
+): Promise<ChartAddResult> {
+  if (!Number.isInteger(pageNo) || pageNo < 1)
+    invalidInput('pageNo 须为正整数');
+  if (job.slideCount !== null && pageNo > job.slideCount)
+    invalidInput(`第 ${pageNo} 页不存在（本稿共 ${job.slideCount} 页）`);
+  const owner: SourceOwner = {
+    userId: viewer.userId,
+    tokenId: viewer.tokenId ?? null,
+  };
+  const normalized = await normalizeChartAssignment(
+    raw,
+    job,
+    null,
+    owner,
+    opts?.confirm === true
+  );
+  if ('proposal' in normalized) return normalized.proposal;
+  const assignment = normalized.assignment;
+  const bytes = await getJobCurrentBytes(job);
+  let out = bytes;
+  let kpiElementIds: string[] = [];
+  if (assignment.kpiCards && assignment.kpiCards.length > 0) {
+    const r = insertKpiCards(out, pageNo, assignment.kpiCards);
+    out = r.bytes;
+    kpiElementIds = r.elementIds;
+  }
+  const ins = insertChart(out, pageNo, assignment.rectIn, assignment.chart);
+  const currentVersion = await getCurrentPageVersion(job.id);
+  const version = currentVersion + 1;
+  await createPageVersion({
+    jobId: job.id,
+    version,
+    pageNo,
+    ops: [
+      {
+        op: 'chart_add',
+        pageNo,
+        chartElementId: ins.elementId,
+        chartType: assignment.chart.chartType,
+        chartTypeAuto: assignment.chart.chartTypeAuto,
+        valueLabels: assignment.chart.valueLabels,
+        ...(kpiElementIds.length > 0
+          ? {
+              kpiCards: assignment.kpiCards!.length,
+              kpiCardElementIds: kpiElementIds,
+            }
+          : {}),
+      },
+    ],
+    bytes: ins.bytes,
+  });
+  const index = buildElementIndex(ins.bytes);
+  if (index)
+    await updateJob(job.id, {
+      elementIndex: serializeJobMeta(index),
+    }).catch(() => {});
+  return {
+    jobId: job.id,
+    pageNo,
+    version,
+    chartElementId: ins.elementId,
+    chartType: assignment.chart.chartType,
+    chartTypeAuto: assignment.chart.chartTypeAuto,
+    valueLabels: assignment.chart.valueLabels,
+    kpiCardElementIds: kpiElementIds,
+    chartSummary: chartSummary(assignment.chart),
+    pagePreview: chartPagePreview(ins.bytes, pageNo, job),
+  };
+}
+
+export type ChartUpdateResult =
+  | {
+      requiresConfirmation: true;
+      requestedType: ChartType;
+      suggestedType: ChartType;
+      reason: string;
+    }
+  | {
+      requiresConfirmation?: false;
+      jobId: string;
+      pageNo: number;
+      version: number;
+      chartElementId: string;
+      chartType: ChartType;
+      valueLabels: ValueLabels;
+      pagePreview: ReturnType<typeof chartPagePreview>;
+    };
+
+/**
+ * presentations_chart_update：改已有图表（换数据、换类型、切数值标签
+ * 显隐）。只动该图表所在页：只改 chart 部件（+ 换数据时内嵌工作簿），
+ * slide XML 不动，其余页逐字节保留。类型软冲突未确认时先返回拟确认
+ * 清单；标签切换只改标签层，数据与坐标轴不变。
+ */
+export async function updateChartOnJob(
+  job: PresentationJob,
+  pageNo: number,
+  elementId: string,
+  raw: unknown,
+  viewer: ImageViewer,
+  opts?: { confirm?: boolean }
+): Promise<ChartUpdateResult> {
+  if (!Number.isInteger(pageNo) || pageNo < 1)
+    invalidInput('pageNo 须为正整数');
+  if (job.slideCount !== null && pageNo > job.slideCount)
+    invalidInput(`第 ${pageNo} 页不存在（本稿共 ${job.slideCount} 页）`);
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
+    invalidInput('图表更新内容须为对象');
+  const r = raw as Record<string, unknown>;
+  const owner: SourceOwner = {
+    userId: viewer.userId,
+    tokenId: viewer.tokenId ?? null,
+  };
+  const bytes = await getJobCurrentBytes(job);
+  const current = readChartInfo(bytes, pageNo, elementId);
+  // 换数据：走与 chart_add 同样的三路来源校验。
+  let newData: ChartData | undefined;
+  const hasDataInput =
+    r.data !== undefined || r.file !== undefined || r.sourceKind !== undefined;
+  if (hasDataInput) {
+    const resolved = await resolveChartData(
+      {
+        categories: (r.data as Record<string, unknown> | undefined)?.categories,
+        series: (r.data as Record<string, unknown> | undefined)?.series,
+        sourceKind: r.sourceKind,
+        pageSourceRefs: r.pageSourceRefs,
+        file: r.file,
+      },
+      owner
+    );
+    newData = resolved.data;
+  }
+  let newType = current.chartType;
+  if (r.chartType !== undefined) {
+    if (
+      typeof r.chartType !== 'string' ||
+      !(CHART_TYPES as readonly string[]).includes(r.chartType)
+    )
+      invalidInput(`chart_type 只接受 ${CHART_TYPES.join('、')}`);
+    newType = r.chartType as ChartType;
+  }
+  let newLabels = current.valueLabels;
+  if (r.valueLabels !== undefined) {
+    if (
+      typeof r.valueLabels !== 'string' ||
+      !(VALUE_LABELS as readonly string[]).includes(r.valueLabels)
+    )
+      invalidInput(`value_labels 只接受 ${VALUE_LABELS.join('、')}`);
+    newLabels = r.valueLabels as ValueLabels;
+  }
+  if (hasDataInput || r.chartType !== undefined) {
+    const mismatch = checkTypeMismatch(newType, newData ?? current.data);
+    if (mismatch && opts?.confirm !== true)
+      return {
+        requiresConfirmation: true,
+        requestedType: newType,
+        suggestedType: mismatch.suggestedType,
+        reason: mismatch.reason,
+      };
+  }
+  const updated = updateChart(bytes, pageNo, elementId, {
+    ...(newData ? { data: newData } : {}),
+    ...(r.chartType !== undefined ? { chartType: newType } : {}),
+    ...(r.valueLabels !== undefined ? { valueLabels: newLabels } : {}),
+    ...(typeof r.title === 'string' ? { title: r.title } : {}),
+  });
+  const currentVersion = await getCurrentPageVersion(job.id);
+  const version = currentVersion + 1;
+  await createPageVersion({
+    jobId: job.id,
+    version,
+    pageNo,
+    ops: [
+      {
+        op: 'chart_update',
+        pageNo,
+        chartElementId: elementId,
+        ...(newData ? { dataChanged: true } : {}),
+        ...(r.chartType !== undefined ? { chartType: newType } : {}),
+        ...(r.valueLabels !== undefined ? { valueLabels: newLabels } : {}),
+        ...(typeof r.title === 'string' ? { title: r.title } : {}),
+      },
+    ],
+    bytes: updated.bytes,
+  });
+  const index = buildElementIndex(updated.bytes);
+  if (index)
+    await updateJob(job.id, {
+      elementIndex: serializeJobMeta(index),
+    }).catch(() => {});
+  return {
+    jobId: job.id,
+    pageNo,
+    version,
+    chartElementId: elementId,
+    chartType: updated.chartType,
+    valueLabels: updated.valueLabels,
+    pagePreview: chartPagePreview(updated.bytes, pageNo, job),
+  };
 }

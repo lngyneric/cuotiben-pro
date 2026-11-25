@@ -1,0 +1,1 @@
+ALTER TABLE `presentation_job` ADD `chart_assignments` text;
