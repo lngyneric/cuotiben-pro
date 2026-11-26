@@ -841,6 +841,7 @@ export const presentationOutline = table(
     pages: text('pages').notNull().default('[]'), // JSON OutlinePage[]
     status: varchar191('status').notNull().default('draft'), // draft | confirmed
     version: int('version').notNull().default(1),
+    verdict: text('verdict'), // JSON OutlineVerdict | null（轻量路分组判定）
     createdAt: timestamp('created_at', { fsp: 3 }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { fsp: 3 })
       .defaultNow()

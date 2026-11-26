@@ -730,13 +730,21 @@ export const adminOperations: AdminOperation[] = [
   ),
   op(
     'presentations_outline',
-    'Build a page-split draft from registered PPT content sources (stage 1): one page per topic (upload text split by headings/paragraphs, one reference-PPT slide per page, one wiki article per page), each page with title, key points, chosen layout (A–H) with reason, and its source refs. Upload sources take priority over wiki_kb (supplementary only). Pages whose source fragment is too thin are marked insufficient (title + points only, never expanded). Returns outlineId + pages as a draft — the user must confirm it (presentations_outline_confirm) before presentations_generate accepts it.',
+    'Build a page-split draft from registered PPT content sources (stage 1): one page per topic (upload text split by headings/paragraphs, one reference-PPT slide per page, one wiki article per page), each page with title, key points, chosen layout (A–H) with reason, and its source refs. Upload sources take priority over wiki_kb (supplementary only). Pages whose source fragment is too thin are marked insufficient (title + points only, never expanded). Upload text is grouped by the Magpie LLM (deepseek-v4.1-flash) when available and falls back to deterministic splitting on failure; the draft is then judged by Jev (per-page relevance to the intent plus in-page coherence, threshold 0.6) and automatically re-split once at finer granularity if it fails — the response carries a verdict (pass | needs_review | skipped) with per-page scores and warnings for suspect pages. Returns outlineId + pages as a draft — the user must confirm it (presentations_outline_confirm) before presentations_generate accepts it.',
     'presentations.generate',
     'POST',
     'presentations/outline',
     z
       .object({
         sourceIds: z.array(z.string().min(1).max(191)).min(1).max(10),
+        intent: z
+          .string()
+          .min(1)
+          .max(2000)
+          .optional()
+          .describe(
+            'User intent for the deck (original prompt), used as the Jev query for judging the grouping and as context for the LLM split. Optional; without it the source names are used.'
+          ),
       })
       .strict()
   ),

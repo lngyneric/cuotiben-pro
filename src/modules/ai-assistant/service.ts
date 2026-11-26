@@ -585,6 +585,58 @@ export async function postJevJson(
 
 const defaultJevTransport: JevTransport = { postJson: postJevJson };
 
+export interface JevAnswer {
+  choice?: string;
+  confidence?: number;
+  noul?: number;
+}
+
+export interface JevQuestionsInput {
+  apiKey: string;
+  proxyUrl?: string;
+  query: string;
+  /** 供判断模型参考的背景文本（候选清单），超 2000 字截断。 */
+  doc?: string;
+  questions: Record<string, unknown>;
+}
+
+/**
+ * 通用 Jev 打分调用：一次请求并行问任意多个问题（choice/noul），返回
+ * 原始 answers。无 key 时不发请求直接返回 null；任何失败（网络、非
+ * 200、非法 JSON）都返回 null，由调用方静默回退。绝不抛错、绝不把
+ * key 写进日志。供 AI 学习助手意图路由与 PPT 分组判定共用。
+ */
+export async function callJevQuestions(
+  { apiKey, proxyUrl, query, doc = '', questions }: JevQuestionsInput,
+  transport: JevTransport = defaultJevTransport
+): Promise<Record<string, JevAnswer> | null> {
+  if (!apiKey) return null;
+  let res: { status: number; body: string };
+  try {
+    res = await transport.postJson(
+      JEV_ENDPOINT,
+      {
+        state: { message: query, doc: doc.slice(0, 2000) },
+        model: JEV_MODEL,
+        questions,
+      },
+      { apiKey, proxyUrl, timeoutMs: JEV_TIMEOUT_MS }
+    );
+  } catch {
+    return null;
+  }
+  if (res.status !== 200) return null;
+  let data: any;
+  try {
+    data = JSON.parse(res.body);
+  } catch {
+    return null;
+  }
+  const answers = data?.answers;
+  if (!answers || typeof answers !== 'object') return null;
+  return answers as Record<string, JevAnswer>;
+}
+
 /**
  * 一次 Jev 调用并行做意图分类 + 候选相关性打分。无 key 时不发请求直接
  * 返回 null；任何失败（网络、非 200、非法 JSON、非法意图）都返回 null，
@@ -645,28 +697,11 @@ export async function callJevRouting(
     .join('\n');
   const stateDoc = [doc, docList].filter((s) => s.length > 0).join('\n');
 
-  let res: { status: number; body: string };
-  try {
-    res = await transport.postJson(
-      JEV_ENDPOINT,
-      {
-        state: { message: query, doc: stateDoc.slice(0, 2000) },
-        model: JEV_MODEL,
-        questions,
-      },
-      { apiKey, proxyUrl, timeoutMs: JEV_TIMEOUT_MS }
-    );
-  } catch {
-    return null;
-  }
-  if (res.status !== 200) return null;
-  let data: any;
-  try {
-    data = JSON.parse(res.body);
-  } catch {
-    return null;
-  }
-  const answers = data?.answers ?? {};
+  const answers = await callJevQuestions(
+    { apiKey, proxyUrl, query, doc: stateDoc, questions },
+    transport
+  );
+  if (!answers) return null;
   const intentAns = answers.intent ?? {};
   const intent = typeof intentAns.choice === 'string' ? intentAns.choice : '';
   const validIntents: AssistantIntent[] = [

@@ -99,10 +99,13 @@ function PptPage() {
   /** 本机已完成的 PPT 任务（刷新后下载链接还在）。 */
   const [pptJobs, setPptJobs] = useState<PptJobRecord[]>([]);
   // outline 草稿（导航＋意图优化）：standard 生成一律先确认页面划分。
+  // verdict：服务端 Jev 分组判定结论（pass | needs_review | skipped），
+  // 警告文案是服务端返回的中文整句，直接展示，不走 i18n。
   const [outline, setOutline] = useState<{
     outlineId: string;
     pages: OutlinePageDraft[];
     sourceIds: string[];
+    verdict: { status: string; warnings: string[] } | null;
   } | null>(null);
   /** 生成点击时从用户一句话里抽到的意图（草稿面板展示，可改）。 */
   const [intent, setIntent] = useState<PptIntent | null>(null);
@@ -193,20 +196,23 @@ function PptPage() {
   // outline 草稿：standard 生成一律先建草稿（单页也是 1 页 outline），
   // 不再把整段提示直接丢给 Presenton。
   const outlineMutation = useMutation({
-    mutationFn: (vars: { content: string }) =>
+    mutationFn: (vars: { content: string; intent?: string }) =>
       apiPost<{
         outlineId: string;
         pages: OutlinePageDraft[];
         sourceIds: string[];
+        verdict: { status: string; warnings: string[] } | null;
       }>('/api/ai-assistant/presentations/outline', {
         action: 'create',
         content: vars.content,
+        ...(vars.intent ? { intent: vars.intent } : {}),
       }),
     onSuccess: (data) => {
       setOutline({
         outlineId: data.outlineId,
         pages: data.pages,
         sourceIds: data.sourceIds,
+        verdict: data.verdict ?? null,
       });
     },
     onError: (e) => {
@@ -332,7 +338,10 @@ function PptPage() {
     setWantedSlides(wanted);
     setPptSlides(String(wanted));
     setPptTitlePage(wantedTitle);
-    outlineMutation.mutate({ content: pptContent });
+    outlineMutation.mutate({
+      content: pptContent,
+      intent: pptInstructions.trim() || undefined,
+    });
   };
 
   /** 草稿面板：改某页标题（确认时随 pages 一起发）。 */
@@ -565,6 +574,15 @@ function PptPage() {
                       })}
                     </p>
                   )}
+                  {outline.verdict?.warnings?.length ? (
+                    <div className="mt-2 space-y-1">
+                      {outline.verdict.warnings.map((w, i) => (
+                        <p key={i} className="text-xs text-amber-600">
+                          {w}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
                   {wantedSlides !== null &&
                     outline.pages.length !== wantedSlides && (
                       <p className="mt-1 text-xs text-amber-600">
