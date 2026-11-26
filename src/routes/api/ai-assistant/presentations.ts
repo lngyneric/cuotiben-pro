@@ -67,6 +67,9 @@ async function POST({ request }: { request: Request }) {
         nSlides,
         mode: body?.mode === 'smart' ? 'smart' : 'standard',
         template: String(body?.template ?? '').trim() || undefined,
+        // 标题页开关（导航＋意图优化）：只接受布尔值，其余一律按未传处理。
+        titlePage:
+          typeof body?.titlePage === 'boolean' ? body.titlePage : undefined,
         instructions: String(body?.instructions ?? '').trim() || undefined,
         // 阶段 1：带来源生成（sourceIds + 已确认的 outlineId）与配图
         // （images），与 MCP 的 presentations_generate 同一套服务。

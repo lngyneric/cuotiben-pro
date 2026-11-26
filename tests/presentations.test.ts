@@ -70,6 +70,8 @@ const stub = {
   asyncCalls: 0,
   createFail: 'none' as 'none' | '401-once' | '400' | 'quota-429',
   asyncThrowOnce: false,
+  /** 覆盖 getPresentation(pres-1) 返回的 slides（断言标题页校验用）。 */
+  presentationSlides: null as unknown[] | null,
   /** Presenton 导出端点返回的字节；默认是假字节（非合法 zip，盖章直通）。 */
   pptxBytes: PPTX_BYTES as Buffer,
 };
@@ -186,7 +188,11 @@ function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
       slides: [{ id: 's1' }],
     });
   if (url.endsWith('/api/v1/ppt/presentation/pres-1'))
-    return json({ id: 'pres-1', title: 'Test Deck', slides: [{ id: 's1' }] });
+    return json({
+      id: 'pres-1',
+      title: 'Test Deck',
+      slides: stub.presentationSlides ?? [{ id: 's1' }],
+    });
   if (url.endsWith('/app_data/exports/test.pptx'))
     return Promise.resolve(new Response(stub.pptxBytes as unknown as BodyInit));
   if (url.endsWith('/app_data/exports/smart.pptx'))
@@ -325,6 +331,60 @@ async function generate(
   return { response, body: (await response.json()) as any };
 }
 
+// 导航＋意图优化：standard 生成一律须带已确认的 outlineId（单页也不
+// 例外）。先登记一段文本来源，再建 outline、确认，最后带 outlineId
+// 生成；extra 透传 titlePage 等附加字段。
+async function generateStandardWithOutline(
+  text: string,
+  token: string,
+  key: string,
+  extra: Record<string, unknown> = {}
+) {
+  const sourceRes = await request(
+    'presentations_source_add',
+    {
+      kind: 'upload_text',
+      file: {
+        name: 'test.txt',
+        mime: 'text/plain',
+        base64: Buffer.from(text, 'utf-8').toString('base64'),
+      },
+    },
+    token,
+    `${key}-source`
+  );
+  const sourceBody = (await sourceRes.json()) as any;
+  assert.equal(sourceBody.code, 0, JSON.stringify(sourceBody));
+  const sourceId = sourceBody.data.sourceId as string;
+  const draftRes = await request(
+    'presentations_outline',
+    { sourceIds: [sourceId] },
+    token,
+    `${key}-outline`
+  );
+  const draftBody = (await draftRes.json()) as any;
+  assert.equal(draftBody.code, 0, JSON.stringify(draftBody));
+  const confirmedRes = await request(
+    'presentations_outline_confirm',
+    { outlineId: draftBody.data.outlineId },
+    token,
+    `${key}-confirm`
+  );
+  const confirmedBody = (await confirmedRes.json()) as any;
+  assert.equal(confirmedBody.code, 0, JSON.stringify(confirmedBody));
+  const pages = confirmedBody.data.pages as { pageNo: number }[];
+  return generate(
+    {
+      sourceIds: [sourceId],
+      outlineId: confirmedBody.data.outlineId,
+      nSlides: pages.length,
+      ...extra,
+    },
+    token,
+    key
+  );
+}
+
 async function download(id: string, token: string) {
   const handlers = downloadRoute.options.server!.handlers as {
     GET: (context: { request: Request }) => Promise<Response>;
@@ -392,7 +452,7 @@ test('generate validates input: nSlides over 50 and empty materials rejected', a
   );
 });
 
-test('P0: 多页 standard 无 outline 被拒；单页放行；smart+显式 template 被拒', async () => {
+test('P0: standard 无 outline 被拒（单页也不例外）；smart+显式 template 被拒', async () => {
   // nSlides>1 且无 outlineId：standard 模式拒绝，指明先走 outline。
   const multi = await generate(
     { content: '多页主题内容', nSlides: 6 },
@@ -411,14 +471,14 @@ test('P0: 多页 standard 无 outline 被拒；单页放行；smart+显式 templ
   assert.equal(noSlides.response.status, 400);
   assert.match(noSlides.body.message, /presentations_outline/);
 
-  // 单页 standard 免 outline：放行。
+  // 单页 standard 也须先确认 1 页 outline：免 outline 的口子已收掉。
   const single = await generate(
     { content: '单页主题', nSlides: 1 },
     ownerToken,
     'ppt-p0-3'
   );
-  assert.equal(single.response.status, 200);
-  assert.equal(single.body.code, 0);
+  assert.equal(single.response.status, 400);
+  assert.match(single.body.message, /presentations_outline/);
 
   // smart + 显式 template：拒绝，不静默转 standard。
   const smartTpl = await generate(
@@ -457,8 +517,8 @@ test('P0: 标题只取首个有效标题行并截断，不塞整段提示', () =
 });
 
 test('generate creates a job; only the owner can read it', async () => {
-  const { response, body } = await generate(
-    { content: 'Test deck topic', nSlides: 1 },
+  const { response, body } = await generateStandardWithOutline(
+    'Test deck topic',
     ownerToken,
     'ppt-owner-1'
   );
@@ -492,8 +552,8 @@ test('generate creates a job; only the owner can read it', async () => {
 test('completed job returns a download URL; download streams the pptx to the owner only', async () => {
   stub.mode = 'pending-then-completed';
   stub.statusCalls = 0;
-  const { body } = await generate(
-    { content: 'Download test', nSlides: 1 },
+  const { body } = await generateStandardWithOutline(
+    'Download test',
     ownerToken,
     'ppt-download-1'
   );
@@ -539,8 +599,8 @@ test('completed job downloadUrl is absolute and carries the /wiki app base when 
   try {
     stub.mode = 'pending-then-completed';
     stub.statusCalls = 0;
-    const { body } = await generate(
-      { content: 'Base path MCP deck', nSlides: 1 },
+    const { body } = await generateStandardWithOutline(
+      'Base path MCP deck',
       ownerToken,
       'ppt-download-base-1'
     );
@@ -565,6 +625,8 @@ test('completed job downloadUrl is absolute and carries the /wiki app base when 
 });
 
 test('postSlugs resolve server-side and files upload through Presenton', async () => {
+  // postSlugs + 文件的解析在 assembleContent 里，与模式无关；standard
+  // 一律须带 outline（outline 分支不走 postSlugs），本用例改走 smart。
   stub.mode = 'pending-then-completed';
   stub.statusCalls = 0;
   stub.calls = [];
@@ -572,6 +634,7 @@ test('postSlugs resolve server-side and files upload through Presenton', async (
     {
       postSlugs: ['test-post'],
       nSlides: 1,
+      mode: 'smart',
       files: [
         {
           name: 'note.txt',
@@ -591,29 +654,28 @@ test('postSlugs resolve server-side and files upload through Presenton', async (
     c.url.endsWith('/api/v1/ppt/files/mcp-upload')
   );
   assert.ok(upload, 'expected an mcp-upload call');
-  const asyncCall = stub.calls.find((c) =>
-    c.url.endsWith('/api/v1/ppt/presentation/generate/async')
+  const createCall = stub.calls.find((c) =>
+    c.url.endsWith('/api/v1/ppt/presentation/create')
   );
-  assert.ok(asyncCall, 'expected a generate/async call');
-  const asyncBody = JSON.parse(asyncCall.body);
-  // 用户文件 note.txt 是唯一上传；Logo 已嵌在 sysmex 模板里，不再上传。
-  assert.deepEqual(asyncBody.files, ['/tmp/presenton/test/x.txt']);
-  // P0：schema 不再补 template 默认值，服务层兜底 sysmex 发给 Presenton。
-  assert.equal(asyncBody.template, 'sysmex');
+  assert.ok(createCall, 'expected a smart create call');
+  const createBody = JSON.parse(createCall.body);
+  // smart 的 /create 接口不接受 template；用户文件 note.txt 是唯一上传。
+  assert.equal(createBody.template, undefined);
+  assert.deepEqual(createBody.file_paths, ['/tmp/presenton/test/x.txt']);
   const uploads = stub.calls.filter((c) =>
     c.url.endsWith('/api/v1/ppt/files/mcp-upload')
   );
   assert.equal(uploads.length, 1);
   assert.equal(JSON.parse(uploads[0].body).files[0].filename, 'note.txt');
-  assert.match(asyncBody.content, /Test Post Title/);
-  assert.match(asyncBody.content, /Post body used as PPT source material/);
+  assert.match(createBody.content, /Test Post Title/);
+  assert.match(createBody.content, /Post body used as PPT source material/);
 });
 
 test('Magpie quota failure surfaces as llm_quota_exceeded, not a generic 500', async () => {
   stub.mode = 'error-quota';
   stub.statusCalls = 0;
-  const { body } = await generate(
-    { content: 'Quota test', nSlides: 1 },
+  const { body } = await generateStandardWithOutline(
+    'Quota test',
     ownerToken,
     'ppt-quota-1'
   );
@@ -697,8 +759,8 @@ test('dropped connection on standard start is retried once', async () => {
   stub.statusCalls = 0;
   stub.asyncThrowOnce = true;
   stub.asyncCalls = 0;
-  const { response, body } = await generate(
-    { content: 'Network retry test', nSlides: 1 },
+  const { response, body } = await generateStandardWithOutline(
+    'Network retry test',
     ownerToken,
     'ppt-retry-network'
   );
@@ -713,14 +775,11 @@ test('stage0: generation injects the single-source theme block and records theme
   stub.mode = 'pending-then-completed';
   stub.statusCalls = 0;
   stub.calls = [];
-  const { body } = await generate(
-    {
-      content: 'Theme injection test',
-      nSlides: 1,
-      instructions: 'User instruction here',
-    },
+  const { body } = await generateStandardWithOutline(
+    'Theme injection test',
     ownerToken,
-    'ppt-theme-1'
+    'ppt-theme-1',
+    { instructions: 'User instruction here' }
   );
   const jobId = body.data.jobId as string;
   const asyncCall = stub.calls.find((c) =>
@@ -735,6 +794,9 @@ test('stage0: generation injects the single-source theme block and records theme
   assert.match(asyncBody.instructions, /#F7F9FC/);
   assert.match(asyncBody.instructions, /Logo 已嵌在 sysmex 模板右上角/);
   assert.match(asyncBody.instructions, new RegExp(PPT_THEME_VERSION));
+  // 标题页开关：单页 outline 默认不保留标题页，指令块与参数一致。
+  assert.match(asyncBody.instructions, /【标题页要求】不要做封面/);
+  assert.equal(asyncBody.include_title_slide, false);
   const job = await presentationsService.getJob(jobId);
   assert.equal(job?.themeVersion, PPT_THEME_VERSION);
   // MCP 查询回 themeVersion；smart 模式同样带主题块。
@@ -763,8 +825,8 @@ test('stage0: downloaded pptx carries stamped element ids; elements listable per
   stub.statusCalls = 0;
   stub.pptxBytes = buildFixturePptx(8);
   try {
-    const { body } = await generate(
-      { content: 'Stamp test', nSlides: 1 },
+    const { body } = await generateStandardWithOutline(
+      'Stamp test',
       ownerToken,
       'ppt-stamp-1'
     );
@@ -833,4 +895,202 @@ test('stage0: downloaded pptx carries stamped element ids; elements listable per
   } finally {
     stub.pptxBytes = PPTX_BYTES;
   }
+});
+
+// ─── 导航＋意图优化 ────────────────────────────────────────────────────────
+
+test('标题页开关：多页默认保留、单页默认不保留，显式值优先', async () => {
+  // 两主题文本 → 2 页 outline：默认保留标题页。
+  stub.calls = [];
+  const multi = await generateStandardWithOutline(
+    '# 主题甲\n甲要点一内容详细描述。\n甲要点二内容详细描述。\n\n# 主题乙\n乙要点一内容详细描述。\n乙要点二内容详细描述。\n',
+    ownerToken,
+    'ppt-title-1'
+  );
+  assert.equal(multi.response.status, 200);
+  const multiAsync = stub.calls.find((c) =>
+    c.url.endsWith('/api/v1/ppt/presentation/generate/async')
+  );
+  assert.ok(multiAsync, 'expected a generate/async call');
+  const multiBody = JSON.parse(multiAsync.body);
+  assert.equal(multiBody.include_title_slide, true);
+  assert.match(multiBody.instructions, /【标题页要求】保留标题页/);
+
+  // 单页 outline + 显式 titlePage=true：覆盖默认。
+  stub.calls = [];
+  const singleKeep = await generateStandardWithOutline(
+    '单页主题内容',
+    ownerToken,
+    'ppt-title-2',
+    { titlePage: true }
+  );
+  assert.equal(singleKeep.response.status, 200);
+  const keepAsync = stub.calls.find((c) =>
+    c.url.endsWith('/api/v1/ppt/presentation/generate/async')
+  );
+  assert.ok(keepAsync, 'expected a generate/async call');
+  assert.equal(JSON.parse(keepAsync.body).include_title_slide, true);
+  assert.match(
+    JSON.parse(keepAsync.body).instructions,
+    /【标题页要求】保留标题页/
+  );
+
+  // 多页 outline + 显式 titlePage=false：覆盖默认。
+  stub.calls = [];
+  const multiNone = await generateStandardWithOutline(
+    '# 主题甲\n甲要点一内容详细描述。\n甲要点二内容详细描述。\n\n# 主题乙\n乙要点一内容详细描述。\n乙要点二内容详细描述。\n',
+    ownerToken,
+    'ppt-title-3',
+    { titlePage: false }
+  );
+  assert.equal(multiNone.response.status, 200);
+  const noneAsync = stub.calls.find((c) =>
+    c.url.endsWith('/api/v1/ppt/presentation/generate/async')
+  );
+  assert.ok(noneAsync, 'expected a generate/async call');
+  assert.equal(JSON.parse(noneAsync.body).include_title_slide, false);
+  assert.match(
+    JSON.parse(noneAsync.body).instructions,
+    /【标题页要求】不要做封面/
+  );
+});
+
+test('生成后校验：页数不符重试一次，仍不符置失败并说明原因', async () => {
+  stub.mode = 'pending-then-completed';
+  stub.statusCalls = 0;
+  stub.asyncCalls = 0;
+  // 2 页 outline，但桩 Presenton 只出 1 页（pres-1 固定 1 条 slide）。
+  const { body } = await generateStandardWithOutline(
+    '# 主题甲\n甲要点一内容详细描述。\n甲要点二内容详细描述。\n\n# 主题乙\n乙要点一内容详细描述。\n乙要点二内容详细描述。\n',
+    ownerToken,
+    'ppt-validate-count-1'
+  );
+  const jobId = body.data.jobId as string;
+  // 第 1 次轮询：pending；第 2 次：completed 但页数不符 → 重试一次；
+  // 第 3 次：completed 仍不符 → 置失败。
+  const first = await request('presentations_get', { id: jobId }, ownerToken);
+  assert.equal(
+    (((await first.json()) as any).data as any).status,
+    'generating'
+  );
+  const second = await request('presentations_get', { id: jobId }, ownerToken);
+  assert.equal(
+    (((await second.json()) as any).data as any).status,
+    'generating'
+  );
+  assert.equal(stub.asyncCalls, 2, 'expected exactly one retry');
+  const third = await request('presentations_get', { id: jobId }, ownerToken);
+  const data = ((await third.json()) as any).data;
+  assert.equal(data.status, 'failed');
+  assert.match(data.error, /生成页数 1 页与要求的 2 页不符/);
+  assert.match(data.error, /已重试 1 次/);
+  assert.equal(stub.asyncCalls, 2, 'no second retry after the failure');
+});
+
+test('生成后校验：不要标题页时首頁仍是标题页则重试一次仍不符置失败', async () => {
+  stub.mode = 'pending-then-completed';
+  stub.statusCalls = 0;
+  stub.asyncCalls = 0;
+  stub.presentationSlides = [{ id: 's1', layout: 'title_intro' }];
+  try {
+    const { body } = await generateStandardWithOutline(
+      '单页主题内容',
+      ownerToken,
+      'ppt-validate-title-1',
+      { titlePage: false }
+    );
+    const jobId = body.data.jobId as string;
+    await request('presentations_get', { id: jobId }, ownerToken);
+    const second = await request(
+      'presentations_get',
+      { id: jobId },
+      ownerToken
+    );
+    assert.equal(
+      (((await second.json()) as any).data as any).status,
+      'generating'
+    );
+    assert.equal(stub.asyncCalls, 2, 'expected exactly one retry');
+    const third = await request('presentations_get', { id: jobId }, ownerToken);
+    const data = ((await third.json()) as any).data;
+    assert.equal(data.status, 'failed');
+    assert.match(data.error, /第 1 页仍是标题页/);
+  } finally {
+    stub.presentationSlides = null;
+  }
+});
+
+test('生成后校验：保留标题页且首頁为 title 版式时正常完成', async () => {
+  stub.mode = 'pending-then-completed';
+  stub.statusCalls = 0;
+  stub.presentationSlides = [
+    { id: 's1', layout: 'title_description_image' },
+  ];
+  try {
+    const { body } = await generateStandardWithOutline(
+      '单页主题内容',
+      ownerToken,
+      'ppt-validate-title-2',
+      { titlePage: true }
+    );
+    const jobId = body.data.jobId as string;
+    await request('presentations_get', { id: jobId }, ownerToken);
+    const got = await request('presentations_get', { id: jobId }, ownerToken);
+    const data = ((await got.json()) as any).data;
+    assert.equal(data.status, 'completed');
+    assert.equal(data.slideCount, 1);
+  } finally {
+    stub.presentationSlides = null;
+  }
+});
+
+test('generation_meta 解析：结构不对返回 null', async () => {
+  const { parseGenerationMeta } = await import(
+    '../src/modules/presentations/job-meta'
+  );
+  const valid = {
+    expectedSlides: 2,
+    titlePage: true,
+    retries: 0,
+    resume: {
+      content: 'x',
+      nSlides: 2,
+      language: 'Chinese',
+      template: 'sysmex',
+      mode: 'standard',
+      instructions: 'y',
+      filePaths: [],
+    },
+  };
+  const parsed = parseGenerationMeta(JSON.stringify(valid));
+  assert.ok(parsed);
+  assert.equal(parsed!.expectedSlides, 2);
+  assert.equal(parsed!.titlePage, true);
+  assert.equal(parsed!.resume.mode, 'standard');
+  assert.equal(parseGenerationMeta('not json'), null);
+  assert.equal(parseGenerationMeta(''), null);
+  assert.equal(parseGenerationMeta(null), null);
+  assert.equal(
+    parseGenerationMeta(JSON.stringify({ ...valid, expectedSlides: 0 })),
+    null
+  );
+  assert.equal(
+    parseGenerationMeta(JSON.stringify({ ...valid, retries: -1 })),
+    null
+  );
+  assert.equal(
+    parseGenerationMeta(
+      JSON.stringify({ ...valid, resume: { ...valid.resume, mode: 'x' } })
+    ),
+    null
+  );
+  assert.equal(
+    parseGenerationMeta(
+      JSON.stringify({
+        ...valid,
+        resume: { ...valid.resume, filePaths: 'nope' },
+      })
+    ),
+    null
+  );
 });

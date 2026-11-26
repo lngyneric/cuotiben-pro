@@ -275,6 +275,9 @@ const stub = {
   statusCalls: 0,
   uploadCalls: [] as Array<{ name: string; base64: string }>,
   lastGenerateBody: '',
+  // 导航＋意图优化：生成后校验要求实际页数＝outline 页数；默认 stub 返回
+  // 2 页（pres-1），1 页 outline 的测试须先把本字段设为 1 页。
+  presentationSlides: null as Array<Record<string, unknown>> | null,
 };
 
 function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
@@ -330,7 +333,36 @@ function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
     return json({ path: '/app_data/exports/test.pptx' });
   }
   if (url.includes('/api/v1/ppt/presentation/pres-1')) {
-    return json({ id: 'pres-1', title: 'Test Deck', slides: [{}, {}] });
+    return json({
+      id: 'pres-1',
+      title: 'Test Deck',
+      slides: stub.presentationSlides ?? [{}, {}],
+    });
+  }
+  if (url.endsWith('/api/v1/ppt/presentation/create')) {
+    return json({ id: 'pres-smart', title: 'Smart Deck' });
+  }
+  if (url.includes('/api/v1/ppt/presentation/stream/')) {
+    const stream = [
+      'event: slide',
+      'data: {"slide_id":"s1","index":0,"status":"generating"}',
+      '',
+      'event: done',
+      'data: {"status":"done"}',
+      '',
+    ].join('\n');
+    return Promise.resolve(
+      new Response(stream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      })
+    );
+  }
+  if (url.includes('/api/v1/ppt/presentation/pres-smart/export')) {
+    return json({ path: '/app_data/exports/smart.pptx' });
+  }
+  if (url.includes('/api/v1/ppt/presentation/pres-smart')) {
+    return json({ id: 'pres-smart', title: 'Smart Deck', slides: [{ id: 's1' }] });
   }
   if (url.includes('/app_data/exports/test.pptx')) {
     const bytes = buildFixturePptx(8);
@@ -963,7 +995,7 @@ test('outline: 确认时可改版式，成稿按确认版执行', async () => {
   assert.equal(got.body.data.layoutAssignments[0].layout, 'E');
 });
 
-test('generate: 有来源无 outline 被拒绝；无来源标注 unsourced', async () => {
+test('generate: 有来源无 outline 被拒绝；standard 无来源也被拒绝，smart 免 outline', async () => {
   const sourceId = await registerText(
     'solo.txt',
     '#  solo\n要点内容详细描述。\n'
@@ -976,15 +1008,24 @@ test('generate: 有来源无 outline 被拒绝；无来源标注 unsourced', asy
   assert.equal(noOutline.body.code, -1);
   assert.match(noOutline.body.message, /presentations_outline/);
 
-  stub.mode = 'pending-then-completed';
-  stub.statusCalls = 0;
   const plain = await request(
     'presentations_generate',
     { mode: 'standard', content: '纯提示词成稿主题', nSlides: 1 },
     ownerToken
   );
-  assert.equal(plain.body.code, 0, JSON.stringify(plain.body));
-  const jobId = plain.body.data.jobId as string;
+  assert.equal(plain.body.code, -1);
+  assert.match(plain.body.message, /presentations_outline/);
+
+  // 无来源仍可走 smart（单页快讯，免 outline），来源标注为 unsourced。
+  stub.mode = 'pending-then-completed';
+  stub.statusCalls = 0;
+  const smart = await request(
+    'presentations_generate',
+    { mode: 'smart', content: '纯提示词成稿主题', nSlides: 1 },
+    ownerToken
+  );
+  assert.equal(smart.body.code, 0, JSON.stringify(smart.body));
+  const jobId = smart.body.data.jobId as string;
   await request('presentations_get', { id: jobId }, ownerToken);
   const got = await request('presentations_get', { id: jobId }, ownerToken);
   assert.equal(got.body.data.sourceMode, 'unsourced');
@@ -1129,6 +1170,9 @@ test('images: 指定槽位落位、默认槽位、low_res 标记与缺图页', a
     '# 左文右图页\n要点一内容详细描述。\n要点二内容详细描述。\n'
   );
   // 大图指定 main_image（B 版式），小图默认槽位。
+  // 1 页 outline：stub 默认返回 2 页，须先把返回页数调成 1 页（本测试两
+  // 次生成都用同一 1 页 outline，测试末尾再复位）。
+  stub.presentationSlides = [{}];
   const { got } = await confirmAndGenerate([sourceId], {
     images: [
       { imageId: bigId, pageNo: 1, slotId: 'main_image' },
@@ -1154,6 +1198,7 @@ test('images: 指定槽位落位、默认槽位、low_res 标记与缺图页', a
   const { got: gotMissing } = await confirmAndGenerate([sourceId]);
   assert.deepEqual(gotMissing.missingImagePages, [1]);
   assert.match(gotMissing.missingImagesNote, /第 1 页缺图/);
+  stub.presentationSlides = null;
 });
 
 test('images: 槽位校验与数量上限', async () => {
@@ -1226,9 +1271,15 @@ test('images: 最近使用排序——用过的图排在前面', async () => {
     'recent.txt',
     '# 最近使用\n要点一内容详细描述。\n要点二内容详细描述。\n'
   );
-  await confirmAndGenerate([sourceId], {
-    images: [{ imageId: first, pageNo: 1 }],
-  });
+  // 1 页 outline：stub 默认返回 2 页，须先把返回页数调成 1 页。
+  stub.presentationSlides = [{}];
+  try {
+    await confirmAndGenerate([sourceId], {
+      images: [{ imageId: first, pageNo: 1 }],
+    });
+  } finally {
+    stub.presentationSlides = null;
+  }
   const res = await request(
     'presentations_image_search',
     { sort: 'recent' },
@@ -1243,9 +1294,30 @@ test('images: 最近使用排序——用过的图排在前面', async () => {
 test('timeout: 超时任务置 generation_timeout，结构化日志字段齐全', async () => {
   stub.mode = 'pending';
   stub.statusCalls = 0;
+  // 导航＋意图优化：standard 生成须带已确认的 outlineId。
+  const sourceId = await registerText(
+    'timeout.txt',
+    '# 超时测试主题\n要点内容详细描述。\n'
+  );
+  const draft = await request(
+    'presentations_outline',
+    { sourceIds: [sourceId] },
+    ownerToken
+  );
+  assert.equal(draft.body.code, 0, JSON.stringify(draft.body));
+  const confirmed = await request(
+    'presentations_outline_confirm',
+    { outlineId: draft.body.data.outlineId },
+    ownerToken
+  );
+  assert.equal(confirmed.body.code, 0, JSON.stringify(confirmed.body));
   const gen = await request(
     'presentations_generate',
-    { mode: 'standard', content: '超时测试主题', nSlides: 1 },
+    {
+      mode: 'standard',
+      sourceIds: [sourceId],
+      outlineId: confirmed.body.data.outlineId,
+    },
     ownerToken
   );
   assert.equal(gen.body.code, 0, JSON.stringify(gen.body));

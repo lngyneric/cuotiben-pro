@@ -217,3 +217,96 @@ export function parseElementIndex(
   }
   return { version: 1, pages };
 }
+
+// ─── 生成校验元数据（导航＋意图优化）───────────────────────────────────
+// generation_meta 列：期望页数、标题页开关、已重试次数、重跑用的请求快照。
+// 生成时写入；refreshJob/runSmartStream 完成前按它校验成稿，不符重试一次。
+// 老任务（本列为空）跳过校验，保持旧行为。结构不对按“无元数据”处理。
+
+export interface GenerationMetaResume {
+  /** 组装后发给 Presenton 的完整 content（outline 已确认时为逐页组装文本）。 */
+  content: string;
+  nSlides?: number;
+  language: string;
+  template?: string;
+  mode: 'standard' | 'smart';
+  /** 组装后的完整 instructions（含主题块与标题页块）。 */
+  instructions: string;
+  /** 已上传到 Presenton 的文件路径（重试时复用，不重传）。 */
+  filePaths: string[];
+}
+
+export interface GenerationMeta {
+  /** 要求页数（outline 页数或 nSlides）；smart 未传 nSlides 时为 null＝不校验页数。 */
+  expectedSlides: number | null;
+  titlePage: boolean;
+  retries: number;
+  resume: GenerationMetaResume;
+}
+
+/** 校验并解析 generation_meta；结构不对返回 null。 */
+export function parseGenerationMeta(
+  value: string | null | undefined
+): GenerationMeta | null {
+  if (!value) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  if (
+    parsed.expectedSlides !== null &&
+    (typeof parsed.expectedSlides !== 'number' ||
+      !Number.isInteger(parsed.expectedSlides) ||
+      parsed.expectedSlides < 1)
+  )
+    return null;
+  if (typeof parsed.titlePage !== 'boolean') return null;
+  if (
+    typeof parsed.retries !== 'number' ||
+    !Number.isInteger(parsed.retries) ||
+    parsed.retries < 0
+  )
+    return null;
+  if (!isRecord(parsed.resume)) return null;
+  const resume = parsed.resume;
+  if (typeof resume.content !== 'string') return null;
+  if (
+    resume.nSlides !== undefined &&
+    (typeof resume.nSlides !== 'number' || !Number.isInteger(resume.nSlides))
+  )
+    return null;
+  if (typeof resume.language !== 'string' || !resume.language) return null;
+  if (
+    resume.template !== undefined &&
+    typeof resume.template !== 'string'
+  )
+    return null;
+  if (resume.mode !== 'standard' && resume.mode !== 'smart') return null;
+  if (typeof resume.instructions !== 'string') return null;
+  if (
+    !Array.isArray(resume.filePaths) ||
+    resume.filePaths.some((p) => typeof p !== 'string')
+  )
+    return null;
+  return {
+    expectedSlides: parsed.expectedSlides as number | null,
+    titlePage: parsed.titlePage,
+    retries: parsed.retries,
+    resume: {
+      content: resume.content,
+      ...(resume.nSlides !== undefined
+        ? { nSlides: resume.nSlides as number }
+        : {}),
+      language: resume.language,
+      ...(typeof resume.template === 'string' && resume.template
+        ? { template: resume.template }
+        : {}),
+      mode: resume.mode,
+      instructions: resume.instructions,
+      filePaths: resume.filePaths as string[],
+    },
+  };
+}

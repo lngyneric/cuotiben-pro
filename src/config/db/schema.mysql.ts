@@ -783,6 +783,9 @@ export const presentationJob = table(
     imageAssignments: text('image_assignments'),
     // 阶段 3：图表落图（JSON ChartAssignment[]，生成时写入、完成时落图）。
     chartAssignments: text('chart_assignments'),
+    // 导航＋意图优化：生成校验元数据（JSON GenerationMeta：期望页数、
+    // 标题页开关、已重试次数、重跑用的请求快照），生成时写入。
+    generationMeta: text('generation_meta'),
     promptChars: int('prompt_chars'),
     createdAt: timestamp('created_at', { fsp: 3 }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { fsp: 3 })
