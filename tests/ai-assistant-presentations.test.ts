@@ -419,7 +419,10 @@ test('quota failure during polling surfaces llm_quota_exceeded on the job', asyn
 
 test('second create within 10s is rate-limited', async () => {
   stub.mode = 'pending';
-  const first = await postPpt({ content: 'Rate limit test' }, ownerToken);
+  const first = await postPpt(
+    { content: 'Rate limit test', nSlides: 1 },
+    ownerToken
+  );
   assert.equal(first.response.status, 200);
   // No store clear between the two calls, and a different client IP so
   // only the per-user 10s limit can fire (not the 200ms IP limit).

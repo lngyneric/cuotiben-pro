@@ -264,7 +264,11 @@ async function request(
 async function makeCompletedJob(token: string): Promise<string> {
   const gen = await request(
     'presentations_generate',
-    { content: '测试稿第一页标题\n第二页正文', mode: 'standard' },
+    {
+      content: '测试稿第一页标题\n第二页正文',
+      mode: 'standard',
+      nSlides: 1,
+    },
     token
   );
   assert.equal(gen.body.code, 0, JSON.stringify(gen.body));

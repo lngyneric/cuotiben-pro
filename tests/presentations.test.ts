@@ -392,6 +392,70 @@ test('generate validates input: nSlides over 50 and empty materials rejected', a
   );
 });
 
+test('P0: 多页 standard 无 outline 被拒；单页放行；smart+显式 template 被拒', async () => {
+  // nSlides>1 且无 outlineId：standard 模式拒绝，指明先走 outline。
+  const multi = await generate(
+    { content: '多页主题内容', nSlides: 6 },
+    ownerToken,
+    'ppt-p0-1'
+  );
+  assert.equal(multi.response.status, 400);
+  assert.match(multi.body.message, /presentations_outline/);
+
+  // nSlides 不传时默认多页：同样拒绝。
+  const noSlides = await generate(
+    { content: '多页主题内容' },
+    ownerToken,
+    'ppt-p0-2'
+  );
+  assert.equal(noSlides.response.status, 400);
+  assert.match(noSlides.body.message, /presentations_outline/);
+
+  // 单页 standard 免 outline：放行。
+  const single = await generate(
+    { content: '单页主题', nSlides: 1 },
+    ownerToken,
+    'ppt-p0-3'
+  );
+  assert.equal(single.response.status, 200);
+  assert.equal(single.body.code, 0);
+
+  // smart + 显式 template：拒绝，不静默转 standard。
+  const smartTpl = await generate(
+    { content: '快讯', mode: 'smart', template: 'sysmex' },
+    ownerToken,
+    'ppt-p0-4'
+  );
+  assert.equal(smartTpl.response.status, 400);
+  assert.match(smartTpl.body.message, /smart 模式不支持模板/);
+
+  // smart 不传 template：不受影响，放行。
+  const smartNoTpl = await generate(
+    { content: '快讯', mode: 'smart' },
+    ownerToken,
+    'ppt-p0-5'
+  );
+  assert.equal(smartNoTpl.response.status, 200);
+  assert.equal(smartNoTpl.body.code, 0);
+});
+
+test('P0: 标题只取首个有效标题行并截断，不塞整段提示', () => {
+  const { sanitizeDeckTitle } = presentationsService;
+  // Markdown 标题行优先。
+  assert.equal(sanitizeDeckTitle('# 半年总结\n正文内容'), '半年总结');
+  // 单行长提示：截断到 40 字，尾部不再出现。
+  const long =
+    '2026企业大学上半年总结与下半年计划 汇报人：企业大学项目组 2026年11月 概述：复盘2026年4—10月';
+  const title = sanitizeDeckTitle(long);
+  assert.ok(title.length <= 40, title);
+  assert.ok(title.startsWith('2026企业大学上半年总结与下半年计划'));
+  assert.ok(!title.includes('概述'));
+  // 空行跳过，取首个非空行。
+  assert.equal(sanitizeDeckTitle('  \n\n  第二行标题  '), '第二行标题');
+  assert.equal(sanitizeDeckTitle(''), '');
+  assert.equal(sanitizeDeckTitle(null), '');
+});
+
 test('generate creates a job; only the owner can read it', async () => {
   const { response, body } = await generate(
     { content: 'Test deck topic', nSlides: 1 },
@@ -507,6 +571,7 @@ test('postSlugs resolve server-side and files upload through Presenton', async (
   const { response, body } = await generate(
     {
       postSlugs: ['test-post'],
+      nSlides: 1,
       files: [
         {
           name: 'note.txt',
@@ -533,6 +598,8 @@ test('postSlugs resolve server-side and files upload through Presenton', async (
   const asyncBody = JSON.parse(asyncCall.body);
   // 用户文件 note.txt 是唯一上传；Logo 已嵌在 sysmex 模板里，不再上传。
   assert.deepEqual(asyncBody.files, ['/tmp/presenton/test/x.txt']);
+  // P0：schema 不再补 template 默认值，服务层兜底 sysmex 发给 Presenton。
+  assert.equal(asyncBody.template, 'sysmex');
   const uploads = stub.calls.filter((c) =>
     c.url.endsWith('/api/v1/ppt/files/mcp-upload')
   );
