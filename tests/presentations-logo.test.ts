@@ -2,7 +2,10 @@
 // 2026-11-25 之前是每次生成都把 public/logo.png 当文件上传给 Presenton，
 // Presenton 对它跑文档解析/LiteParse OCR，任务 495f3eca 因此 600 秒超时、
 // 成稿从未产出。改为模板内嵌后：
-//   1. presentations_generate 默认模板是 sysmex（不再是 general）；
+//   1. presentations_generate 不传 template 时默认模板是 sysmex（不再是
+//      general）——默认值在服务层（service.ts 的 `(input.template ||
+//      'sysmex')`），schema 不再补默认值，这样解析后才能区分“显式传模板”
+//      还是“没传”（P0 的 smart+显式 template 拒绝靠这个区分）；
 //   2. 主题指令写明 Logo 已嵌在模板右上角，不再要求另外放 Logo；
 //   3. 仓库里的 presenton-templates/sysmex/template.json 确实含 Logo
 //      （24 处：12 个背景组件变体 + 12 个版式的背景拷贝），
@@ -25,10 +28,13 @@ const { findOperation } = await import('../src/server/admin/execute');
 const { buildThemeInstructions, PPT_LOGO_SLOT } =
   await import('../src/modules/presentations/layouts');
 
-test('logo: presentations_generate 默认模板是 sysmex', () => {
+test('logo: presentations_generate 不传 template 时 schema 不补默认值', () => {
   const op = findOperation('presentations_generate');
   const parsed = op.schema.parse({});
-  assert.equal(parsed.template, 'sysmex');
+  // P0：schema 不再 .default('sysmex')——解析后 template 为 undefined，
+  // 服务层 `(input.template || 'sysmex')` 再兜底 sysmex（见
+  // tests/presentations.test.ts 对 Presenton 请求体的断言）。
+  assert.equal(parsed.template, undefined);
 });
 
 test('logo: 主题指令写明 Logo 已嵌在模板右上角', () => {

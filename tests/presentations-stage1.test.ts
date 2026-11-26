@@ -980,7 +980,7 @@ test('generate: 有来源无 outline 被拒绝；无来源标注 unsourced', asy
   stub.statusCalls = 0;
   const plain = await request(
     'presentations_generate',
-    { mode: 'standard', content: '纯提示词成稿主题' },
+    { mode: 'standard', content: '纯提示词成稿主题', nSlides: 1 },
     ownerToken
   );
   assert.equal(plain.body.code, 0, JSON.stringify(plain.body));
@@ -1245,7 +1245,7 @@ test('timeout: 超时任务置 generation_timeout，结构化日志字段齐全'
   stub.statusCalls = 0;
   const gen = await request(
     'presentations_generate',
-    { mode: 'standard', content: '超时测试主题' },
+    { mode: 'standard', content: '超时测试主题', nSlides: 1 },
     ownerToken
   );
   assert.equal(gen.body.code, 0, JSON.stringify(gen.body));

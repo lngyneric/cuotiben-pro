@@ -774,15 +774,42 @@ async function completeJob(
 ): Promise<PresentationJob | undefined> {
   return updateJob(job.id, {
     status: 'completed',
-    title: params.title || job.title,
+    // Presenton 回的标题可能是整段提示原文：只取首行并截断（≤40 字），
+    // 空时保留创建时的标题。
+    title: sanitizeDeckTitle(params.title) || job.title,
     slideCount: params.slideCount,
     exportPath: params.exportPath,
   });
 }
 
+/** 成稿标题上限（P0）：标题只取首个有效标题行并截断，绝不把整段提示原文塞进标题。 */
+export const MAX_DECK_TITLE_CHARS = 40;
+
+/**
+ * 从一段文字派生标题：优先取前 5 个非空行里的 Markdown 标题行（# 开头），
+ * 否则取首个非空行；去标题标记、去首尾空白，超长截断到 MAX_DECK_TITLE_CHARS。
+ * 找不到有效行时返回空串（调用方再 fallback）。
+ */
+export function sanitizeDeckTitle(raw: string | null | undefined): string {
+  const lines = (raw || '').split(/\r?\n/);
+  const nonEmpty: string[] = [];
+  for (const line of lines) {
+    const cleaned = line.replace(/^#{1,6}\s*/, '').trim();
+    if (!cleaned) continue;
+    nonEmpty.push(cleaned);
+    if (/^#{1,6}\s/.test(line))
+      return cleaned.slice(0, MAX_DECK_TITLE_CHARS);
+    if (nonEmpty.length >= 5) break;
+  }
+  return (nonEmpty[0] || '').slice(0, MAX_DECK_TITLE_CHARS);
+}
+
 function deriveTitle(input: GenerateInput, postTitles: string[]): string {
-  const fromContent = (input.content || '').trim().split(/\n/)[0]?.slice(0, 60);
-  return fromContent || postTitles[0]?.slice(0, 60) || 'PPT';
+  return (
+    sanitizeDeckTitle(input.content) ||
+    sanitizeDeckTitle(postTitles[0]) ||
+    'PPT'
+  );
 }
 
 /** 把 wiki 文章拼进生成素材（只取标题+正文，大小写不敏感查 slug）。 */
@@ -858,6 +885,27 @@ export function validateGenerateInput(input: GenerateInput): void {
     throw new PresentonError(
       'invalid_input',
       `At most ${MAX_FILES} postSlugs per request`
+    );
+  // P0：多页 standard 生成必须带已确认的 outlineId——页数与每页版式由
+  // outline 定，不由模型自决。单页 standard（nSlides=1）与 smart 模式
+  // （只适合单页快讯）免 outline。带来源生成本就强制 outline（见上）。
+  // 放在文件校验之后：超大文件等输入错误优先报，不被 outline 错误盖住。
+  if (
+    input.mode !== 'smart' &&
+    (input.nSlides === undefined || input.nSlides > 1) &&
+    !input.outlineId
+  )
+    throw new PresentonError(
+      'invalid_input',
+      '多页生成须先调用 presentations_outline 生成并确认页面划分，再带 outlineId 生成（单页 standard 生成可免 outline；smart 模式只适合单页快讯）'
+    );
+  // P0：smart 模式的 Presenton /create 接口不接受 template，显式传了
+  // 模板又传 smart 时直接拒绝（不静默转 standard）。不传 template 的
+  // smart 调用不受影响（模板本就对其无效）。
+  if (input.mode === 'smart' && input.template !== undefined)
+    throw new PresentonError(
+      'invalid_input',
+      'smart 模式不支持模板：模板只在 standard 模式生效，请去掉 template 改用 standard 模式重试'
     );
   if (
     input.template !== undefined &&

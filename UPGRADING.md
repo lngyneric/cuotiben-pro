@@ -46,6 +46,12 @@ exports, permission codes, and behavior that changes for end users.
 
 ---
 
+## 2026-11-26: PPT agent P0 优化——outline 默认必走＋smart 模板 guard＋标题消毒
+
+- 内容：① outline 默认必走：`validateGenerateInput` 新增校验——standard 模式多页生成（`nSlides>1` 或不传 `nSlides`）必须带已确认的 `outlineId`，否则报 `invalid_input`（指明先调 `presentations_outline` 生成并确认页面划分）；单页 standard（`nSlides=1`）与 smart 模式免 outline；带来源生成原有的强制 outline 逻辑不动。② 模式收敛 guard：显式传 `template` 又传 `mode: 'smart'` 时报 `invalid_input` 拒绝（smart 的 Presenton `/create` 接口不接受 template，不静默转 standard）；`presentations_generate` 的 MCP schema 去掉 `template` 的 `.default('sysmex')`，这样解析后才能区分显式传入还是默认值，服务层 `(input.template || 'sysmex')` 兜底、行为不变；工具描述同步写明 smart 调不了模板且只适合单页快讯、多页须先确认 outline、standard 下模板默认 sysmex。③ 标题与提示分离：新增 `sanitizeDeckTitle`（优先取前 5 个非空行里的 Markdown 标题行，否则取首行，截断到 40 字），`deriveTitle` 与完成时 `completeJob` 的标题写回都走它，Presenton 回的整段提示原文标题不再原样入库；有 outline 时标题仍取 outline 第一页标题。④ 测试：`tests/presentations.test.ts` 新增 P0 两例（多页无 outline 被拒／单页放行／smart+显式 template 被拒／smart 不传 template 放行；标题消毒单测）与 Presenton 请求体 `template: 'sysmex'` 断言；`tests/presentations-stage1/2/3.test.ts` 与 `tests/ai-assistant-presentations.test.ts` 里无 outline 的多页默认调用改为 `nSlides: 1`；`tests/presentations-logo.test.ts` 的默认模板测试改为断言 schema 不补默认值（有效默认值由请求体断言覆盖）。
+- 对已有项目：无 migration、无新权限码；**行为变更**：此前不带 outline 的多页 standard 生成（MCP、AI 助手 PPT 页一键生成）现在会报 `invalid_input`，调用方须先走 outline 确认流程；AI 助手 PPT 页（`/wiki/ai-assistant/ppt`）的一键生成默认 `nSlides=6`、不带 outlineId，多页 standard 一键生成部署后会被拒（单页 standard 与 smart 一键生成不受影响），该页加 outline 步骤是后续前端改动、本次未做。
+- 注意：① `npx tsc --noEmit` 全仓 52 个既有错误（与基线 3d9e7bf 相同，零新增）；② 正式端到端生成验收仍待用户建临时 1 天 agent key，单测＋构建＋冒烟不替代它。
+
 ## 2026-11-25: PPT Logo 改嵌模板——sysmex 模板，不再每次上传
 
 - 内容：① 新模板 `sysmex`（`presenton-templates/sysmex/`，`general` 的克隆）：Logo 以 `decorative: true` 的固定图片元素嵌在每页背景右上角（`PPT_LOGO_SLOT`：x=11.55in, y=0.12in, 1.48×0.52in），共 24 处（12 个背景组件变体＋12 个版式的背景拷贝）；`static/logo.png` 是 `public/logo.png` 转透明底后的版本（白底转透明，Logo 本体深蓝＋绿全不透明，可浮于任何底色上）。② wiki 侧不再上传 Logo：删 `tryResolveLogo()`（`src/modules/presentations/images.ts`）与 `service.ts` 的 Logo 上传块；`presentations_generate` 默认模板由 `general` 改为 `sysmex`（schema 默认值、`PRESENTATION_TEMPLATES` 白名单、`src/lib/ppt-templates.ts` 的 `PPT_DEFAULT_TEMPLATE` 与 AI 助手页面下拉）；`PPT_THEME_VERSION` 由 `2026-11-v1` 升到 `2026-11-v2`，主题指令改写为“Logo 已嵌在 sysmex 模板右上角，不要另外放 Logo”。③ 测试：`tests/presentations-logo.test.ts` 重写为模板内嵌契约（默认模板 sysmex、主题指令措辞、模板文件 24 处 Logo、透明底 PNG 断言）；`tests/presentations.test.ts` 改为断言只上传用户文件。
