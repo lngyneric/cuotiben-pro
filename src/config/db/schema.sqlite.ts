@@ -982,6 +982,7 @@ export const presentationOutline = table(
     pages: text('pages').notNull().default('[]'), // JSON OutlinePage[]
     status: text('status').notNull().default('draft'), // draft | confirmed
     version: integer('version').notNull().default(1),
+    verdict: text('verdict'), // JSON OutlineVerdict | null（轻量路分组判定）
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .default(sqliteNowMs)
       .notNull(),

@@ -16,6 +16,7 @@
 
 import type { PptxElementIndex, PptxElementType } from './element-index';
 import { isLayoutCode, type LayoutCode } from './layouts';
+import { parseOutlineVerdict, type OutlineVerdict } from './outline-llm';
 
 export type SourceKind = 'upload_text' | 'reference_ppt' | 'wiki_kb';
 
@@ -241,6 +242,8 @@ export interface GenerationMeta {
   expectedSlides: number | null;
   titlePage: boolean;
   retries: number;
+  /** 草稿期 Jev 分组判定结论（有 outline 时才有；用户改过页面后为空）。 */
+  outlineVerdict?: OutlineVerdict;
   resume: GenerationMetaResume;
 }
 
@@ -291,10 +294,14 @@ export function parseGenerationMeta(
     resume.filePaths.some((p) => typeof p !== 'string')
   )
     return null;
+  // outlineVerdict 结构不对时只丢该字段，不判整个 meta 无效
+  // （判定结论是留痕，不是生成的前置条件）。
+  const outlineVerdict = parseOutlineVerdict(parsed.outlineVerdict);
   return {
     expectedSlides: parsed.expectedSlides as number | null,
     titlePage: parsed.titlePage,
     retries: parsed.retries,
+    ...(outlineVerdict ? { outlineVerdict } : {}),
     resume: {
       content: resume.content,
       ...(resume.nSlides !== undefined

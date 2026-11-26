@@ -43,7 +43,18 @@ import { getUuid } from '@/lib/hash';
 import { PresentonError } from './errors';
 import type { LayoutAssignment, PageSourceRef, SourceKind } from './job-meta';
 import { isLayoutCode, suggestLayout, type LayoutCode } from './layouts';
+import {
+  judgeOutlineGrouping,
+  parseOutlineVerdict,
+  resolveOutlineJevConfig,
+  resolveOutlineLlmConfig,
+  splitUploadTextByLlm,
+  type LlmPageGrouping,
+  type OutlineSplitMode,
+  type OutlineVerdict,
+} from './outline-llm';
 import { extractPptxSlides } from './pptx-text';
+import type { JevTransport } from '@/modules/ai-assistant/service';
 
 export type { SourceKind } from './job-meta';
 
@@ -53,6 +64,22 @@ export const REFERENCE_PPT_MAX_BYTES = 25 * 1024 * 1024;
 export const OUTLINE_PAGE_MAX_CHARS = 800;
 /** 每页要点上限。 */
 export const OUTLINE_PAGE_MAX_POINTS = 6;
+
+/** 注入用依赖（测试桩；生产调用不传，走真实 Magpie/Jev）。 */
+export interface BuildOutlineDeps {
+  jevTransport?: JevTransport;
+  fetchImpl?: typeof fetch;
+}
+
+/** 重分粒度：页正文上限减半、要点上限 4 条。 */
+export const FINE_PACK_LIMITS = { maxChars: 400, maxPoints: 4 };
+
+interface PageBlock {
+  title: string;
+  points: string[];
+  layout?: LayoutCode;
+  layoutReason?: string;
+}
 
 export interface SourceOwner {
   userId: string;
@@ -559,31 +586,62 @@ function pointsFromParagraphs(
     .slice(0, maxPoints);
 }
 
-/** 段落累积成页（每页正文不超 OUTLINE_PAGE_MAX_CHARS、要点不超 6 条）。 */
+/** 段落累积成页（每页正文不超上限、要点不超上限）。mergeSameTitle=false 时每个块另起一页（LLM 分组：块即 LLM 定的一页，不跨块合并）。 */
 function packPages(
-  blocks: Array<{ title: string; points: string[] }>
-): Array<{ title: string; points: string[] }> {
-  const pages: Array<{ title: string; points: string[] }> = [];
-  let cur: { title: string; points: string[]; chars: number } | null = null;
+  blocks: PageBlock[],
+  limits: { maxChars: number; maxPoints: number } = {
+    maxChars: OUTLINE_PAGE_MAX_CHARS,
+    maxPoints: OUTLINE_PAGE_MAX_POINTS,
+  },
+  mergeSameTitle = true
+): PageBlock[] {
+  const pages: PageBlock[] = [];
+  let cur: (PageBlock & { chars: number }) | null = null;
   const flush = () => {
     if (cur && cur.points.length > 0)
-      pages.push({ title: cur.title, points: cur.points });
+      pages.push({
+        title: cur.title,
+        points: cur.points,
+        ...(cur.layout
+          ? { layout: cur.layout, layoutReason: cur.layoutReason ?? '' }
+          : {}),
+      });
     cur = null;
   };
   for (const block of blocks) {
     // 不同标题 = 不同主题：换主题时另起一页，不把两个主题并进一页
     // （清单验收：多主题材料的页数与主题划分须与确认版一致）。
     // 同一主题过长时仍按字数/要点数在主题内断页。
-    if (cur && cur.points.length > 0 && cur.title !== block.title) flush();
+    if (
+      cur &&
+      cur.points.length > 0 &&
+      (cur.title !== block.title || !mergeSameTitle)
+    )
+      flush();
     for (const pt of block.points) {
-      if (!cur) cur = { title: block.title, points: [], chars: 0 };
+      if (!cur)
+        cur = {
+          title: block.title,
+          points: [],
+          chars: 0,
+          ...(block.layout
+            ? { layout: block.layout, layoutReason: block.layoutReason ?? '' }
+            : {}),
+        };
       if (
         cur.points.length > 0 &&
-        (cur.chars + pt.length > OUTLINE_PAGE_MAX_CHARS ||
-          cur.points.length >= OUTLINE_PAGE_MAX_POINTS)
+        (cur.chars + pt.length > limits.maxChars ||
+          cur.points.length >= limits.maxPoints)
       ) {
         flush();
-        cur = { title: block.title, points: [], chars: 0 };
+        cur = {
+          title: block.title,
+          points: [],
+          chars: 0,
+          ...(block.layout
+            ? { layout: block.layout, layoutReason: block.layoutReason ?? '' }
+            : {}),
+        };
       }
       cur.points.push(pt);
       cur.chars += pt.length;
@@ -603,17 +661,26 @@ function metaOf(row: PresentationSource): Record<string, any> {
 
 function finishPage(
   pageNo: number,
-  p: { title: string; points: string[] },
+  p: {
+    title: string;
+    points: string[];
+    layout?: LayoutCode;
+    layoutReason?: string;
+  },
   kind: SourceKind,
   source: PresentationSource,
   locator: string,
   styleRef?: { sourceId: string; note: string },
   note?: string
 ): OutlinePage {
-  const { layout, reason } = suggestLayout({
-    pointCount: p.points.length,
-    hasMainImage: false,
-  });
+  // LLM 分组给出版式时用它（已校验为合法版式码），否则按规则建议。
+  const { layout, reason } =
+    p.layout && isLayoutCode(p.layout)
+      ? { layout: p.layout, reason: p.layoutReason ?? '' }
+      : suggestLayout({
+          pointCount: p.points.length,
+          hasMainImage: false,
+        });
   const textLen = p.title.length + p.points.reduce((n, x) => n + x.length, 0);
   const insufficient = textLen < 40;
   return {
@@ -636,13 +703,20 @@ function finishPage(
 }
 
 /**
- * 按已登记来源产出页面划分草稿（确定性规则，不调 LLM）：上传文本按标题/
- * 段落分主题成页，参考 PPT 一页原稿一页成稿，知识库一篇文章一页；顺序即
- * 优先级（上传 > 参考 PPT > 知识库），知识库页标注“知识库补充”。
+ * 按已登记来源产出页面划分草稿：上传文本按标题/段落分主题成页，参考 PPT
+ * 一页原稿一页成稿，知识库一篇文章一页；顺序即优先级（上传 > 参考 PPT >
+ * 知识库），知识库页标注“知识库补充”。
+ *
+ * 轻量路（2026-11-26）：上传文本优先走 Magpie LLM 分组（只定标题 + 段落
+ * 归属 + 版式建议，要点仍从来源原文取），失败回退确定性拆分；草稿建好后
+ * 调 Jev 逐页判定分组（与意图的相关性 + 页内一致性，阈值 0.6），不通过
+ * 自动重分一次（更细粒度），再不通过标疑点返回；Jev 不可用时判定跳过、
+ * 不阻塞。判定结论写进 outline 行的 verdict 列（migration 0005）。
  */
 export async function buildOutline(
   owner: SourceOwner,
-  sourceIds: string[]
+  sourceIds: string[],
+  opts?: { intent?: string; deps?: BuildOutlineDeps }
 ): Promise<PresentationOutline> {
   if (!sourceIds || sourceIds.length === 0)
     throw new PresentonError('invalid_input', '请先登记内容源再做页面划分');
@@ -681,25 +755,88 @@ export async function buildOutline(
     });
   }
 
-  const pages: OutlinePage[] = [];
-  const ordered = [...sources].sort((a, b) => {
-    const rank = (k: string) =>
-      k === 'upload_text' ? 0 : k === 'reference_ppt' ? 1 : 2;
-    return rank(a.kind) - rank(b.kind);
-  });
+  // 用户意图（Jev 判定与 LLM 分组的 query）：调用方给 intent 时用它，
+  // 否则用来源名拼一个（MCP 只传 sourceIds 时无意图文本）。
+  const intentText =
+    opts?.intent?.trim().slice(0, 500) ||
+    sources.map((s) => s.name).join('、').slice(0, 200) ||
+    'PPT';
+  const llmConfig = await resolveOutlineLlmConfig().catch(() => null);
+  const jevConfig = resolveOutlineJevConfig();
+
+  // 页面构建（一次尝试）：上传文本走 LLM 分组（失败回退确定性拆分），
+  // 参考 PPT / 知识库保持 1:1 确定性映射。重分时用更细粒度。
+  const buildPagesOnce = async (fine: boolean) => {
+    const pages: OutlinePage[] = [];
+    let splitMode: OutlineSplitMode = 'deterministic';
+    const ordered = [...sources].sort((a, b) => {
+      const rank = (k: string) =>
+        k === 'upload_text' ? 0 : k === 'reference_ppt' ? 1 : 2;
+      return rank(a.kind) - rank(b.kind);
+    });
+    // 上传文本的段落（LLM 分组与确定性拆分共用同一份切段）。
+    const sectionsBySource = new Map<
+      string,
+      Array<{ heading: string; body: string }>
+    >();
+    for (const s of ordered) {
+      if (s.kind === 'upload_text')
+        sectionsBySource.set(s.id, splitSections(s.text));
+    }
+    // LLM 分组（仅上传文本，并行；失败的源回退确定性拆分）。
+    const llmGroupings = new Map<string, LlmPageGrouping[]>();
+    if (llmConfig) {
+      await Promise.all(
+        [...sectionsBySource.entries()].map(async ([sourceId, sections]) => {
+          const grouping = await splitUploadTextByLlm({
+            baseUrl: llmConfig.baseUrl,
+            apiKey: llmConfig.apiKey,
+            intent: intentText,
+            sections,
+            fine,
+            fetchImpl: opts?.deps?.fetchImpl,
+          });
+          if (grouping) llmGroupings.set(sourceId, grouping);
+        })
+      );
+    }
   for (const source of ordered) {
     const kind = source.kind as SourceKind;
     const styleRef = styleRefs[0];
     if (kind === 'upload_text') {
-      const sections = splitSections(source.text);
-      const blocks = sections.map((sec) => {
-        const points = pointsFromParagraphs(sec.body);
-        return {
-          title: sec.heading || (points[0]?.slice(0, 24) ?? source.name),
-          points,
-        };
-      });
-      const packed = packPages(blocks);
+      const sections = sectionsBySource.get(source.id) ?? [];
+      const grouping = llmGroupings.get(source.id);
+      let blocks: PageBlock[];
+      if (grouping) {
+        // LLM 分组：块即 LLM 定的一页（标题 + 段落归属 + 版式建议），
+        // 要点仍从来源原文取，不编内容；跨块不合并。
+        splitMode = 'llm';
+        blocks = grouping.map((g) => ({
+          title: g.title,
+          points: g.sectionIndexes.flatMap((i) =>
+            pointsFromParagraphs(sections[i]?.body ?? '')
+          ),
+          ...(isLayoutCode(g.layout)
+            ? {
+                layout: g.layout as LayoutCode,
+                layoutReason: g.reason || 'LLM 分组建议',
+              }
+            : {}),
+        }));
+      } else {
+        blocks = sections.map((sec) => {
+          const points = pointsFromParagraphs(sec.body);
+          return {
+            title: sec.heading || (points[0]?.slice(0, 24) ?? source.name),
+            points,
+          };
+        });
+      }
+      const packed = packPages(
+        blocks,
+        fine ? FINE_PACK_LIMITS : undefined,
+        grouping ? false : true
+      );
       for (const p of packed) {
         pages.push(
           finishPage(
@@ -765,16 +902,82 @@ export async function buildOutline(
       });
     }
   }
-  if (pages.length === 0)
-    throw new PresentonError(
-      'invalid_input',
-      '来源内容为空，无法产出页面划分（无可用来源）'
-    );
-  if (pages.length > 50)
-    throw new PresentonError(
-      'invalid_input',
-      `页面划分 ${pages.length} 页，超过 50 页上限，请减少来源内容`
-    );
+    if (pages.length > 50)
+      throw new PresentonError(
+        'invalid_input',
+        `页面划分 ${pages.length} 页，超过 50 页上限，请减少来源内容`
+      );
+    return { pages, splitMode };
+  };
+
+  // Jev 分组判定：不通过自动重分一次（更细粒度），再不通过标疑点返回；
+  // Jev 不可用时判定跳过、不阻塞。结构性页面（原稿/文章一页一页映射）
+  // 无法重分，不通过直接标疑点。
+  let pages: OutlinePage[] = [];
+  let splitMode: OutlineSplitMode = 'deterministic';
+  let verdict: OutlineVerdict | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const built = await buildPagesOnce(attempt === 2);
+    pages = built.pages;
+    splitMode = built.splitMode;
+    if (pages.length === 0)
+      throw new PresentonError(
+        'invalid_input',
+        '来源内容为空，无法产出页面划分（无可用来源）'
+      );
+    const judged = await judgeOutlineGrouping({
+      apiKey: jevConfig.apiKey,
+      proxyUrl: jevConfig.proxyUrl,
+      intent: intentText,
+      pages,
+      jevTransport: opts?.deps?.jevTransport,
+    });
+    if (!judged) {
+      verdict = {
+        status: 'skipped',
+        splitMode,
+        attempts: attempt,
+        scores: [],
+        warnings: [
+          'Jev 分组判定不可用（无 key 或调用失败），草稿未经判定，请在确认时核对页面划分。',
+        ],
+        judgedAt: Date.now(),
+      };
+      break;
+    }
+    const failed = judged.scores.filter((s) => s.failed);
+    if (failed.length === 0) {
+      verdict = {
+        status: 'pass',
+        splitMode,
+        attempts: attempt,
+        scores: judged.scores,
+        warnings: [],
+        judgedAt: Date.now(),
+      };
+      break;
+    }
+    const canResplit = pages.some((p) => p.primaryKind === 'upload_text');
+    if (attempt === 2 || !canResplit) {
+      verdict = {
+        status: 'needs_review',
+        splitMode,
+        attempts: attempt,
+        scores: judged.scores,
+        warnings: [
+          ...failed.map(
+            (f) => `第 ${f.pageNo} 页疑似分组错误：${f.reasons.join('；')}`
+          ),
+          attempt === 2
+            ? '已自动重分一次仍不通过，请在确认时核对疑点页（可改标题/要点、删页、合并页）。'
+            : '疑点页为结构性页面（原稿/文章一页一页映射），无法自动重分，请在确认时核对。',
+        ],
+        judgedAt: Date.now(),
+      };
+      break;
+    }
+    // 第一次不通过且可重分：循环一次，用更细粒度重分。
+  }
   const [row] = await db()
     .insert(presentationOutline)
     .values({
@@ -785,6 +988,7 @@ export async function buildOutline(
       pages: JSON.stringify(pages),
       status: 'draft',
       version: 1,
+      verdict: verdict ? JSON.stringify(verdict) : null,
     })
     .returning();
   return row;
@@ -801,6 +1005,13 @@ export async function getOwnedOutline(
     .limit(1);
   if (!row || !isOwner(row, owner)) throw notFound('页面划分草稿');
   return row;
+}
+
+/** 读 outline 行的分组判定结论（migration 0005 verdict 列）；结构不对返回 null。 */
+export function outlineVerdictView(
+  row: PresentationOutline
+): OutlineVerdict | null {
+  return parseOutlineVerdict(row.verdict);
 }
 
 /** 确认 outline：可整体替换页面（改标题/要点/版式），只改划分不重抽。 */
@@ -846,6 +1057,8 @@ export async function confirmOutline(
       status: 'confirmed',
       version: row.version + 1,
       updatedAt: new Date(),
+      // 用户改了页面划分：草稿期判定结论作废（分组已不是判定的那一份）。
+      ...(pages !== undefined ? { verdict: null } : {}),
     })
     .where(eq(presentationOutline.id, row.id))
     .returning();

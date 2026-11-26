@@ -79,6 +79,7 @@ import {
   type LayoutAssignment,
   type PageSourceRef,
 } from './job-meta';
+import { type OutlineVerdict } from './outline-llm';
 import {
   allSlots,
   buildThemeInstructions,
@@ -105,6 +106,7 @@ import {
   assembleOutlineContent,
   getOwnedOutline,
   getOwnedSources,
+  outlineVerdictView,
   parseOutlinePages,
   type OutlinePage,
   type SourceOwner,
@@ -958,6 +960,7 @@ export async function createJobAndStart(params: {
   let layoutAssignments: LayoutAssignment[] | null = null;
   let pageSourceRefs: PageSourceRef[] | null = null;
   let outlinePages: ReturnType<typeof parseOutlinePages> = null;
+  let outlineVerdict: OutlineVerdict | null = null;
   if (input.outlineId || (input.sourceIds && input.sourceIds.length > 0)) {
     if (!input.outlineId)
       throw new PresentonError(
@@ -965,6 +968,9 @@ export async function createJobAndStart(params: {
         '带来源生成须先调用 presentations_outline 生成并确认页面划分，再带 outline_id 生成'
       );
     const outline = await getOwnedOutline(input.outlineId, owner);
+    // 草稿期 Jev 分组判定结论随任务留痕（generation_meta）；用户确认时
+    // 改过页面会清掉 verdict，留痕为空。
+    outlineVerdict = outlineVerdictView(outline);
     if (outline.status !== 'confirmed')
       throw new PresentonError(
         'invalid_input',
@@ -1153,6 +1159,7 @@ export async function createJobAndStart(params: {
       expectedSlides,
       titlePage,
       retries: 0,
+      ...(outlineVerdict ? { outlineVerdict } : {}),
       resume: {
         content,
         ...(input.nSlides !== undefined

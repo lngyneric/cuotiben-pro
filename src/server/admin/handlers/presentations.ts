@@ -7,6 +7,7 @@ import {
   buildOutline,
   confirmOutline,
   getOwnedSources,
+  outlineVerdictView,
   registerReferencePpt,
   registerUploadText,
   registerWikiKb,
@@ -236,12 +237,15 @@ export async function outlineDraft({ request, actor }: AdminHandlerContext) {
   try {
     const body = await request.json();
     const owner = { userId: actor.userId, tokenId: actor.tokenId ?? null };
-    const outline = await buildOutline(owner, body.sourceIds);
+    const outline = await buildOutline(owner, body.sourceIds, {
+      intent: typeof body.intent === 'string' ? body.intent : undefined,
+    });
     return respData({
       outlineId: outline.id,
       status: outline.status,
       version: outline.version,
       pages: JSON.parse(outline.pages),
+      verdict: outlineVerdictView(outline),
     });
   } catch (error) {
     return presentonErrorResponse(error);
@@ -258,6 +262,7 @@ export async function outlineConfirm({ request, actor }: AdminHandlerContext) {
       status: outline.status,
       version: outline.version,
       pages: JSON.parse(outline.pages),
+      verdict: outlineVerdictView(outline),
     });
   } catch (error) {
     return presentonErrorResponse(error);
