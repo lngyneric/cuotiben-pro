@@ -359,3 +359,15 @@ export function buildThemeInstructions(): string {
     `主题版本 ${PPT_THEME_VERSION}。`,
   ].join('\n');
 }
+
+/**
+ * 标题页开关的指令块（导航＋意图优化）：与主题块同路，写进 instructions。
+ * standard 模式还以 include_title_slide 参数发给 Presenton
+ * （generate 请求模型的默认值是 true，不传即保留标题页）；smart 模式
+ * 的 /create 接口无此参数，文本是唯一表达。
+ */
+export function buildTitlePageInstructions(titlePage: boolean): string {
+  return titlePage
+    ? '【标题页要求】保留标题页：第 1 页是封面（标题＋汇报人＋日期＋概述），之后各页讲内容。'
+    : '【标题页要求】不要做封面/标题页：第 1 页就是内容页（标题＋要点），直接讲内容；不要只放标题、汇报人和日期。';
+}

@@ -69,10 +69,12 @@ import {
 } from './images';
 import {
   parseElementIndex,
+  parseGenerationMeta,
   parseImageAssignments,
   parseLayoutAssignments,
   parsePageSourceRefs,
   serializeJobMeta,
+  type GenerationMeta,
   type ImageAssignment,
   type LayoutAssignment,
   type PageSourceRef,
@@ -80,6 +82,7 @@ import {
 import {
   allSlots,
   buildThemeInstructions,
+  buildTitlePageInstructions,
   findSlot,
   PPT_THEME_VERSION,
   type LayoutCode,
@@ -261,6 +264,13 @@ export interface GenerateInput {
   language?: string;
   template?: string;
   mode: PresentationMode;
+  /**
+   * 标题页开关（导航＋意图优化）：true＝第 1 页做封面，false＝第 1 页
+   * 就是内容页。不传时默认：多页保留标题页、单页不保留。standard 模式
+   * 下还会以 include_title_slide 发给 Presenton；smart 模式只有
+   * instructions 文本能表达（/create 接口无此参数）。
+   */
+  titlePage?: boolean;
   instructions?: string;
   files?: PresentationFileInput[];
   postSlugs?: string[];
@@ -505,6 +515,12 @@ async function startStandardGeneration(params: {
   template: string;
   instructions?: string;
   filePaths: string[];
+  /**
+   * 标题页开关（导航＋意图优化）：直接发给 Presenton 的
+   * include_title_slide（请求模型默认值 true，不传即保留标题页）。
+   * smart 模式的 /create 接口无此参数，不传。
+   */
+  includeTitleSlide?: boolean;
 }): Promise<{ taskId: string; presentationId: string }> {
   const task = await presentonJson<AsyncTask>(
     '/api/v1/ppt/presentation/generate/async',
@@ -517,6 +533,7 @@ async function startStandardGeneration(params: {
       verbosity: 'standard',
       files: params.filePaths,
       instructions: params.instructions,
+      include_title_slide: params.includeTitleSlide,
       export_as: 'pptx',
     },
     CONTROL_TIMEOUT_MS
@@ -886,18 +903,16 @@ export function validateGenerateInput(input: GenerateInput): void {
       'invalid_input',
       `At most ${MAX_FILES} postSlugs per request`
     );
-  // P0：多页 standard 生成必须带已确认的 outlineId——页数与每页版式由
-  // outline 定，不由模型自决。单页 standard（nSlides=1）与 smart 模式
-  // （只适合单页快讯）免 outline。带来源生成本就强制 outline（见上）。
-  // 放在文件校验之后：超大文件等输入错误优先报，不被 outline 错误盖住。
-  if (
-    input.mode !== 'smart' &&
-    (input.nSlides === undefined || input.nSlides > 1) &&
-    !input.outlineId
-  )
+  // 导航＋意图优化：standard 生成一律须带已确认的 outlineId——页数与
+  // 每页版式由 outline 定，不由模型自决。单页 standard 也走轻量 outline
+  // （1 页即 1 个 outline page），不再把整段提示丢给 Presenton；smart
+  // 模式（只适合单页快讯、无 outline 机制）免 outline。带来源生成本就
+  // 强制 outline（见上）。放在文件校验之后：超大文件等输入错误优先报，
+  // 不被 outline 错误盖住。
+  if (input.mode !== 'smart' && !input.outlineId)
     throw new PresentonError(
       'invalid_input',
-      '多页生成须先调用 presentations_outline 生成并确认页面划分，再带 outlineId 生成（单页 standard 生成可免 outline；smart 模式只适合单页快讯）'
+      'standard 生成须先调用 presentations_outline 生成并确认页面划分，再带 outlineId 生成（单页 standard 也须先确认 1 页 outline；smart 模式只适合单页快讯，可免 outline）'
     );
   // P0：smart 模式的 Presenton /create 接口不接受 template，显式传了
   // 模板又传 smart 时直接拒绝（不静默转 standard）。不传 template 的
@@ -990,11 +1005,27 @@ export async function createJobAndStart(params: {
       'invalid_input',
       '配图须先确认 outline：请先调用 presentations_outline 生成并确认页面划分，再带 images 生成'
     );
+  // 导航＋意图优化：页数唯一来源是 outline（有 outline 时为其页数；
+  // smart 未传 nSlides 时为 null＝生成后不校验页数）；标题页默认多页
+  // 保留、单页不保留，显式 titlePage 优先。
+  const expectedSlides: number | null = outlinePages
+    ? outlinePages.length
+    : (input.nSlides ?? null);
+  const titlePage =
+    input.titlePage ?? (expectedSlides !== null && expectedSlides > 1);
   // 主题与 Logo 注入（唯一注入点，见 layouts.ts）：Presenton 的生成接口
   // 不接受主题色/Logo 参数，注入只能走 instructions 文本。用户自填的
   // instructions 在前，主题块在后；标准与 smart 两个模式共用同一份。
   const themeInstructions = buildThemeInstructions();
-  const instructions = [input.instructions?.trim(), themeInstructions]
+  // 标题页开关（导航＋意图优化）：只走 instructions 文本还不够——
+  // standard 模式同时以 include_title_slide 参数发给 Presenton
+  // （generate 请求模型的默认值是 true，不传即保留标题页）。
+  const titlePageInstructions = buildTitlePageInstructions(titlePage);
+  const instructions = [
+    input.instructions?.trim(),
+    themeInstructions,
+    titlePageInstructions,
+  ]
     .filter(Boolean)
     .join('\n\n');
   // 图片：先解析映射（槽位校验 + low_res 判定），生成时再取字节上传。
@@ -1116,6 +1147,27 @@ export async function createJobAndStart(params: {
     const allFilePaths = [...filePaths, ...imagePaths];
     const language = (input.language || 'Chinese').trim() || 'Chinese';
     const template = (input.template || 'sysmex').trim() || 'sysmex';
+    // 生成校验元数据（导航＋意图优化）：期望页数、标题页开关与重跑
+    // 快照随任务保存；完成前按它校验成稿（见 validateDeck）。
+    const generationMeta: GenerationMeta = {
+      expectedSlides,
+      titlePage,
+      retries: 0,
+      resume: {
+        content,
+        ...(input.nSlides !== undefined
+          ? { nSlides: input.nSlides }
+          : {}),
+        language,
+        ...(input.mode === 'smart' ? {} : { template }),
+        mode: input.mode,
+        instructions: fullInstructions,
+        filePaths: allFilePaths,
+      },
+    };
+    await updateJob(job.id, {
+      generationMeta: serializeJobMeta(generationMeta),
+    });
     if (input.mode === 'smart') {
       const created = await presentonJson<{ id: string }>(
         '/api/v1/ppt/presentation/create',
@@ -1150,6 +1202,7 @@ export async function createJobAndStart(params: {
       template,
       instructions: fullInstructions,
       filePaths: allFilePaths,
+      includeTitleSlide: titlePage,
     });
     const updated = await updateJob(job.id, {
       status: 'generating',
@@ -1160,6 +1213,138 @@ export async function createJobAndStart(params: {
   } catch (error) {
     await failJob(job, error);
     throw error;
+  }
+}
+
+/**
+ * 生成后校验（导航＋意图优化）：实际页数必须等于期望页数、首頁版式
+ * 必须符合标题页开关。不符返回原因（中文），符合返回 null。
+ * 老任务（generation_meta 为空）跳过校验，保持旧行为。
+ *
+ * 查因结论（2026-11-26 实测 Presenton 容器内代码＋库）：Presenton
+ * 没有最小 3 页的写死逻辑，n_slides 是权威值且被强制执行（大纲模型
+ * min_length=max_length=n_slides，超量截断、欠量报错）；9 个 standard
+ * 任务实际页数全部等于请求 n_slides。所谓“单页变 3 页”是请求侧发
+ * 的就是 3 页（内容里写着“页数填 3”）。所以这里不做“删页”兜底，
+ * 只做校验＋重试：页数不对说明请求侧（outline 或 nSlides）出了问题，
+ * 重试时收紧指令、仍不符就置失败并说明原因，绝不静默交错稿。
+ */
+function validateDeck(
+  job: PresentationJob,
+  slides: unknown[] | undefined
+): string | null {
+  const meta = parseGenerationMeta(job.generationMeta);
+  if (!meta) return null;
+  const actual = slides?.length ?? 0;
+  if (meta.expectedSlides !== null && actual !== meta.expectedSlides)
+    return `生成页数 ${actual} 页与要求的 ${meta.expectedSlides} 页不符`;
+  const firstSlide =
+    slides && slides.length > 0 && typeof slides[0] === 'object'
+      ? (slides[0] as Record<string, unknown>)
+      : null;
+  const firstLayout = firstSlide?.layout;
+  if (meta.titlePage === false && firstLayout === 'title_intro')
+    return '第 1 页仍是标题页（已要求不要标题页）';
+  if (meta.titlePage === true && firstLayout === 'table_of_contents')
+    return '第 1 页是目录页不是标题页';
+  return null;
+}
+
+/**
+ * 校验不符时的重试（导航＋意图优化）：只重试一次，指令收紧（页数以
+ * 元数据为准、正文里提到的其他页数一律忽略）。重试启动失败或次数已
+ * 用完时直接置失败并说明原因。返回重试后（仍 generating）或失败的
+ * 任务行。smart 重试不直接接 stream：新 presentation 的 slides 出
+ * 现前由下次 refreshJob 轮询重新接上（slideCount===0 时）。
+ */
+async function retryOrFailGeneration(
+  job: PresentationJob,
+  reason: string
+): Promise<PresentationJob> {
+  const meta = parseGenerationMeta(job.generationMeta);
+  if (!meta) {
+    // 无元数据的老任务不该走到这里；防御性置失败。
+    return (
+      (await failJob(
+        job,
+        new PresentonError('presenton_error', reason)
+      )) ?? job
+    );
+  }
+  if (meta.retries >= 1) {
+    return (
+      (await failJob(
+        job,
+        new PresentonError(
+          'presenton_error',
+          `${reason}（已重试 1 次，请调整页面划分后重新生成）`
+        )
+      )) ?? job
+    );
+  }
+  const tightenedInstructions =
+    `${meta.resume.instructions}\n\n【页数强制——已重试】上一次生成不符要求（${reason}），本次必须恰好 ${meta.expectedSlides ?? 1} 页；第 1 页${meta.titlePage ? '是封面（标题＋汇报人＋日期＋概述）' : '就是内容页，不要做封面'}。页数以本条为准，正文里提到的其他页数一律忽略。`;
+  const nextMeta: GenerationMeta = {
+    ...meta,
+    retries: meta.retries + 1,
+    resume: { ...meta.resume, instructions: tightenedInstructions },
+  };
+  const metaJson = serializeJobMeta(nextMeta);
+  try {
+    if (meta.resume.mode === 'smart') {
+      const created = await presentonJson<{ id: string }>(
+        '/api/v1/ppt/presentation/create',
+        {
+          content: meta.resume.content,
+          n_slides: meta.resume.nSlides,
+          language: meta.resume.language,
+          file_paths: meta.resume.filePaths,
+          tone: 'default',
+          verbosity: 'standard',
+          instructions: tightenedInstructions,
+          generation_mode: 'smart',
+        }
+      );
+      if (!created?.id)
+        throw new PresentonError(
+          'presenton_error',
+          'Presenton smart creation returned no id'
+        );
+      const updated = await updateJob(job.id, {
+        status: 'generating',
+        presentonId: created.id,
+        presentonTaskId: null,
+        generationMeta: metaJson,
+      });
+      return updated ?? job;
+    }
+    const { taskId, presentationId } = await startStandardGeneration({
+      content: meta.resume.content,
+      nSlides: meta.resume.nSlides,
+      language: meta.resume.language,
+      template: meta.resume.template ?? 'sysmex',
+      instructions: tightenedInstructions,
+      filePaths: meta.resume.filePaths,
+      includeTitleSlide: meta.titlePage,
+    });
+    const updated = await updateJob(job.id, {
+      status: 'generating',
+      presentonId: presentationId,
+      presentonTaskId: taskId,
+      generationMeta: metaJson,
+    });
+    return updated ?? job;
+  } catch (error) {
+    // 重试启动失败：原稿本就不符要求，置失败并说明原因，不留 generating 残局。
+    return (
+      (await failJob(
+        job,
+        new PresentonError(
+          'presenton_error',
+          `${reason}（重试启动失败：${error instanceof Error ? error.message : '未知错误'}）`
+        )
+      )) ?? job
+    );
   }
 }
 
@@ -1183,6 +1368,12 @@ async function runSmartStream(
         'presenton_error',
         'Smart generation produced no slides'
       );
+    // 生成后校验（导航＋意图优化）：不符重试一次或置失败，不静默交错稿。
+    const mismatch = validateDeck(job, pres.slides);
+    if (mismatch) {
+      await retryOrFailGeneration(job, mismatch);
+      return;
+    }
     const exported = await exportPresentation(presentonId);
     await completeJob(job, {
       title: pres.title,
@@ -1275,6 +1466,9 @@ export async function refreshJob(
           'Presenton task completed without a presentation id or export path'
         );
       const pres = await getPresentation(presentationId);
+      // 生成后校验（导航＋意图优化）：不符重试一次或置失败，不静默交错稿。
+      const mismatch = validateDeck(job, pres.slides);
+      if (mismatch) return await retryOrFailGeneration(job, mismatch);
       const completed = await completeJob(job, {
         title: pres.title,
         slideCount: pres.slides?.length ?? 0,
@@ -1303,6 +1497,9 @@ export async function refreshJob(
       const pres = await getPresentation(job.presentonId);
       const slideCount = pres.slides?.length ?? 0;
       if (slideCount > 0) {
+        // 生成后校验（导航＋意图优化）：不符重试一次或置失败，不静默交错稿。
+        const mismatch = validateDeck(job, pres.slides);
+        if (mismatch) return await retryOrFailGeneration(job, mismatch);
         const exported = await exportPresentation(job.presentonId);
         const completed = await completeJob(job, {
           title: pres.title,

@@ -39,6 +39,8 @@ const access = await import('../src/modules/admin-access/service');
 const { saveConfigs } = await import('../src/modules/config/service');
 const { Route: pptRoute } =
   await import('../src/routes/api/ai-assistant/presentations');
+const { Route: outlineRoute } =
+  await import('../src/routes/api/ai-assistant/presentations/outline');
 const { Route: downloadRoute } =
   await import('../src/routes/api/admin/agent/presentations/download');
 
@@ -269,6 +271,90 @@ async function getPpt(
   return { response, body: (await response.json()) as any };
 }
 
+type OutlineHandlers = {
+  POST: (context: { request: Request }) => Promise<Response>;
+};
+
+function outlineHandlers(): OutlineHandlers {
+  return outlineRoute.options.server!.handlers as unknown as OutlineHandlers;
+}
+
+// 导航＋意图优化：standard 生成一律须带已确认的 outlineId。页签流程
+// 的服务端入口：先把文字登记为来源并建 outline 草稿，再确认。
+async function createOutline(
+  content: string,
+  token: string
+): Promise<{
+  outlineId: string;
+  pages: { pageNo: number; title: string }[];
+  sourceIds: string[];
+}> {
+  clearRateLimits();
+  const response = await outlineHandlers().POST({
+    request: new Request(
+      'http://localhost/api/ai-assistant/presentations/outline',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'create', content }),
+      }
+    ),
+  });
+  const body = (await response.json()) as any;
+  assert.equal(body.code, 0, JSON.stringify(body));
+  return body.data;
+}
+
+async function confirmOutline(
+  outlineId: string,
+  token: string,
+  pages?: unknown
+): Promise<{
+  outlineId: string;
+  pages: { pageNo: number; title: string }[];
+  sourceIds: string[];
+}> {
+  clearRateLimits();
+  const response = await outlineHandlers().POST({
+    request: new Request(
+      'http://localhost/api/ai-assistant/presentations/outline',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'confirm', outlineId, pages }),
+      }
+    ),
+  });
+  const body = (await response.json()) as any;
+  assert.equal(body.code, 0, JSON.stringify(body));
+  return body.data;
+}
+
+/** 带已确认 outline 的 standard 生成（页签“一键生成”的服务端路径）。 */
+async function postPptStandardWithOutline(
+  content: string,
+  token: string,
+  extra: Record<string, unknown> = {}
+): Promise<{ response: Response; body: any }> {
+  const draft = await createOutline(content, token);
+  const confirmed = await confirmOutline(draft.outlineId, token);
+  return postPpt(
+    {
+      outlineId: confirmed.outlineId,
+      sourceIds: confirmed.sourceIds,
+      nSlides: confirmed.pages.length,
+      ...extra,
+    },
+    token
+  );
+}
+
 test('POST without the generate permission → 403', async () => {
   const { response } = await postPpt({ content: 'x' }, otherToken);
   assert.equal(response.status, 403);
@@ -277,8 +363,8 @@ test('POST without the generate permission → 403', async () => {
 test('POST creates a job; owner polls it to completed and downloads it', async () => {
   stub.mode = 'pending-then-completed';
   stub.statusCalls = 0;
-  const { response, body } = await postPpt(
-    { content: 'Assistant deck topic', nSlides: 1 },
+  const { response, body } = await postPptStandardWithOutline(
+    'Assistant deck topic',
     ownerToken
   );
   assert.equal(response.status, 200);
@@ -317,7 +403,7 @@ test('non-owner GET → 404', async () => {
   stub.mode = 'pending';
   stub.statusCalls = 0;
   const { body } = await postPpt(
-    { content: 'Ownership test', nSlides: 1 },
+    { content: 'Ownership test', nSlides: 1, mode: 'smart' },
     ownerToken
   );
   const jobId = body.data.jobId as string;
@@ -335,8 +421,8 @@ test('completed job downloadUrl carries the /wiki app base when APP_BASE_PATH is
   try {
     stub.mode = 'pending-then-completed';
     stub.statusCalls = 0;
-    const { body } = await postPpt(
-      { content: 'Base path deck', nSlides: 1 },
+    const { body } = await postPptStandardWithOutline(
+      'Base path deck',
       ownerToken
     );
     const jobId = body.data.jobId as string;
@@ -371,9 +457,10 @@ test('empty content and nSlides=51 → 400', async () => {
 test('valid template is accepted and forwarded to Presenton', async () => {
   stub.mode = 'pending-then-completed';
   stub.lastGenerateBody = '';
-  const { response, body } = await postPpt(
-    { content: 'Template deck topic', nSlides: 1, template: 'momentum' },
-    ownerToken
+  const { response, body } = await postPptStandardWithOutline(
+    'Template deck topic',
+    ownerToken,
+    { template: 'momentum' }
   );
   assert.equal(response.status, 200);
   assert.equal(body.code, 0);
@@ -381,9 +468,10 @@ test('valid template is accepted and forwarded to Presenton', async () => {
 });
 
 test('unknown template → 400', async () => {
-  const { response, body } = await postPpt(
-    { content: 'x', nSlides: 1, template: 'not-a-template' },
-    ownerToken
+  const { response, body } = await postPptStandardWithOutline(
+    'x',
+    ownerToken,
+    { template: 'not-a-template' }
   );
   assert.equal(response.status, 400);
   assert.match(body.message, /Unknown template/);
@@ -405,8 +493,8 @@ test('quota failure at start → 429 llm_quota_exceeded', async () => {
 test('quota failure during polling surfaces llm_quota_exceeded on the job', async () => {
   stub.mode = 'error-quota';
   stub.statusCalls = 0;
-  const { body } = await postPpt(
-    { content: 'Quota poll test', nSlides: 1 },
+  const { body } = await postPptStandardWithOutline(
+    'Quota poll test',
     ownerToken
   );
   const jobId = body.data.jobId as string;
@@ -420,7 +508,7 @@ test('quota failure during polling surfaces llm_quota_exceeded on the job', asyn
 test('second create within 10s is rate-limited', async () => {
   stub.mode = 'pending';
   const first = await postPpt(
-    { content: 'Rate limit test', nSlides: 1 },
+    { content: 'Rate limit test', nSlides: 1, mode: 'smart' },
     ownerToken
   );
   assert.equal(first.response.status, 200);
@@ -438,4 +526,118 @@ test('second create within 10s is rate-limited', async () => {
     }),
   });
   assert.equal(second.status, 429);
+});
+
+// ─── 导航＋意图优化：outline 路由（PPT 页签的 outline 步骤）──────────────
+
+test('outline create: 一段文字登记为来源并划出 1 页草稿', async () => {
+  const draft = await createOutline(
+    '单页主题内容：上半年总结与下半年计划。',
+    ownerToken
+  );
+  assert.equal(draft.pages.length, 1);
+  assert.equal(draft.sourceIds.length, 1);
+  assert.ok(draft.outlineId);
+});
+
+test('outline create: 两主题文字划出 2 页草稿；confirm 后可生成', async () => {
+  const draft = await createOutline(
+    '# 主题甲\n甲要点一内容详细描述。\n甲要点二内容详细描述。\n\n# 主题乙\n乙要点一内容详细描述。\n乙要点二内容详细描述。\n',
+    ownerToken
+  );
+  assert.equal(draft.pages.length, 2);
+  assert.equal(draft.pages[0].title, '主题甲');
+  assert.equal(draft.pages[1].title, '主题乙');
+  const confirmed = await confirmOutline(draft.outlineId, ownerToken);
+  assert.equal(confirmed.pages.length, 2);
+  stub.mode = 'pending-then-completed';
+  stub.statusCalls = 0;
+  const { response, body } = await postPpt(
+    {
+      outlineId: confirmed.outlineId,
+      sourceIds: confirmed.sourceIds,
+      nSlides: 2,
+    },
+    ownerToken
+  );
+  assert.equal(response.status, 200);
+  assert.equal(body.code, 0);
+});
+
+test('outline confirm: 改标题、删一页后确认，页码连续', async () => {
+  const draft = await createOutline(
+    '# 主题甲\n甲要点一内容详细描述。\n甲要点二内容详细描述。\n\n# 主题乙\n乙要点一内容详细描述。\n乙要点二内容详细描述。\n',
+    ownerToken
+  );
+  assert.equal(draft.pages.length, 2);
+  const edited = draft.pages.slice(1).map((p, i) => ({
+    ...p,
+    pageNo: i + 1,
+    title: '改后标题',
+  }));
+  const confirmed = await confirmOutline(draft.outlineId, ownerToken, edited);
+  assert.equal(confirmed.pages.length, 1);
+  assert.equal(confirmed.pages[0].pageNo, 1);
+  assert.equal(confirmed.pages[0].title, '改后标题');
+});
+
+test('outline create: 空内容与错误 action → 400', async () => {
+  clearRateLimits();
+  const empty = await outlineHandlers().POST({
+    request: new Request(
+      'http://localhost/api/ai-assistant/presentations/outline',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ownerToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'create', content: '   ' }),
+      }
+    ),
+  });
+  assert.equal(empty.status, 400);
+
+  clearRateLimits();
+  const bad = await outlineHandlers().POST({
+    request: new Request(
+      'http://localhost/api/ai-assistant/presentations/outline',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ownerToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'nope' }),
+      }
+    ),
+  });
+  assert.equal(bad.status, 400);
+});
+
+test('outline: 无权限 → 403', async () => {
+  clearRateLimits();
+  const response = await outlineHandlers().POST({
+    request: new Request(
+      'http://localhost/api/ai-assistant/presentations/outline',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${otherToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'create', content: 'x' }),
+      }
+    ),
+  });
+  assert.equal(response.status, 403);
+});
+
+test('standard 生成无 outline → 400，提示先走 outline', async () => {
+  const { response, body } = await postPpt(
+    { content: '单页主题', nSlides: 1 },
+    ownerToken
+  );
+  assert.equal(response.status, 400);
+  assert.match(body.message, /presentations_outline/);
 });

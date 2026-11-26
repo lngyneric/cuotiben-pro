@@ -153,6 +153,9 @@ function buildTestXlsx(): Buffer {
 const stub = {
   statusCalls: 0,
   downloadBytes: null as Buffer | null,
+  // 导航＋意图优化：生成后校验要求实际页数＝outline 页数；默认 stub 返回
+  // 2 页（pres-1），makeCompletedJob 的 1 页 outline 须先把本字段设为 1 页。
+  presentationSlides: null as Array<Record<string, unknown>> | null,
 };
 
 function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
@@ -201,7 +204,11 @@ function stubFetch(input: unknown, init?: RequestInit): Promise<Response> {
     return json({ path: '/app_data/exports/test.pptx' });
   }
   if (url.includes('/api/v1/ppt/presentation/pres-1')) {
-    return json({ id: 'pres-1', title: 'Test Deck', slides: [{}, {}] });
+    return json({
+      id: 'pres-1',
+      title: 'Test Deck',
+      slides: stub.presentationSlides ?? [{}, {}],
+    });
   }
   if (url.includes('/app_data/exports/test.pptx')) {
     const bytes = stub.downloadBytes ?? buildFixturePptx(8);
@@ -262,21 +269,64 @@ async function request(
 
 /** 生成一套稿并轮询到 completed，返回 jobId。 */
 async function makeCompletedJob(token: string): Promise<string> {
-  const gen = await request(
-    'presentations_generate',
+  // 导航＋意图优化：standard 生成一律须带已确认的 outlineId。
+  const source = await request(
+    'presentations_source_add',
     {
-      content: '测试稿第一页标题\n第二页正文',
-      mode: 'standard',
-      nSlides: 1,
+      kind: 'upload_text',
+      file: {
+        name: 'test.txt',
+        mime: 'text/plain',
+        base64: Buffer.from(
+          '测试稿第一页标题\n第二页正文',
+          'utf-8'
+        ).toString('base64'),
+      },
     },
     token
   );
-  assert.equal(gen.body.code, 0, JSON.stringify(gen.body));
-  const jobId = gen.body.data.jobId as string;
-  await request('presentations_get', { id: jobId }, token);
-  const got = await request('presentations_get', { id: jobId }, token);
-  assert.equal(got.body.data.status, 'completed', JSON.stringify(got.body));
-  return jobId;
+  assert.equal(source.body.code, 0, JSON.stringify(source.body));
+  const sourceId = source.body.data.sourceId as string;
+  const draft = await request(
+    'presentations_outline',
+    { sourceIds: [sourceId] },
+    token
+  );
+  assert.equal(draft.body.code, 0, JSON.stringify(draft.body));
+  const confirmed = await request(
+    'presentations_outline_confirm',
+    {
+      outlineId: draft.body.data.outlineId,
+      // Dashboard 数字卡要求第 1 页版式为 A/G/H：探针稿默认 B 版式会被
+      // chart_add 拒绝，这里确认时把第 1 页改成 A。
+      pages: (draft.body.data.pages as Array<any>).map((p) =>
+        p.pageNo === 1 ? { ...p, layout: 'A' } : p
+      ),
+    },
+    token
+  );
+  assert.equal(confirmed.body.code, 0, JSON.stringify(confirmed.body));
+  stub.presentationSlides = [{}];
+  try {
+    const gen = await request(
+      'presentations_generate',
+      {
+        mode: 'standard',
+        sourceIds: [sourceId],
+        outlineId: confirmed.body.data.outlineId,
+        nSlides: confirmed.body.data.pages.length,
+      },
+      token
+    );
+    assert.equal(gen.body.code, 0, JSON.stringify(gen.body));
+    const jobId = gen.body.data.jobId as string;
+    await request('presentations_get', { id: jobId }, token);
+    const got = await request('presentations_get', { id: jobId }, token);
+    assert.equal(got.body.data.status, 'completed', JSON.stringify(got.body));
+    return jobId;
+  } finally {
+    stub.presentationSlides = null;
+  }
 }
 
 async function getJobRow(jobId: string) {

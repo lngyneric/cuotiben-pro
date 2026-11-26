@@ -73,6 +73,7 @@ export async function POST({ request, actor }: AdminHandlerContext) {
         language: body.language,
         template: body.template,
         mode: body.mode || 'standard',
+        titlePage: body.titlePage,
         instructions: body.instructions,
         files: body.files,
         postSlugs: body.postSlugs,
